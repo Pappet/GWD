@@ -1,0 +1,45 @@
+# --- Python Basics ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- Virtual Environments ---
+venv/
+env/
+.env
+.venv/
+
+# --- IDE Einstellungen (optional, aber empfohlen) ---
+.vscode/
+.idea/
+
+# --- Jupyter Notebooks ---
+.ipynb_checkpoints
+
+# --- ML & Data Specifics (Deine Anforderung) ---
+# NumPy Dateien (oft sehr groß)
+*.npy
+*.npz
+
+# Andere Datenformate (optional, je nach Datensatz)
+*.csv
+*.h5
+*.hdf5
+*.pkl
+*.parquet
+
+# Ordner für Daten (falls du einen hast)
+data/
+datasets/
+models_registry/
+gw_training_data/
+gw_noise_background/
+
+# --- Model Checkpoints / Gewichte ---
+# Diese sind oft zu groß für normales Git (über 100MB)
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.keras
+models/
