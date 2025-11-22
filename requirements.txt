@@ -1,0 +1,21 @@
+# === Data Science & Mathe Kern ===
+numpy
+pandas
+scipy
+
+# === Machine Learning ===
+tensorflow
+scikit-learn
+
+# === Visualisierung ===
+matplotlib
+
+# === Gravitationswellen-Physik ===
+# Benötigt für gwpy.timeseries (Daten von LIGO laden)
+gwpy 
+# Benötigt für gwd_core/waveforms.py (Profi-Wellenformen)
+pycbc
+
+# === Utilities ===
+# Benötigt für show_leaderboard.py (pandas .to_markdown())
+tabulate
