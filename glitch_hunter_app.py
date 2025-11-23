@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import sys
+import glob 
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button, Slider
@@ -9,7 +10,7 @@ import scipy.io.wavfile as wavfile
 import subprocess
 import platform
 import random
-import threading # NEU: Für Multitasking
+import threading 
 from gwpy.timeseries import TimeSeries
 
 # Imports aus deinem Core
@@ -35,12 +36,27 @@ O3_END = 1253923218
 class GlitchHunterApp:
     def __init__(self):
         print(">>> Lade Gehirn (Neuronales Netz)...")
-        model_path = os.path.join("dataset", "gwd_model.keras")
-        if not os.path.exists(model_path):
-            print(f"FEHLER: Modell nicht gefunden unter {model_path}")
+        
+        # --- NEU: Intelligente Modell-Suche ---
+        models_dir = "models_registry"
+        
+        if not os.path.exists(models_dir):
+            print(f"FEHLER: Ordner '{models_dir}' nicht gefunden.")
+            print("   Bitte führe zuerst 'python dataset/train_cnn.py' aus, um ein Modell zu trainieren.")
             sys.exit(1)
             
-        self.model = tf.keras.models.load_model(model_path)
+        # Suche alle .keras Dateien
+        files = glob.glob(os.path.join(models_dir, "*.keras"))
+        if not files:
+            print(f"FEHLER: Keine Modelle (.keras) in '{models_dir}' gefunden.")
+            sys.exit(1)
+            
+        # Wähle die neueste Datei basierend auf dem Erstellungsdatum (ctime)
+        latest_model_path = max(files, key=os.path.getctime)
+        print(f"{len(files)} Modelle gefunden.")
+        print(f"Lade neuestes Modell: {os.path.basename(latest_model_path)}")
+            
+        self.model = tf.keras.models.load_model(latest_model_path)
         print(">>> Bereit zum Jagen!")
 
         self.fs = 4096
@@ -77,25 +93,25 @@ class GlitchHunterApp:
         self.slider_thresh.on_changed(self.update_threshold)
         
         ax_sim = plt.axes([0.05, 0.03, 0.20, 0.05])
-        self.btn_sim = Button(ax_sim, 'Simulation 🎲', color='lightblue', hovercolor='skyblue')
+        self.btn_sim = Button(ax_sim, 'Simulation', color='lightblue', hovercolor='skyblue')
         self.btn_sim.on_clicked(self.generate_new_sample)
         
         ax_real = plt.axes([0.28, 0.03, 0.20, 0.05])
-        self.btn_real = Button(ax_real, 'LIGO Zufall 🌌', color='mediumpurple', hovercolor='violet')
+        self.btn_real = Button(ax_real, 'LIGO Zufall', color='mediumpurple', hovercolor='violet')
         # Ruft jetzt den Background-Starter auf
         self.btn_real.on_clicked(self.start_background_loading)
         
         ax_sound = plt.axes([0.51, 0.03, 0.20, 0.05])
-        self.btn_sound = Button(ax_sound, 'Anhören 🔊', color='gold', hovercolor='yellow')
+        self.btn_sound = Button(ax_sound, 'Anhören', color='gold', hovercolor='yellow')
         self.btn_sound.on_clicked(self.play_sound)
         
         ax_ask = plt.axes([0.74, 0.03, 0.20, 0.05])
-        self.btn_ask = Button(ax_ask, 'KI fragen 🤖', color='lightgreen', hovercolor='lime')
+        self.btn_ask = Button(ax_ask, 'KI fragen', color='lightgreen', hovercolor='lime')
         self.btn_ask.on_clicked(self.ask_ai)
 
     def start_background_loading(self, event):
         """Startet den Download in einem separaten Thread, damit die GUI nicht einfriert."""
-        self.ax_signal.set_title("⏳ Lade Daten von LIGO... (Bitte warten)", fontsize=12, fontweight='bold', color='orange')
+        self.ax_signal.set_title("Lade Daten von LIGO... (Bitte warten)", fontsize=12, fontweight='bold', color='orange')
         self.fig.canvas.draw_idle()
         
         # Thread starten
@@ -105,7 +121,7 @@ class GlitchHunterApp:
 
     def load_random_real_thread(self):
         """Die eigentliche Arbeit passiert hier im Hintergrund."""
-        print("⏳ Background Thread: Wähle zufällige LIGO-Daten...")
+        print("Background Thread: Wähle zufällige LIGO-Daten...")
         
         want_signal = random.choice([True, False])
         t0 = 0
@@ -113,12 +129,12 @@ class GlitchHunterApp:
         
         if want_signal:
             name, time = random.choice(list(KNOWN_EVENTS.items()))
-            print(f"🎯 Ziel: Bekanntes Event {name}")
-            t0 = time
+            print(f"Ziel: Bekanntes Event {name}")
+            t0 = int(time)
             self.event_name = name
             self.has_signal = True
         else:
-            print("🎯 Ziel: Zufälliges Rauschen (O3 Run)")
+            print("Ziel: Zufälliges Rauschen (O3 Run)")
             self.event_name = "Random Noise (O3)"
             self.has_signal = False
             
@@ -131,18 +147,18 @@ class GlitchHunterApp:
                         is_event = True
                         break
                 if not is_event:
-                    t0 = t_candidate
+                    t0 = int(t_candidate)
                     found_data = True
                     break
             
             if not found_data:
-                print("⚠️ Kein Slot gefunden, fallback.")
+                print("Kein Slot gefunden, fallback.")
                 self.update_plot_threadsafe(fallback=True)
                 return
 
         try:
-            print(f"   Download H1 Daten um {t0:.1f}...")
-            strain = TimeSeries.fetch_open_data(detector, t0 - 2.0, t0 + 2.0, verbose=False)
+            print(f"Download H1 Daten um {t0}...")
+            strain = TimeSeries.fetch_open_data(detector, t0 - 2, t0 + 2, verbose=False)
             
             if strain.sample_rate.value != self.fs:
                 strain = strain.resample(self.fs)
@@ -172,10 +188,10 @@ class GlitchHunterApp:
             # GUI Update muss vom Haupt-Thread gemacht werden? 
             # Matplotlib mit TkAgg ist da manchmal zickig, aber draw_idle ist meist thread-safe genug für einfache updates.
             self.update_plot_threadsafe(title=f"ECHTE DATEN: {self.event_name} ({detector})")
-            print("✅ Daten geladen und bereinigt!")
+            print("Daten geladen und bereinigt!")
 
         except Exception as e:
-            print(f"❌ Fehler im Thread: {e}")
+            print(f"Fehler im Thread: {e}")
             self.update_plot_threadsafe(fallback=True)
 
     def update_plot_threadsafe(self, title="", fallback=False):

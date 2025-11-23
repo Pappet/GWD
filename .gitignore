@@ -43,3 +43,6 @@ gw_noise_background/
 *.onnx
 *.keras
 models/
+
+# Sound
+*.wav
