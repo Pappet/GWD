@@ -1,0 +1,44 @@
+{
+  "model": "gwd_model_20251121-181752.keras",
+  "optimal_thresholds": {
+    "youden": {
+      "threshold": 0.46000078320503235,
+      "tpr": 0.772,
+      "fpr": 0.02,
+      "j_stat": 0.752,
+      "description": "Maximiert (TPR - FPR) - Balanced approach"
+    },
+    "f1": {
+      "threshold": 0.24690598249435425,
+      "tpr": 0.812,
+      "fpr": 0.072,
+      "f1_score": 0.861995753715499,
+      "description": "Maximiert F1-Score - Gut bei unbalancierten Daten"
+    },
+    "fixed_fpr_5": {
+      "threshold": 0.3331310451030731,
+      "tpr": 0.78,
+      "fpr": 0.048,
+      "description": "Maximiert TPR bei FPR \u2248 5%"
+    },
+    "fixed_fpr_1": {
+      "threshold": 0.7613471746444702,
+      "tpr": 0.704,
+      "fpr": 0.008,
+      "description": "Maximiert TPR bei FPR \u2248 1% - Konservativ"
+    },
+    "cost_based": {
+      "threshold": 0.009219157509505749,
+      "tpr": 0.964,
+      "fpr": 0.424,
+      "cost": 0.6040000000000001,
+      "description": "Minimiert Kosten (FN:5.0x, FP:1.0x)"
+    },
+    "fixed_tpr_90": {
+      "threshold": 0.045687273144721985,
+      "tpr": 0.9,
+      "fpr": 0.232,
+      "description": "Minimiert FPR bei TPR \u2248 90%"
+    }
+  }
+}

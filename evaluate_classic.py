@@ -307,4 +307,3 @@ if __name__ == "__main__":
     print("\n❓ Möchtest du den PSD-Effekt sehen? (Drücke Enter)")
     input()
     compare_with_without_psd()
-    

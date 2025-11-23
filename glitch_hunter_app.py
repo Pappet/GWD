@@ -70,7 +70,7 @@ class GlitchHunterApp:
         self.event_name = ""
         self.prediction = None
         self.true_snr = 0
-        self.detection_threshold = 0.75
+        self.detection_threshold = 0.46  # Statt 0.75
         self.truth_text_artist = None 
         
         self.setup_gui()
