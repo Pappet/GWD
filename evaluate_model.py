@@ -21,6 +21,7 @@ from gwd_core.noise import generate_gaussian_noise
 # ==========================================
 MODELS_DIR = "models_registry"
 LEADERBOARD_FILE = "model_leaderboard.csv"
+BASELINE_FILE = os.path.join(MODELS_DIR, "physics_baseline.json")
 
 # Parameter für die Tests
 FS = 4096
@@ -73,6 +74,21 @@ def preprocess_real_data(strain):
 def update_leaderboard(model_name, sim_metrics, real_metrics):
     """Schreibt alle Ergebnisse in die CSV-Historie."""
     
+    # --- NEU: Baseline Vergleich laden ---
+    phys_gap = "-"
+    try:
+        with open(BASELINE_FILE, "r") as f:
+            base_data = json.load(f)
+            base_90 = base_data.get("SNR90", -1)
+            
+            # Wenn wir beide Werte haben, berechnen wir den Abstand
+            if base_90 > 0 and sim_metrics['snr90'] is not None:
+                gap = sim_metrics['snr90'] - base_90
+                # Formatierung: +0.50 heißt "Modell braucht 0.5 mehr SNR als Physik"
+                phys_gap = f"+{gap:.2f}"
+    except FileNotFoundError:
+        pass # Noch keine Baseline berechnet
+
     entry = {
         "Model": model_name,
         "Date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -81,6 +97,10 @@ def update_leaderboard(model_name, sim_metrics, real_metrics):
         "Sim_Accuracy": f"{sim_metrics['acc']:.1%}",
         "Sim_SNR50": f"{sim_metrics['snr50']:.2f}" if sim_metrics['snr50'] else "-",
         "Sim_SNR90": f"{sim_metrics['snr90']:.2f}" if sim_metrics['snr90'] else "-",
+        
+        # NEU: Der wissenschaftliche Vergleichswert
+        "Physik_Gap": phys_gap,
+        
         "Sim_FalseAlarm": f"{sim_metrics['far']:.2%}",
         
         # Real World Metrics
@@ -92,14 +112,14 @@ def update_leaderboard(model_name, sim_metrics, real_metrics):
     
     if os.path.exists(LEADERBOARD_FILE):
         df_old = pd.read_csv(LEADERBOARD_FILE)
-        # Optional: Verhindern von Duplikaten des gleichen Modells am gleichen Tag?
-        # Hier hängen wir einfach an:
         df_combined = pd.concat([df_old, df_new], ignore_index=True)
         df_combined.to_csv(LEADERBOARD_FILE, index=False)
     else:
         df_new.to_csv(LEADERBOARD_FILE, index=False)
         
     print(f"\n🏆 Leaderboard aktualisiert: {LEADERBOARD_FILE}")
+    if phys_gap != "-":
+        print(f"   -> Abstand zur Physik-Grenze: {phys_gap} SNR-Einheiten")
 
 # ==========================================
 # TEST 1: SIMULATION (Das Labor)
@@ -134,8 +154,12 @@ def evaluate_simulation(model):
     snr_90 = None
     try:
         arr_rates = np.array(detection_rates)
-        snr_50 = snr_levels[np.where(arr_rates >= 0.5)[0][0]]
-        snr_90 = snr_levels[np.where(arr_rates >= 0.9)[0][0]]
+        # Finde ersten Index über 0.5 bzw 0.9
+        idx50 = np.where(arr_rates >= 0.5)[0]
+        idx90 = np.where(arr_rates >= 0.9)[0]
+        
+        if len(idx50) > 0: snr_50 = snr_levels[idx50[0]]
+        if len(idx90) > 0: snr_90 = snr_levels[idx90[0]]
     except:
         pass
         
@@ -197,8 +221,6 @@ def evaluate_real_world(model):
     print("   Suche bekannte Events...", end=" ")
     for name, gps in REAL_EVENTS.items():
         try:
-            # FIX: Cast coordinates to integers. 
-            # gwpy/LAL often requires integer GPS times for data fetching.
             t_start = int(gps - 2.0)
             t_end = int(gps + 2.0)
             
