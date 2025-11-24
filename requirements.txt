@@ -1,21 +1,10 @@
-# === Data Science & Mathe Kern ===
-numpy
-pandas
-scipy
-
-# === Machine Learning ===
-tensorflow
-scikit-learn
-
-# === Visualisierung ===
-matplotlib
-
-# === Gravitationswellen-Physik ===
-# Benötigt für gwpy.timeseries (Daten von LIGO laden)
-gwpy 
-# Benötigt für gwd_core/waveforms.py (Profi-Wellenformen)
-pycbc
-
-# === Utilities ===
-# Benötigt für show_leaderboard.py (pandas .to_markdown())
-tabulate
+# Python 3.12 kompatible Requirements
+numpy>=1.26.0,<2.0.0
+pandas>=2.0.0
+scipy>=1.11.0
+tensorflow>=2.16.0
+scikit-learn>=1.3.0
+matplotlib>=3.7.0
+gwpy>=3.0.0
+pycbc>=2.3.0
+tabulate>=0.9.0
