@@ -46,3 +46,11 @@ models/
 
 # Sound
 *.wav
+
+#Plots
+*.png
+
+#CUDA
+plots/
+*.deb
+*.deb.1

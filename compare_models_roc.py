@@ -7,7 +7,10 @@ Nützlich um zu sehen, welches Modell threshold-unabhängig besser ist.
 import os
 import sys
 import glob
+import datetime
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from sklearn.metrics import roc_curve, auc
@@ -19,6 +22,7 @@ from gwd_core.noise import generate_gaussian_noise
 MODELS_DIR = "models_registry"
 FS = 4096
 DURATION = 4.0
+TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
 def load_all_models():
     """Lädt alle verfügbaren Modelle."""
@@ -128,7 +132,9 @@ def compare_models_roc(models, X_test, y_true):
                 va='center', ha='right', fontweight='bold', color='white')
     
     plt.tight_layout()
-    plt.show()
+    plt.savefig(f'plot_compare_roc_{TIMESTAMP}.png', dpi=150)
+    print(f'📊 Plot: plot_compare_roc_{TIMESTAMP}.png')
+    plt.close()
     
     return auc_scores_sorted
 
@@ -163,7 +169,9 @@ def zoom_to_relevant_region(models, X_test, y_true):
     ax.set_ylim(0, 1)
     
     plt.tight_layout()
-    plt.show()
+    plt.savefig(f'plot_compare_roc_{TIMESTAMP}.png', dpi=150)
+    print(f'📊 Plot: plot_compare_roc_{TIMESTAMP}.png')
+    plt.close()
 
 def main():
     print("="*70)

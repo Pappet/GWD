@@ -6,6 +6,8 @@ import datetime
 import json
 import numpy as np
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from sklearn.metrics import (
@@ -29,6 +31,7 @@ from gwd_core.noise import generate_gaussian_noise
 MODELS_DIR = "models_registry"
 LEADERBOARD_FILE = "model_leaderboard.csv"
 BASELINE_FILE = os.path.join(MODELS_DIR, "physics_baseline.json")
+TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
 # Parameter für die Tests
 FS = 4096
@@ -267,7 +270,9 @@ def evaluate_simulation_with_roc(model):
              bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
     
     plt.suptitle('Comprehensive Model Evaluation', fontsize=16, fontweight='bold')
-    plt.show()
+    plt.savefig(f'plots/plot_evaluate_model_with_roc_{TIMESTAMP}.png', dpi=150)
+    print(f'📊 Plot: plots/plot_evaluate_model_with_roc_{TIMESTAMP}.png')
+    plt.close()
     
     return {
         'acc': acc,

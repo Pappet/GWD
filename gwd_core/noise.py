@@ -1,28 +1,47 @@
 # Datei: GWD/gwd_core/noise.py
+"""
+Rausch-Generierung für Gravitationswellen-Detektor Simulationen.
+
+Dieses Modul stellt Funktionen bereit, um verschiedene Arten von Rauschen
+zu generieren, die in LIGO-ähnlichen Detektoren auftreten.
+"""
+
 import numpy as np
+
 
 def generate_gaussian_noise(length, noise_level=1.0):
     """
     Erzeugt einfaches gaußsches (weißes) Rauschen.
+    
+    Weißes Rauschen hat eine flache Power Spectral Density über alle
+    Frequenzen und wird oft als Basis für komplexere Rauschmodelle verwendet.
     
     Args:
         length: Anzahl der Datenpunkte
         noise_level: Standardabweichung (Amplitude des Rauschens)
     
     Returns:
-        Array mit Rauschwerten
+        np.array: Array mit Rauschwerten
     """
     return np.random.normal(loc=0.0, scale=noise_level, size=length)
+
 
 def generate_colored_noise(length, sample_rate, noise_level=1.0):
     """
     Erzeugt realistischeres, farbiges Rauschen (z.B. seismisch dominiert).
-    Simuliert ein 1/f Verhalten bei tiefen Frequenzen basierend auf weißem Rauschen.
+    
+    Simuliert ein 1/f Verhalten bei tiefen Frequenzen, wie es in echten
+    LIGO-Detektoren durch seismische Störungen auftritt. Bei höheren
+    Frequenzen dominieren andere Rauschquellen (Schrotrauschen, thermisches
+    Rauschen).
     
     Args:
         length: Anzahl der Datenpunkte
         sample_rate: Abtastrate in Hz (wichtig für Frequenzanalyse)
         noise_level: Basis-Amplitude des Rauschens
+    
+    Returns:
+        np.array: Array mit farbigem Rauschen
     """
     # 1. Weißes Rauschen als Basis erzeugen
     white_noise = generate_gaussian_noise(length, noise_level)
@@ -33,7 +52,7 @@ def generate_colored_noise(length, sample_rate, noise_level=1.0):
     
     # 3. Spektrale Gewichtung anwenden (Seismisches Rauschen simulieren)
     # Wir verstärken tiefe Frequenzen: Faktor ~ sqrt(1/f)
-    mask = np.abs(freqs) > 0 # Division durch Null bei 0 Hz verhindern
+    mask = np.abs(freqs) > 0  # Division durch Null bei 0 Hz verhindern
     
     # Der Faktor 10 ist empirisch gewählt, um die Charakteristik sichtbar zu machen
     scaling_factor = (10 / np.abs(freqs[mask]))**0.5

@@ -1,7 +1,6 @@
 import os
 import numpy as np
 from gwpy.timeseries import TimeSeries
-import sys
 
 # Output Ordner für das echte Rauschen
 OUTPUT_DIR = "gw_noise_background"
@@ -10,9 +9,13 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # Ein Zeitraum im O3b Run, wo definitiv keine Events waren
 # GPS 1262304018 = Jan 2020
 START_GPS = 1262304018
-DURATION = 2048  # Wir laden ca. 34 Minuten Daten
+DURATION = 4096  # Wir laden ca. 68 Minuten Daten
 
 def fetch_and_slice():
+    """
+    Lädt echte LIGO-Daten aus einem ruhigen Zeitraum und schneidet sie
+    in 4-Sekunden-Schnipsel für das Training.
+    """
     print(f"🌊 Lade {DURATION} Sekunden echtes LIGO-Rauschen (H1)...")
     
     try:
@@ -20,7 +23,7 @@ def fetch_and_slice():
         strain = TimeSeries.fetch_open_data('H1', START_GPS, START_GPS + DURATION, verbose=True)
         
         # 2. Preprocessing (EXAKT wie im Training/App!)
-        # Resample auf 4096
+        # Resample auf 4096 Hz
         if strain.sample_rate.value != 4096:
             strain = strain.resample(4096)
             

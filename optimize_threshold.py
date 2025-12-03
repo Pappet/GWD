@@ -12,6 +12,9 @@ Verschiedene Optimierungs-Strategien:
 import os
 import sys
 import numpy as np
+import matplotlib
+import datetime
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from sklearn.metrics import roc_curve, f1_score, precision_recall_curve
@@ -22,6 +25,7 @@ from gwd_core.noise import generate_gaussian_noise
 
 FS = 4096
 DURATION = 4.0
+TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
 def get_latest_model():
     """Lädt das neueste Modell."""
@@ -224,7 +228,9 @@ def visualize_thresholds(y_true, y_scores, optimal_thresholds, roc_data):
             bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.3))
     
     plt.suptitle('Threshold Optimization Analysis', fontsize=16, fontweight='bold')
-    plt.show()
+    plt.savefig(f'plot_optimize_threshold_{TIMESTAMP}.png', dpi=150)
+    print(f'📊 Plot: plot_optimize_threshold_{TIMESTAMP}.png')
+    plt.close()
 
 def recommend_threshold(optimal_thresholds):
     """Gibt eine Empfehlung basierend auf typischen GW-Anwendungen."""
