@@ -60,9 +60,17 @@ def load_data():
             file_path = os.path.join(DATA_FOLDER, row['filename'])
             data = np.load(file_path)
             
-            # Robustere Normalisierung: Standardisierung (Mean=0, Std=1)
+            # Robustere Normalisierung
+            # WICHTIG: Addiere kleines Epsilon auch im Zähler, falls std sehr klein ist (selten)
             data = (data - np.mean(data)) / (np.std(data) + 1e-10)
             
+            # Sicherstellen, dass die Länge stimmt (Clip/Pad)
+            TARGET_LEN = 16384 # 4s * 4096Hz
+            if len(data) > TARGET_LEN:
+                data = data[:TARGET_LEN]
+            elif len(data) < TARGET_LEN:
+                data = np.pad(data, (0, TARGET_LEN - len(data)))
+                
             signals.append(data)
             labels.append(row['has_signal'])
         except Exception as e:

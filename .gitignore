@@ -29,11 +29,7 @@ env/
 *.parquet
 
 # Ordner für Daten (falls du einen hast)
-data/
-datasets/
-models_registry/
-gw_training_data/
-gw_noise_background/
+*.json
 
 # --- Model Checkpoints / Gewichte ---
 # Diese sind oft zu groß für normales Git (über 100MB)
@@ -51,6 +47,5 @@ models/
 *.png
 
 #CUDA
-plots/
 *.deb
 *.deb.1
