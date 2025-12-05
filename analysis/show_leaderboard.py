@@ -1,7 +1,11 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from config import LEADERBOARD_FILE
+
 import pandas as pd
 
-df = pd.read_csv("model_leaderboard.csv")
-
+df = pd.read_csv(LEADERBOARD_FILE)
 # 1. Create a temporary numeric column for sorting
 # 'errors="coerce"' turns "-" into NaN (Not a Number)
 df["sort_val"] = pd.to_numeric(df["Sim_SNR50"], errors="coerce")

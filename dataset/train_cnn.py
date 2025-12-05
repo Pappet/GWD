@@ -1,4 +1,17 @@
+import sys
 import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from config import DATA_DIR_TRAIN, MODELS_DIR, TRAINING_PLOTS_DIR, LABELS_FILE
+
+# --- 1. LOGGING BEREINIGEN (Muss vor dem TensorFlow Import stehen!) ---
+# 0 = Alle Nachrichten (Standard)
+# 1 = Info filtern
+# 2 = Warnungen filtern (Das wollen wir)
+# 3 = Fehler filtern
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+# oneDNN Optimierungen "leise" schalten oder deaktivieren
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+
 import json
 import datetime
 import numpy as np
@@ -16,18 +29,12 @@ tf.keras.mixed_precision.set_global_policy('mixed_float16')
 # ==========================================
 # KONFIGURATION & VERSIONIERUNG
 # ==========================================
-DATA_FOLDER = "gw_training_data"
-LABEL_FILE = "labels.csv"
+DATA_FOLDER = DATA_DIR_TRAIN
+LABEL_FILE = LABELS_FILE
 
 # Wir erstellen einen Zeitstempel für dieses Experiment
 TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 MODEL_NAME = f"gwd_model_{TIMESTAMP}"
-
-# Alle Modelle kommen in einen eigenen Ordner, damit es ordentlich bleibt
-MODELS_DIR = "models_registry"
-PLOTS_DIR = "plots"
-os.makedirs(MODELS_DIR, exist_ok=True)
-os.makedirs(PLOTS_DIR, exist_ok=True)
 
 # Pfade für Modell und Config
 MODEL_SAVE_PATH = os.path.join(MODELS_DIR, f"{MODEL_NAME}.keras")
@@ -105,8 +112,12 @@ def build_model(input_shape):
         Kompiliertes Keras Model
     """
     model = models.Sequential([
+        # --- INPUT LAYER MODERNISIEREN ---
+        # Statt input_shape=... im Conv1D, nutzen wir einen expliziten Input-Layer
+        layers.Input(shape=input_shape),
+
         # Block 1
-        layers.Conv1D(filters=16, kernel_size=32, padding='same', input_shape=input_shape),
+        layers.Conv1D(filters=16, kernel_size=32, padding='same'),
         layers.BatchNormalization(),
         layers.Activation('relu'),
         layers.MaxPooling1D(pool_size=4),
@@ -221,7 +232,7 @@ def plot_history(history):
     plt.grid(True, alpha=0.3)
 
     plt.tight_layout()
-    plot_path = os.path.join(PLOTS_DIR, f'training_history_{TIMESTAMP}.png')
+    plot_path = os.path.join(TRAINING_PLOTS_DIR, f'training_history_{TIMESTAMP}.png')
     plt.savefig(plot_path, dpi=150)
     plt.close()
     print(f"📊 Training-Plot gespeichert: {plot_path}")

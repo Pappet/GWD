@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-import os
 import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from config import MODELS_DIR, LEADERBOARD_FILE, EVALUATION_MODELS_PLOTS_DIR
+
 import glob
 import datetime
 import json
@@ -28,15 +31,13 @@ from gwd_core.noise import generate_gaussian_noise
 # ==========================================
 # KONFIGURATION
 # ==========================================
-MODELS_DIR = "models_registry"
-LEADERBOARD_FILE = "model_leaderboard.csv"
 BASELINE_FILE = os.path.join(MODELS_DIR, "physics_baseline.json")
 TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
 # Parameter für die Tests
 FS = 4096
 DURATION = 4.0
-THRESHOLD = 0.75  # Nur für Vergleich, ROC ist threshold-unabhängig
+THRESHOLD = 0.15  # Nur für Vergleich, ROC ist threshold-unabhängig
 
 # Echte Events für den "Feld-Test"
 REAL_EVENTS = {
@@ -270,8 +271,8 @@ def evaluate_simulation_with_roc(model):
              bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
     
     plt.suptitle('Comprehensive Model Evaluation', fontsize=16, fontweight='bold')
-    plt.savefig(f'plots/plot_evaluate_model_with_roc_{TIMESTAMP}.png', dpi=150)
-    print(f'📊 Plot: plots/plot_evaluate_model_with_roc_{TIMESTAMP}.png')
+    plt.savefig(os.path.join(EVALUATION_MODELS_PLOTS_DIR, f'plot_evaluate_model_with_roc_{TIMESTAMP}.png'), dpi=150)
+    print(f'📊 Plot: {os.path.join(EVALUATION_MODELS_PLOTS_DIR, f"plot_evaluate_model_with_roc_{TIMESTAMP}.png")}')
     plt.close()
     
     return {

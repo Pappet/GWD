@@ -7,8 +7,11 @@ umfassende Visualisierungen zur Analyse.
 Usage:
     python validate_dataset.py [--data-folder gw_training_data]
 """
-
+import sys
 import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from config import DATA_DIR_TRAIN, VALIDATION_DATASET_PLOTS_DIR
+
 import argparse
 import numpy as np
 import pandas as pd
@@ -147,7 +150,7 @@ def validate_samples(df, data_folder, num_check=10):
         print(f"   ✅ Alle überprüften Samples sind OK!")
 
 
-def create_visualizations(df, data_folder, output_folder="validation_plots"):
+def create_visualizations(df, data_folder, output_folder=VALIDATION_DATASET_PLOTS_DIR):
     """Erstellt umfassende Visualisierungen des Datensatzes."""
     
     os.makedirs(output_folder, exist_ok=True)
@@ -393,9 +396,9 @@ def create_visualizations(df, data_folder, output_folder="validation_plots"):
 
 def main():
     parser = argparse.ArgumentParser(description='Validiere Gravitationswellen Trainingsdatensatz')
-    parser.add_argument('--data-folder', type=str, default='gw_training_data',
+    parser.add_argument('--data-folder', type=str, default=DATA_DIR_TRAIN,
                        help='Pfad zum Datensatz-Ordner')
-    parser.add_argument('--output-folder', type=str, default='validation_plots',
+    parser.add_argument('--output-folder', type=str, default=VALIDATION_DATASET_PLOTS_DIR,
                        help='Pfad für die Ausgabe-Plots')
     parser.add_argument('--no-plots', action='store_true',
                        help='Nur Statistiken, keine Plots erstellen')

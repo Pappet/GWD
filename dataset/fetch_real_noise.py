@@ -1,9 +1,15 @@
+import sys
 import os
+
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from config import DATA_DIR_NOISE
+
 import numpy as np
 from gwpy.timeseries import TimeSeries
 
 # Output Ordner für das echte Rauschen
-OUTPUT_DIR = "gw_noise_background"
+OUTPUT_DIR = DATA_DIR_NOISE
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # Ein Zeitraum im O3b Run, wo definitiv keine Events waren

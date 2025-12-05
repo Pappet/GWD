@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-import os
 import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from config import MODELS_DIR
+
 import glob 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -36,19 +39,16 @@ O3_END = 1253923218
 class GlitchHunterApp:
     def __init__(self):
         print(">>> Lade Gehirn (Neuronales Netz)...")
-        
-        # --- NEU: Intelligente Modell-Suche ---
-        models_dir = "models_registry"
-        
-        if not os.path.exists(models_dir):
-            print(f"FEHLER: Ordner '{models_dir}' nicht gefunden.")
+                
+        if not os.path.exists(MODELS_DIR):
+            print(f"FEHLER: Ordner '{MODELS_DIR}' nicht gefunden.")
             print("   Bitte führe zuerst 'python dataset/train_cnn.py' aus, um ein Modell zu trainieren.")
             sys.exit(1)
             
         # Suche alle .keras Dateien
-        files = glob.glob(os.path.join(models_dir, "*.keras"))
+        files = glob.glob(os.path.join(MODELS_DIR, "*.keras"))
         if not files:
-            print(f"FEHLER: Keine Modelle (.keras) in '{models_dir}' gefunden.")
+            print(f"FEHLER: Keine Modelle (.keras) in '{MODELS_DIR}' gefunden.")
             sys.exit(1)
             
         # Wähle die neueste Datei basierend auf dem Erstellungsdatum (ctime)

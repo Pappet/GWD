@@ -1,12 +1,14 @@
-import pandas as pd
-import os
-import numpy as np
 import sys
-import glob
-import random
+import os
 
 # Import-Pfad anpassen
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from config import DATA_DIR_TRAIN, DATA_DIR_NOISE, SAMPLES_FOR_TRAINING
+
+import pandas as pd
+import numpy as np
+import glob
+import random
 
 from gwd_core.waveforms import (
     generate_astrophysical_chirp, 
@@ -15,7 +17,7 @@ from gwd_core.waveforms import (
 )
 from gwd_core.noise import generate_gaussian_noise
 
-REAL_NOISE_DIR = "gw_noise_background"
+REAL_NOISE_DIR = DATA_DIR_NOISE
 
 def scale_signal_to_snr(signal, noise, target_snr):
     """
@@ -63,7 +65,7 @@ def load_random_real_noise(length):
     except:
         return generate_gaussian_noise(length, 1.0)
 
-def generate_dataset(num_samples=10000, output_folder="gw_training_data"):
+def generate_dataset(num_samples=SAMPLES_FOR_TRAINING, output_folder=DATA_DIR_TRAIN):
     print(f"🚀 Starte Daten-Generierung (Peak-SNR Methode). Ziel: {num_samples}")
     
     os.makedirs(output_folder, exist_ok=True)

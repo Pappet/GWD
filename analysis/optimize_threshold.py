@@ -8,9 +8,11 @@ Verschiedene Optimierungs-Strategien:
 3. Cost-based: Gewichtet Fehlertypen unterschiedlich
 4. Fixed FPR: Maximiert TPR bei gegebenem FPR-Limit
 """
-
-import os
 import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from config import MODELS_DIR, EVALUATION_MODELS_PLOTS_DIR, OPTIMAL_THRESHOLDS_FILE
+
 import numpy as np
 import matplotlib
 import datetime
@@ -29,13 +31,12 @@ TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
 def get_latest_model():
     """Lädt das neueste Modell."""
-    models_dir = "models_registry"
     import glob
     
-    if not os.path.exists(models_dir):
+    if not os.path.exists(MODELS_DIR):
         return None
     
-    files = glob.glob(os.path.join(models_dir, "*.keras"))
+    files = glob.glob(os.path.join(MODELS_DIR, "*.keras"))
     if not files:
         return None
         
@@ -228,8 +229,8 @@ def visualize_thresholds(y_true, y_scores, optimal_thresholds, roc_data):
             bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.3))
     
     plt.suptitle('Threshold Optimization Analysis', fontsize=16, fontweight='bold')
-    plt.savefig(f'plot_optimize_threshold_{TIMESTAMP}.png', dpi=150)
-    print(f'📊 Plot: plot_optimize_threshold_{TIMESTAMP}.png')
+    plt.savefig(os.path.join(EVALUATION_MODELS_PLOTS_DIR, f'plot_optimize_threshold_{TIMESTAMP}.png'), dpi=150)
+    print(f'📊 Plot: {os.path.join(EVALUATION_MODELS_PLOTS_DIR, f"plot_optimize_threshold_{TIMESTAMP}.png")}')
     plt.close()
 
 def recommend_threshold(optimal_thresholds):
@@ -326,9 +327,9 @@ def main():
                                    for k, v in optimal_thresholds.items()}
         }
         
-        with open('optimal_thresholds.json', 'w') as f:
+        with open(OPTIMAL_THRESHOLDS_FILE, 'w') as f:
             json.dump(output, f, indent=2)
-        print("✓ Gespeichert in optimal_thresholds.json")
+        print(f"✓ Gespeichert in {OPTIMAL_THRESHOLDS_FILE}")
 
 if __name__ == "__main__":
     main()

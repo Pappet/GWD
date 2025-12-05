@@ -3,9 +3,11 @@
 ROC Comparison Tool - Vergleicht mehrere Modelle in einer ROC-Kurve
 Nützlich um zu sehen, welches Modell threshold-unabhängig besser ist.
 """
-
-import os
 import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from config import MODELS_DIR, EVALUATION_MODELS_PLOTS_DIR
+    
 import glob
 import datetime
 import numpy as np
@@ -19,7 +21,6 @@ sys.path.append(os.path.dirname(__file__))
 from gwd_core.waveforms import generate_astrophysical_chirp
 from gwd_core.noise import generate_gaussian_noise
 
-MODELS_DIR = "models_registry"
 FS = 4096
 DURATION = 4.0
 TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -132,8 +133,8 @@ def compare_models_roc(models, X_test, y_true):
                 va='center', ha='right', fontweight='bold', color='white')
     
     plt.tight_layout()
-    plt.savefig(f'plot_compare_roc_{TIMESTAMP}.png', dpi=150)
-    print(f'📊 Plot: plot_compare_roc_{TIMESTAMP}.png')
+    plt.savefig(os.path.join(EVALUATION_MODELS_PLOTS_DIR, f'plot_compare_roc_{TIMESTAMP}.png'), dpi=150)
+    print(f'📊 Plot: {os.path.join(EVALUATION_MODELS_PLOTS_DIR, f"plot_compare_roc_{TIMESTAMP}.png")}')
     plt.close()
     
     return auc_scores_sorted
@@ -169,8 +170,8 @@ def zoom_to_relevant_region(models, X_test, y_true):
     ax.set_ylim(0, 1)
     
     plt.tight_layout()
-    plt.savefig(f'plot_compare_roc_{TIMESTAMP}.png', dpi=150)
-    print(f'📊 Plot: plot_compare_roc_{TIMESTAMP}.png')
+    plt.savefig(os.path.join(EVALUATION_MODELS_PLOTS_DIR, f'plot_compare_roc_{TIMESTAMP}.png'), dpi=150)
+    print(f'📊 Plot: {os.path.join(EVALUATION_MODELS_PLOTS_DIR, f"plot_compare_roc_{TIMESTAMP}.png")}')
     plt.close()
 
 def main():
