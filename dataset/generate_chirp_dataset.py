@@ -42,32 +42,36 @@ def calculate_snr(signal, noise):
     return snr
 
 
-def calculate_snr_whitened(signal, noise, psd=None):
+def scale_signal_to_snr(signal, noise, target_snr):
     """
-    Berechnet SNR mit Frequency-Domain Whitening (wie LIGO es macht).
+    Skaliert ein Signal, um einen bestimmten SNR zu erreichen.
+    
+    Diese Funktion ist KRITISCH für die korrekte SNR-Kontrolle!
     
     Args:
-        signal: Das reine Signal
+        signal: Das reine Signal (normalisiert oder nicht)
         noise: Das Rauschen
-        psd: Power Spectral Density (optional, sonst aus noise geschätzt)
+        target_snr: Gewünschter SNR-Wert
     
     Returns:
-        float: Der optimal gefilterte SNR
+        tuple: (skaliertes_signal, tatsächlicher_snr)
     """
-    # Fourier Transform
-    signal_fft = np.fft.rfft(signal)
-    noise_fft = np.fft.rfft(noise)
+    # Berechne aktuellen SNR
+    current_snr = calculate_snr(signal, noise)
     
-    # PSD schätzen (oder vorgeben)
-    if psd is None:
-        psd = np.abs(noise_fft)**2
-        psd[psd == 0] = 1e-40  # Verhindere Division durch 0
+    if current_snr == 0:
+        return signal, 0.0
     
-    # Matched Filter SNR (optimal)
-    snr_squared = np.sum(np.abs(signal_fft)**2 / psd)
-    snr = np.sqrt(snr_squared.real)
+    # Berechne Skalierungsfaktor
+    scale_factor = target_snr / current_snr
     
-    return snr
+    # Skaliere Signal
+    scaled_signal = signal * scale_factor
+    
+    # Verifiziere finalen SNR
+    final_snr = calculate_snr(scaled_signal, noise)
+    
+    return scaled_signal, final_snr
 
 
 def load_random_real_noise(length):
@@ -99,7 +103,7 @@ def load_random_real_noise(length):
         return generate_gaussian_noise(length, 1.0)
 
 
-def generate_dataset(num_samples=20000, output_folder="gw_training_data"):
+def generate_dataset(num_samples=10000, output_folder="gw_training_data"):
     """
     Generiert einen diversen Trainingsdatensatz mit verschiedenen Szenarien:
     - 40% nur Rauschen
@@ -107,12 +111,13 @@ def generate_dataset(num_samples=20000, output_folder="gw_training_data"):
     - 20% Simuliertes Rauschen mit/ohne Signal
     
     WICHTIG: SNR-Bereiche sind jetzt realistisch (5-25) für besseres Training!
+    Die SNR-Skalierung ist jetzt KORREKT implementiert.
     
     Args:
         num_samples: Anzahl zu generierender Samples
         output_folder: Zielordner für die Daten
     """
-    print(f"🚀 Starte INTELLIGENTE Daten-Fabrik (Diverse Physik + Realistischer SNR). Ziel: {num_samples}")
+    print(f"🚀 Starte INTELLIGENTE Daten-Fabrik (Diverse Physik + KORREKTER SNR). Ziel: {num_samples}")
     
     os.makedirs(output_folder, exist_ok=True)
     
@@ -122,6 +127,9 @@ def generate_dataset(num_samples=20000, output_folder="gw_training_data"):
     labels = []
     
     has_real_noise = len(glob.glob(os.path.join(REAL_NOISE_DIR, "*.npy"))) > 0
+    
+    # Zähler für Debugging
+    snr_too_low_count = 0
     
     for i in range(num_samples):
         # Default-Werte für Metadaten
@@ -151,7 +159,7 @@ def generate_dataset(num_samples=20000, output_folder="gw_training_data"):
             dist = params['distance']
             t_merger = np.random.uniform(duration * 0.4, duration * 0.95)
             
-            # Signal generieren (nutzt PyCBC wenn verfügbar)
+            # Signal generieren (nutzt PyCBC wenn verfügbar, sonst Newton)
             signal_raw, _ = generate_realistic_chirp(
                 time, 
                 mass1=m1,
@@ -162,25 +170,20 @@ def generate_dataset(num_samples=20000, output_folder="gw_training_data"):
                 inclination=params['inclination']
             )
             
-            # ⭐ NEU: Signal auf realistischen SNR skalieren (5-25)
-            # LIGO detektiert typischerweise Events mit SNR 8-50
-            # Für Training: 5-25 ist ein guter Bereich (nicht zu leicht, nicht unmöglich)
+            # ⭐ KORRIGIERTE SNR-SKALIERUNG
+            # Ziel-SNR zwischen 5 und 25 (realistisch für LIGO)
             target_snr = np.random.uniform(5, 25)
             
-            # Normalisiere Signal auf Amplitude 1.0
-            if np.max(np.abs(signal_raw)) > 0:
-                signal_normalized = signal_raw / np.max(np.abs(signal_raw))
-            else:
-                signal_normalized = signal_raw
+            # Nutze die neue scale_signal_to_snr Funktion
+            signal_scaled, actual_snr = scale_signal_to_snr(signal_raw, noise, target_snr)
             
-            # Skaliere auf gewünschten SNR
-            signal_scaled = signal_normalized * target_snr
+            # Tracking für zu niedrige SNRs
+            if actual_snr < 5:
+                snr_too_low_count += 1
             
             # Beobachtete Daten = Signal + Rauschen
             data = noise + signal_scaled
-            
-            # SNR neu berechnen zur Verifikation
-            snr = calculate_snr(signal_scaled, noise)
+            snr = actual_snr
             has_signal = 1
             
         # --- SZENARIO 3: Simulation/Fallback (20%) ---
@@ -203,14 +206,15 @@ def generate_dataset(num_samples=20000, output_folder="gw_training_data"):
                     normalize=True
                 )
                 
-                # ⭐ NEU: Realistischer SNR-Bereich (5-25)
+                # ⭐ KORRIGIERTE SNR-SKALIERUNG
                 target_snr = np.random.uniform(5, 25)
+                signal_scaled, actual_snr = scale_signal_to_snr(signal_raw, noise, target_snr)
                 
-                # Signal skalieren, um gewünschten SNR zu erreichen
-                signal_scaled = signal_raw * target_snr
-                snr = calculate_snr(signal_scaled, noise)
+                if actual_snr < 5:
+                    snr_too_low_count += 1
                 
                 data = noise + signal_scaled
+                snr = actual_snr
                 has_signal = 1
             else:
                 # Nur Rauschen
@@ -233,8 +237,10 @@ def generate_dataset(num_samples=20000, output_folder="gw_training_data"):
             "distance": float(dist)
         })
         
-        if i % 500 == 0:
-            print(f"   ... {i}/{num_samples} (Letztes Event: M1={m1:.1f}, M2={m2:.1f}, Dist={dist:.0f}, SNR={snr:.2f})")
+        if i % 500 == 0 and has_signal == 1:
+            print(f"   ... {i}/{num_samples} | Signal: M1={m1:.1f}☉, M2={m2:.1f}☉, D={dist:.0f}Mpc, SNR={snr:.2f}")
+        elif i % 500 == 0:
+            print(f"   ... {i}/{num_samples} | Nur Rauschen")
 
     # Labels als CSV speichern
     df = pd.DataFrame(labels)
@@ -246,12 +252,35 @@ def generate_dataset(num_samples=20000, output_folder="gw_training_data"):
     print(f"   - Gesamt: {len(df)} Samples")
     print(f"   - Mit Signal: {len(signal_samples)} ({len(signal_samples)/len(df)*100:.1f}%)")
     print(f"   - Nur Rauschen: {len(df) - len(signal_samples)} ({(len(df)-len(signal_samples))/len(df)*100:.1f}%)")
+    
     if len(signal_samples) > 0:
         print(f"\n   📊 SNR Statistik (Signal-Samples):")
-        print(f"      - Bereich: {signal_samples['snr'].min():.2f} - {signal_samples['snr'].max():.2f}")
+        print(f"      - Minimum: {signal_samples['snr'].min():.2f}")
+        print(f"      - Maximum: {signal_samples['snr'].max():.2f}")
         print(f"      - Durchschnitt: {signal_samples['snr'].mean():.2f}")
         print(f"      - Median: {signal_samples['snr'].median():.2f}")
-        print(f"      - Samples mit SNR > 8: {(signal_samples['snr'] > 8).sum()} ({(signal_samples['snr'] > 8).sum()/len(signal_samples)*100:.1f}%)")
+        print(f"      - Standardabweichung: {signal_samples['snr'].std():.2f}")
+        print(f"\n      SNR Kategorien:")
+        print(f"      - SNR < 5:    {(signal_samples['snr'] < 5).sum():>5} ({(signal_samples['snr'] < 5).sum()/len(signal_samples)*100:>5.1f}%)")
+        print(f"      - SNR 5-10:   {((signal_samples['snr'] >= 5) & (signal_samples['snr'] < 10)).sum():>5} ({((signal_samples['snr'] >= 5) & (signal_samples['snr'] < 10)).sum()/len(signal_samples)*100:>5.1f}%)")
+        print(f"      - SNR 10-15:  {((signal_samples['snr'] >= 10) & (signal_samples['snr'] < 15)).sum():>5} ({((signal_samples['snr'] >= 10) & (signal_samples['snr'] < 15)).sum()/len(signal_samples)*100:>5.1f}%)")
+        print(f"      - SNR 15-20:  {((signal_samples['snr'] >= 15) & (signal_samples['snr'] < 20)).sum():>5} ({((signal_samples['snr'] >= 15) & (signal_samples['snr'] < 20)).sum()/len(signal_samples)*100:>5.1f}%)")
+        print(f"      - SNR > 20:   {(signal_samples['snr'] >= 20).sum():>5} ({(signal_samples['snr'] >= 20).sum()/len(signal_samples)*100:>5.1f}%)")
+        print(f"      - SNR > 8:    {(signal_samples['snr'] > 8).sum():>5} ({(signal_samples['snr'] > 8).sum()/len(signal_samples)*100:>5.1f}%)")
+        
+        # Qualitäts-Check
+        if signal_samples['snr'].median() >= 12:
+            print(f"\n      ✅ EXCELLENT: Median SNR = {signal_samples['snr'].median():.2f} - Optimal für Training!")
+        elif signal_samples['snr'].median() >= 8:
+            print(f"\n      ✅ GUT: Median SNR = {signal_samples['snr'].median():.2f} - Gut für Training")
+        elif signal_samples['snr'].median() >= 5:
+            print(f"\n      ⚠️  OK: Median SNR = {signal_samples['snr'].median():.2f} - Akzeptabel")
+        else:
+            print(f"\n      ❌ PROBLEM: Median SNR = {signal_samples['snr'].median():.2f} - Zu niedrig!")
+        
+        if snr_too_low_count > 0:
+            print(f"\n      ⚠️  Warnung: {snr_too_low_count} Signale hatten SNR < 5 nach Skalierung")
+            print(f"         (Das kann bei sehr schwachen Wellenformen passieren)")
 
 if __name__ == "__main__":
     generate_dataset()
