@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Python 3.12 kompatible Requirements
 numpy>=1.26.0,<2.0.0
 pandas>=2.0.0
@@ -8,3 +9,27 @@ matplotlib>=3.7.0
 gwpy>=3.0.0
 pycbc>=2.3.0
 tabulate>=0.9.0
+=======
+# === Data Science & Mathe Kern ===
+numpy==2.2.6
+pandas==2.3.3
+scipy==1.16.3
+
+# === Machine Learning ===
+tensorflow==2.20.0
+scikit-learn==1.7.2
+
+# === Visualisierung ===
+matplotlib==3.10.7
+
+# === Gravitationswellen-Physik ===
+# Benötigt für gwpy.timeseries (Daten von LIGO laden)
+gwpy==3.0.13
+# Benötigt für gwd_core/waveforms.py (Profi-Wellenformen)
+pycbc==2.4.0
+
+# === Utilities ===
+# Benötigt für show_leaderboard.py (pandas .to_markdown())
+tabulate==0.9.0
+pytest==8.3.4
+>>>>>>> 5fdd4e6 (refactor: restructure project by moving all source code into a new `src/` directory and updating documentation to reflect the new layout.)
