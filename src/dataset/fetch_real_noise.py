@@ -1,8 +1,8 @@
 import sys
 import os
 
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))   # src/
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))  # project root
 from config import DATA_DIR_NOISE
 
 import numpy as np

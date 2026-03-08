@@ -2,7 +2,8 @@ import sys
 import os
 
 # Import-Pfad anpassen
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))   # src/
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))  # project root
 from config import DATA_DIR_TRAIN, DATA_DIR_NOISE, SAMPLES_FOR_TRAINING
 
 import pandas as pd
