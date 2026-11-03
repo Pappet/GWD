@@ -16,6 +16,7 @@
 6. [Schritte im Detail](#6-schritte-im-detail)
 7. [Risiken und Gegenmittel](#7-risiken-und-gegenmittel)
 8. [Bewusst weggelassen](#8-bewusst-weggelassen)
+9. [Umsetzung mit mehreren Agenten](#9-umsetzung-mit-mehreren-agenten)
 
 ---
 
@@ -341,6 +342,16 @@ Defaults sind additiv, erhalten den Status quo oder entfernen nachweislich Ungü
 ---
 
 ## 5. Entscheidungen für den Besitzer
+
+### Stand der Antworten (03.11.2026)
+
+| | Antwort | Wirkung |
+|---|---|---|
+| **D7** | **B**: Python ≥ 3.11, CI auf 3.12, plus Lockfile | P7.3 ist nicht mehr blockiert und kann direkt nach P2.2 laufen |
+| **D8** | **A**: ein Paket `gwd` | wie geplant |
+| **D11** | **B: alles Englisch**: Bezeichner, Spalten, Kommentare, Konsolenausgaben, Doku (README, `docs/architecture.md`, `docs/evaluation.md`, AGENTS.md) | Neue Dateien sind ab sofort englisch, bestehende werden beim Anfassen übersetzt (kein Big-Bang). Gilt auch für Commit-Messages und PR-Texte. Dieser Arbeitsordner bleibt deutsch und entfällt in P7.4. |
+| **D12** | offen, Rückfrage läuft | P7.2 bleibt geparkt |
+| **F3** | Verlauf der Rechner: Linux-Laptop → Windows-PC mit RTX 3060 (WSL, `b113e2b`) → jetzt Laptop mit Ryzen AI 9 HX 370. Offen: Betriebssystem auf dem neuen Laptop. | Spricht für D1 = A (PyCBC Pflicht, Windows nur über WSL) |
 
 Für P0 und P1 braucht es keine Antwort. Ideal ist eine Antwort auf **D7 und D8 vor P2.1**. Bleibt eine Frage offen, gilt der genannte Default: Er ist additiv, erhält den Status quo oder entfernt nachweislich Ungültiges.
 
@@ -1796,7 +1807,7 @@ Die Regel 'nur per Pull Request' wird zu 'CI muss grün sein'.
 
 `git mv docs/ROC_ANALYSIS_README.md docs/evaluation.md`, die erhaltenswerten Teile von ROC_INTEGRATION_OVERVIEW.md einarbeiten, dann git rm. docs/evaluation.md enthält Metriken, Plots, Strategien, den Schwellen-Workflow, das Leaderboard-Schema und den Baseline-Status nach D5, ohne unbelegte LIGO-Zahlen.
 
-AGENTS.md bekommt die Sprachregel (Bezeichner und Spalten Englisch; Doku, Kommentare und Ausgaben Deutsch). Sie wird nur beim Anfassen von Dateien umgesetzt; CLI-Hilfetexte und Menü folgen ihr.
+AGENTS.md bekommt die Sprachregel (D11 = B: alles Englisch, also Bezeichner, Spalten, Kommentare, Ausgaben und Doku). Sie wird nur beim Anfassen von Dateien umgesetzt; CLI-Hilfetexte und Menü folgen ihr.
 
 Neu ist tests/test_docs_commands.py: Es extrahiert alle `gwd …`- und `python -m …`-Zeilen aus README und docs, prüft `--help` bzw. find_spec und alle relativen Links.
 
@@ -1924,3 +1935,36 @@ Zum Schluss wird docs/aufraeumen/ (dieser Plan und das Befund-Register) per `git
 - Historische Konfliktmarker in c4e3dd8 (HYG-12): kein Handlungsbedarf am Code; die CI (P2.2) verhindert eine Wiederholung.
 - CONTRIBUTING.md, Branch-Protection, PyPI-Veröffentlichung, Sphinx- oder API-Doku: Für ein Solo-Projekt genügen README, zwei docs-Dateien, AGENTS.md und eine grüne CI.
 - Weiterbetrieb oder Integration von ruflo/claude-flow im Repo: Der Zustand wird nur aus dem Index genommen und bleibt lokal; die Projektregeln für KI-Assistenten stehen in AGENTS.md.
+
+---
+
+## 9. Umsetzung mit mehreren Agenten
+
+Ein Lead klärt die Fragen, mehrere Agenten arbeiten in getrennten Worktrees. Die Abhängigkeiten im Plan lassen das nur eingeschränkt zu, deshalb hier die ehrliche Rechnung.
+
+### Wellen (aus `depends_on`)
+
+| Welle | Schritte | parallel möglich? |
+|---|---|---|
+| 1–12 | P0.1 → P0.2/P1.1 → P0.3/P0.4/P1.6 → P0.5/P1.4 → P0.6/P1.2 → P1.3 → P1.5/P2.1 → P2.2 → P2.3/P7.3 → P2.4 → P2.5 → P2.6 | kaum; höchstens 2–3 kleine Schritte gleichzeitig |
+| 13 | P3.1, P3.3, P5.1 | P5.1 ja; P3.1 und P3.3 berühren dieselben Dateien |
+| 14–17 | P3.2 → P3.4 → P3.5 → P3.6 | nein |
+| 18 | P3.7, P4.1, P4.2, P4.5, P7.1 | ja, bis zu 4 Agenten; P4.1 überschneidet sich mit P3.7 (`train.py`) und P4.2 (`evaluate.py`) |
+| 19 | P4.3, P4.6, P5.2, P7.2 | ja |
+| 20 | P4.4, P5.3, P5.6 | P4.4 parallel; P5.3 und P5.6 nacheinander (`generate.py`, Golden-Werte) |
+| 21–25 | P5.4/P6.1 → P5.5 → P5.7 → P5.8/P6.2 → P6.3/P6.4/P6.5/P7.4 | teilweise |
+
+**Folgerung:**
+
+- P0 bis P3.6 (der Umzug) ist im Kern ein einziger Strang. Läuft er parallel, gibt es bei jedem `git mv` Merge-Konflikte. Dafür ist **ein** Agent besser, der Schritt für Schritt nach `main` merged.
+- Ab P3.6 lohnen sich **3–4 Agenten**.
+- Schritte, die dieselbe Datei ändern, gehören in dieselbe Welle **nacheinander**, auch wenn `depends_on` sie nicht verknüpft. Das gilt besonders für alles, was `tests/golden/values.py` ändert (P4.5, P5.3, P5.4, P5.6, P6.1).
+
+### Fallstricke bei Worktrees
+
+- **Lokale Daten fehlen im Worktree.** Ignorierte Ordner (`data/`, `models_registry/`, `plots/`, Leaderboard-CSV) gibt es nur im Haupt-Checkout. Die Tests laufen ohnehin in einem tmp-`GWD_HOME`. Die Prüfungen „beim Besitzer“ laufen aber im Haupt-Checkout und gehören dem Lead bzw. dem Besitzer: P0.1, die Migration in P1.2, der Guard in P1.3, die Ladeprobe alter Modelle in P2.4, die manuelle Abnahme in P4.4 und P6.5.
+- **Kein gemeinsames venv nach P2.1.** `pip install -e .` bindet `gwd` an den Pfad *eines* Worktrees. Ein gemeinsames venv lädt dann still den Code eines anderen Agenten. Deshalb braucht jeder Worktree ein eigenes venv (mit `uv` und gemeinsamem Cache ist das billig) oder `PYTHONPATH=src` ohne editable Install.
+- **Golden-Werte und `.gitignore`** sind gemeinsame Dateien. Änderungen daran nur in eigenen, nacheinander gemergten PRs.
+- **Ein Schritt ist ein Task.** Der Task-Text besteht aus Schritt-ID, Dateiliste, Beschreibung und Prüfbefehl aus Abschnitt 6. Der Agent darf nur die genannten Dateien ändern und muss die Prüfung ausführen. Ein Task mit „wartet auf Dx“ geht erst nach der Antwort an einen Agenten.
+- **Aufgaben des Leads:** Entscheidungsfragen, Merge-Reihenfolge, Prüfung von `golden:`-Commits und Abnahme am Haupt-Checkout.
+
