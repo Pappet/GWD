@@ -350,7 +350,8 @@ Defaults sind additiv, erhalten den Status quo oder entfernen nachweislich Ungü
 | **D7** | **B**: Python ≥ 3.11, CI auf 3.12, plus Lockfile | P7.3 ist nicht mehr blockiert und kann direkt nach P2.2 laufen |
 | **D8** | **A**: ein Paket `gwd` | wie geplant |
 | **D11** | **B: alles Englisch**: Bezeichner, Spalten, Kommentare, Konsolenausgaben, Doku (README, `docs/architecture.md`, `docs/evaluation.md`, AGENTS.md) | Neue Dateien sind ab sofort englisch, bestehende werden beim Anfassen übersetzt (kein Big-Bang). Gilt auch für Commit-Messages und PR-Texte. Dieser Arbeitsordner bleibt deutsch und entfällt in P7.4. |
-| **D12** | offen, Rückfrage läuft | P7.2 bleibt geparkt |
+| **D12** | **GPL-3.0** (wie die Abhängigkeiten pycbc und gwpy) | P7.2 ist frei: LICENSE mit GPL-3.0-Volltext, Lizenzabschnitt im README, `license` in pyproject. Weil das Repo öffentlich ist und das README bisher „MIT“ behauptet, sollte das vorgezogen werden, als eigener kleiner PR direkt nach P0. |
+| **F2/F4 (Laptop)** | `tuxedo-laptop`: 1 Modell (13 MB in `models_registry/`), `data/` und `plots/` leer. Das echte Rauschen liegt im **Altpfad** `gw_noise_background/` (512 Chunks), das Leaderboard im **Altpfad** `./model_leaderboard.csv` (Root). PC noch offen. | Der heutige Code liest Rauschen aus `data/noise_background/`. Auf dem Laptop würde ein Training also still mit 100 % Gauß-Rauschen laufen (hygiene:HYG-M1). Die Altpfade müssen in P0.1 ins Backup und in P1.1 in die `.gitignore`; beides ist im Plan schon vorgesehen. |
 | **F3** | Verlauf der Rechner: Linux-Laptop → Windows-PC mit RTX 3060 (WSL, `b113e2b`) → jetzt Laptop mit Ryzen AI 9 HX 370. Offen: Betriebssystem auf dem neuen Laptop. | Spricht für D1 = A (PyCBC Pflicht, Windows nur über WSL) |
 
 Für P0 und P1 braucht es keine Antwort. Ideal ist eine Antwort auf **D7 und D8 vor P2.1**. Bleibt eine Frage offen, gilt der genannte Default: Er ist additiv, erhält den Status quo oder entfernt nachweislich Ungültiges.
