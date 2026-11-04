@@ -19,8 +19,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from scipy import signal
-import warnings
-warnings.filterwarnings('ignore')
 
 
 def load_dataset_info(data_folder):
@@ -180,7 +178,7 @@ def create_visualizations(df, data_folder, output_folder=VALIDATION_DATASET_PLOT
     axes1[0].grid(True, alpha=0.3)
     
     # Box Plot
-    axes1[1].boxplot([signal_samples['snr']], labels=['Signal SNR'])
+    axes1[1].boxplot([signal_samples['snr']], tick_labels=['Signal SNR'])
     axes1[1].set_ylabel('SNR', fontsize=12)
     axes1[1].set_title('SNR Box Plot', fontsize=14, fontweight='bold')
     axes1[1].grid(True, alpha=0.3, axis='y')
