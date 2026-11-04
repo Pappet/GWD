@@ -1,11 +1,13 @@
 # Gravitational Wave Detection (GWD)
 
 ## 📌 High Level Project Overview
-The **Gravitational Wave Detection (GWD)** project is an advanced, machine-learning-based signal processing pipeline designed to detect gravitational waves in simulated noisy streams. With recent additions, the project offers professional-grade signal processing metrics (ROC analysis) and baseline physics comparisons (Matched Filter) aiming for scientifically comparable evaluations found in modern astrophysics papers.
+The **Gravitational Wave Detection (GWD)** project is an advanced, machine-learning-based signal processing pipeline designed to detect gravitational waves in simulated noisy streams. With recent additions, the project offers professional-grade signal processing metrics (ROC analysis) and baseline physics comparisons (Matched Filter, currently not available) aiming for scientifically comparable evaluations found in modern astrophysics papers.
+
+> **Status:** Simulation metrics are currently of limited significance (train/eval skew, peak SNR, no seeds). The cleanup plan is in [docs/aufraeumen/PLAN.md](docs/aufraeumen/PLAN.md) (in German).
 
 ## ✨ Features
 - **Machine Learning Detection:** Train Convolutional Neural Networks (CNNs) to classify gravitational wave chirps within noisy data streams.
-- **Physics Baseline Comparison:** Compare CNN model performance against the theoretical physics limit using classical Matched Filtering.
+- **Physics Baseline Comparison (currently not available):** There is currently no valid Matched Filtering baseline, so `Physik_Gap` in the leaderboard is always `-`.
 - **Advanced Evaluation (ROC):** Comprehensive Area Under the ROC Curve (ROC AUC) analysis, threshold-independent scoring, Operating Point analyses, and Precision-Recall evaluation.
 - **Threshold Optimization:** Automated tools to find the optimal detection threshold based on cost, fixed FPR/TPR, or F1-Score.
 - **Multi-Model Comparison:** Visually and quantitatively compare multiple trained models.
@@ -14,22 +16,19 @@ The **Gravitational Wave Detection (GWD)** project is an advanced, machine-learn
 ## 🚀 Quickstart Guide
 
 ### 1. Installation
-Ensure you have the exact dependencies installed. We enforce exact version locks to guarantee reproducible builds.
+**Known issue:** `requirements.txt` pins `pycbc==2.4.0`, which has no usable wheels on Python 3.12, so this install can fail. A lockfile is planned.
 
 ```bash
 # Provide a fresh virtual environment
 python -m venv venv
 source venv/bin/activate
 
-# Install exact dependencies
+# Install dependencies
 pip install -r requirements.txt
 ```
 
 ### 2. Generate Data & Train
 ```bash
-# IMPORTANT: Adjust PYTHONPATH so modules resolve from the project root
-export PYTHONPATH=.
-
 # 1. Generate Training Data
 python src/dataset/generate_chirp_dataset.py
 
