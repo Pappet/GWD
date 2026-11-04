@@ -12,6 +12,9 @@ def main():
         return 0
 
     df = pd.read_csv(LEADERBOARD_FILE)
+    # Display only: the values in the CSV are based on an invalid baseline
+    df["Physik_Gap"] = "-"
+
     # 1. Create a temporary numeric column for sorting
     # 'errors="coerce"' turns "-" into NaN (Not a Number)
     df["sort_val"] = pd.to_numeric(df["ROC_AUC"], errors="coerce")
@@ -22,6 +25,7 @@ def main():
 
     # 3. Drop the helper column and print
     print(df_sorted.drop(columns=["sort_val"]).to_markdown(index=False))
+    print("Physik_Gap hidden: values were based on an invalid baseline (EVAL-6).")
     return 0
 
 

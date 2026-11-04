@@ -124,3 +124,20 @@ def test_show_has_main_guard(tmp_path):
     result = run_show(tmp_path, code)
     assert result.returncode == 0
     assert result.stdout == ""
+
+
+def test_show_hides_old_physik_gap_and_keeps_csv(tmp_path):
+    analysis = tmp_path / "analysis"
+    analysis.mkdir()
+    leaderboard = analysis / "model_leaderboard.csv"
+    original = "Model,ROC_AUC,Physik_Gap\nm0,0.9,+1.39\n"
+    leaderboard.write_text(original)
+
+    result = run_show(tmp_path)
+
+    assert result.returncode == 0
+    assert "+1.39" not in result.stdout
+    *table, note = result.stdout.strip().splitlines()
+    assert [cell.strip() for cell in table[-1].split("|")][1:-1] == ["m0", "0.9", "-"]
+    assert note == "Physik_Gap hidden: values were based on an invalid baseline (EVAL-6)."
+    assert leaderboard.read_text() == original
