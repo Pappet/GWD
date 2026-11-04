@@ -707,9 +707,10 @@ validate_dataset.py:183: `boxplot(..., labels=[...])` wird zu `tick_labels=`. Da
 
 (d) README:
 
-- Statushinweis 'Simulationsmetriken derzeit nur eingeschränkt aussagekräftig (Train/Eval-Skew, Peak-SNR, keine Seeds) – Aufräumplan in docs/architecture.md';
+- Statushinweis 'Simulationsmetriken derzeit nur eingeschränkt aussagekräftig (Train/Eval-Skew, Peak-SNR, keine Seeds) – Aufräumplan in docs/aufraeumen/PLAN.md' (docs/architecture.md entsteht erst in P1.5; P7.1 ersetzt den Verweis);
 - Matched-Filter als 'derzeit nicht vorhanden' markieren;
 - 'exact version locks/reproducible builds' und `export PYTHONPATH=.` streichen;
+- Bekanntes Problem bei der Installation vermerken: `pycbc==2.4.0` aus requirements.txt hat unter Python 3.12 keine nutzbaren Wheels, ein Lockfile ist geplant (P7.3); requirements.txt selbst bleibt unverändert;
 - die Lizenzzeile bleibt (D12).
 
 Das CSV-Schema bleibt (12 Spalten, formatierte Strings); Rohzahlen kommen erst in P5.8.
@@ -717,7 +718,7 @@ Das CSV-Schema bleibt (12 Spalten, formatierte Strings); Rohzahlen kommen erst i
 - **Dateien:** `src/utils/evaluation.py`, `src/show_leaderboard.py`, `README.md`, `tests/test_leaderboard.py`
 - **Behebt:** EVAL-6, EVAL-7, EVAL-8, EVAL-12, EVAL-14, EVAL-22, EVAL-23, HYG-22, hygiene:HYG-M4, evaluation:MISS-1, HYG-4, HYG-6, HYG-10, hygiene:HYG-M2, HYG-15
 - **Risiko:** Gering. Der Besitzer sieht vorübergehend keinen Physik_Gap mehr; dieser Wert war nie gültig. Weil sich dadurch src/show_leaderboard.py von analysis/show_leaderboard.py unterscheidet, prüft der Guard in P1.3 gegen den Tag pre-cleanup.
-- **Prüfung:** `python -m pytest tests/test_leaderboard.py -q`: Eine Dummy-physics_baseline.json mit SNR90=1.0 in tmp_path ergibt Physik_Gap == '-'; snr50=0.0 ergibt '0.00'; die Konsolenausgabe enthält kein wörtliches Backslash-n. `GWD_HOME=$(mktemp -d) python src/show_leaderboard.py; echo $?` → Meldung und 0; `git grep -n update_leaderboard_basic` leer; `grep -niE 'exact version locks|reproducible builds|PYTHONPATH' README.md` leer.
+- **Prüfung:** `python -m pytest tests/test_leaderboard.py -q`: Eine Dummy-physics_baseline.json mit SNR90=1.0 in tmp_path ergibt Physik_Gap == '-'; snr50=0.0 ergibt '0.00'; die Konsolenausgabe enthält kein wörtliches Backslash-n. `GWD_HOME=$(mktemp -d) python src/show_leaderboard.py; echo $?` → Meldung und 0; `git grep -n update_leaderboard_basic -- ':!docs/aufraeumen'` leer (Plan und Befundliste nennen die Funktion weiterhin); `grep -niE 'exact version locks|reproducible builds|PYTHONPATH' README.md` leer.
 
 <a id="p05"></a>
 #### P0.5: pytest-Konfiguration, Pipeline- und App-Smoke (Charakterisierung)
