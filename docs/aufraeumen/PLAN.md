@@ -822,6 +822,7 @@ Vorher: `git status --porcelain --ignored > /tmp/vorher.txt`. Die neue .gitignor
 - Altpfade aus der Zeit vor f724856: gw_training_data/, gw_noise_background/, datasets/, models/, /model_leaderboard.csv, /optimal_thresholds.json, /plot_*.png. cc6a3bc hat diese Ordnerregeln gestrichen; seither verstecken nur die globalen *.csv/*.json/*.png-Muster die Dateien.
 - Tool-Zustand: .swarm/, .claude-flow/, CLAUDE.local.md. .mcp.json und .claude/ nur, wenn sie laut Vorher-Inventar lokal von ruflo stammen.
 - Caches: .pytest_cache/, .ruff_cache/, *.egg-info/, build/, dist/, temp_sound.wav.
+- Lokale Dateien: docs/*.pdf und PROJECT_MEMORY.md (seit P0.5). Diese Einträge müssen in der neuen .gitignore erhalten bleiben.
 - Entfernt werden: globale *.json/*.csv/*.png, *.deb/*.deb.1, KI-Chat-Kommentare.
 
 Dann `git rm -r --cached .swarm .claude-flow` (nur aus dem Index, der lokale ruflo-Zustand bleibt) und `git rm -r .planning` (falscher KI-Selbstbericht). Kein History-Rewrite.
