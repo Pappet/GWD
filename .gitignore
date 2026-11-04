@@ -1,55 +1,67 @@
-# --- Python Basics ---
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
 
-# --- Virtual Environments ---
+# Virtual environments
 venv/
 env/
 .env
-.venv/
+.venv*/
 
-# --- IDE Einstellungen (optional, aber empfohlen) ---
+# IDE
 .vscode/
 .idea/
 
-# --- Jupyter Notebooks ---
+# Jupyter
 .ipynb_checkpoints
 
-# --- ML & Data Specifics (Deine Anforderung) ---
-# NumPy Dateien (oft sehr groß)
+# Binary data and model formats, anywhere
 *.npy
 *.npz
-
-# Andere Datenformate (optional, je nach Datensatz)
-*.csv
 *.h5
 *.hdf5
+*.keras
 *.pkl
 *.parquet
-
-# Ordner für Daten (falls du einen hast)
-*.json
-
-# --- Model Checkpoints / Gewichte ---
-# Diese sind oft zu groß für normales Git (über 100MB)
 *.pt
 *.pth
 *.ckpt
 *.onnx
-*.keras
-models/
-
-# Sound
 *.wav
 
-#Plots
-*.png
+# Local data and results, at the project root only.
+# Unanchored rules would also hide src/gwd/data/ and tests/data/.
+/data/
+/models_registry/
+/plots/
+/results/
+/analysis/*.csv
 
-#CUDA
-*.deb
-*.deb.1
+# Legacy paths from before f724856
+/gw_training_data/
+/gw_noise_background/
+/datasets/
+/models/
+/model_leaderboard.csv
+/optimal_thresholds.json
+/plot_*.png
+
+# Tool state
+.swarm/
+.claude-flow/
+.claude/settings.local.json
+CLAUDE.local.md
+
+# Caches and build output
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+temp_sound.wav
 
 # Local files that stay out of git
-PROJECT_MEMORY.md
 docs/*.pdf
+PROJECT_MEMORY.md
