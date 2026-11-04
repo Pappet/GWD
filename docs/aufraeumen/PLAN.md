@@ -378,7 +378,11 @@ Defaults sind additiv, erhalten den Status quo oder entfernen nachweislich Ungü
 |---|---|---|
 | Plan, Register, Lizenz | #1 | gemergt |
 | P0.1 Backup, Import, Tag `pre-cleanup` (→ `2eec4b5`), AGENTS.md, CLAUDE.md | #2 | gemergt |
-| P0.2 GWD_HOME-Haken | #3 | Review von einem zweiten Agenten: freigegeben, drei unkritische Hinweise (siehe P2.3) |
+| P0.2 GWD_HOME-Haken | #3 | gemergt; Review-Hinweise in P2.3 übernommen |
+| P0.3 validate_dataset lauffähig | #5 | gemergt |
+| P0.4 Leaderboard-Sofortkorrekturen und Moratorium (alte Physik_Gap-Werte in der Anzeige ausgeblendet) | #6, #7 | gemergt |
+| P0.5 pytest-Konfiguration, Pipeline- und App-Smoke | #8 | gemergt |
+| P0.6 Golden-Kennwerte | #9 | offen. PyCBC-Werte auf dem Laptop gemessen (pycbc 2.10.0, lalsuite 7.26.1, numpy 1.26.4); die Messung bricht ab, wenn PyCBC still auf Newton zurückfällt |
 
 Für P0 und P1 braucht es keine Antwort. Ideal ist eine Antwort auf **D7 und D8 vor P2.1**. Bleibt eine Frage offen, gilt der genannte Default: Er ist additiv, erhält den Status quo oder entfernt nachweislich Ungültiges.
 
@@ -660,7 +664,7 @@ Danach die 12 Entscheidungsfragen zusammen mit F1–F4 stellen.
 - **Dateien:** `AGENTS.md`, `CLAUDE.md`
 - **Behebt:** HYG-23, HYG-1, HYG-5, evaluation:MISS-3, data-training:GITIGNORE-ART, hygiene:HYG-M1, core:MISS-1
 - **Risiko:** Gering. Hauptrisiko wäre ein vergessenes Backup; deshalb hängen alle löschenden Schritte an P0.1.
-- **Prüfung:** `tar tzf ~/gwd-backup-*.tgz | grep -c 'keras$'` entspricht `ls models_registry/*.keras | wc -l`; `git ls-remote --tags origin pre-cleanup` liefert eine Zeile; `grep -cE '^F[1-4]' ~/gwd-fakten.txt` → 4; `git show --stat HEAD` enthält nur AGENTS.md und CLAUDE.md.
+- **Prüfung:** `tar tzf ~/gwd-backup-*.tgz | grep -c 'keras$'` entspricht `ls models_registry/*.keras | wc -l`; `git ls-remote --tags origin pre-cleanup` liefert eine Zeile; die Fakten F1–F4 stehen in Abschnitt 5 dieses Plans (statt in ~/gwd-fakten.txt); `git show --stat HEAD` enthält nur AGENTS.md und CLAUDE.md.
 
 <a id="p02"></a>
 #### P0.2: Testbarkeits-Haken: GWD_HOME in config.py
@@ -952,7 +956,9 @@ Die Falschaussagen von PROJECT_OVERVIEW werden korrigiert (alles in src/, gw_tra
 
 Nutzt Default von D7 (requires-python >=3.11, Versionsbereiche) und D8 (ein Paket gwd). Die Antworten möglichst vorher einholen.
 
-Commit 1 ('golden: neue Umgebung', nur falls nötig): ein frisches venv (`python3.12 -m venv`) mit der neuen pyproject-Installation, der Code bleibt unverändert. Dann `GWD_REQUIRE_PYCBC=1 pytest -m golden -rs`. Fehlen die PyCBC-Kennwerte (F1: kein pycbc) oder weichen sie über die Toleranz ab, `python tests/golden/regen.py` ausführen und mit Versionsangaben committen. So bleibt Golden in P2–P3 wirksam, statt übersprungen zu werden.
+Commit 0 (aus P7.3 vorgezogen, D7 = B): `requirements-linux-py312.lock` aus den PC-Pins (`~/gwd-env-pc.txt` ohne `nvidia-*`, als Constraints) erzeugen und committen. Ohne Lock würde das frische venv aus pyproject.toml ungepinnt installieren, und pycbc, lalsuite oder numpy könnten von den Golden-Werten aus P0.6 wegdriften.
+
+Commit 1 ('golden: neue Umgebung', nur falls nötig): ein frisches venv mit `uv venv --python 3.12` (ein `python3.12` liegt auf dem Laptop nicht im PATH), installiert mit `uv pip install -r requirements-linux-py312.lock` und danach `uv pip install -e . --no-deps`. Der Code bleibt unverändert. Dann `GWD_REQUIRE_PYCBC=1 pytest -m golden -rs`. Fehlen die PyCBC-Kennwerte (F1: kein pycbc) oder weichen sie über die Toleranz ab, `python tests/golden/regen.py` ausführen und mit Versionsangaben committen. So bleibt Golden in P2–P3 wirksam, statt übersprungen zu werden.
 
 pyproject.toml:
 
@@ -975,10 +981,10 @@ Commit 3:
 
 Hinweis an den Besitzer: Ergab F1 'kein pycbc', erzeugt die Pipeline ab jetzt PyCBC- statt Newton-Wellenformen. Das ist gewollt, macht alte und neue Datensätze aber unvergleichbar; das wird in docs/architecture.md festgehalten.
 
-- **Dateien:** `pyproject.toml`, `src/gwd/__init__.py`, `src/gwd_core/ → src/gwd/core/`, `tests/conftest.py`, `tests/test_*.py`, `src/**/*.py (nur Importzeilen)`, `requirements.txt`, `README.md`, `utility/test_imports.py → src/gwd/env.py`, `tests/golden/values.py`, `docs/architecture.md`
+- **Dateien:** `requirements-linux-py312.lock`, `pyproject.toml`, `src/gwd/__init__.py`, `src/gwd_core/ → src/gwd/core/`, `tests/conftest.py`, `tests/test_*.py`, `src/**/*.py (nur Importzeilen)`, `requirements.txt`, `README.md`, `utility/test_imports.py → src/gwd/env.py`, `tests/golden/values.py`, `docs/architecture.md`
 - **Behebt:** CORE-5, HYG-20, HYG-6, HYG-7, HYG-25, HYG-16, core:MISS-1, DATA-17, hygiene:HYG-M5
 - **Risiko:** Eine Neuinstallation kann TensorFlow oder CUDA der WSL-GPU-Umgebung verändern. Gegenmittel: erst ein frisches venv, das alte bleibt, bis alles grün ist.
-- **Prüfung:** `python3.12 -m venv /tmp/v && /tmp/v/bin/pip install -e '.[all,dev]' && GWD_REQUIRE_PYCBC=1 /tmp/v/bin/python -m pytest -m 'not network' -rs -q` grün, ohne Skips bei golden; `git grep -nE 'gwd_core|src[.]gwd_core' -- src tests main.py` leer; `test ! -e tests/conftest.py && test ! -e requirements.txt`; `/tmp/v/bin/pip check` ohne Konflikte; `/tmp/v/bin/python -m gwd.env` nennt das aktive Backend.
+- **Prüfung:** `uv venv --python 3.12 /tmp/v && VIRTUAL_ENV=/tmp/v uv pip install -r requirements-linux-py312.lock && VIRTUAL_ENV=/tmp/v uv pip install -e . --no-deps && GWD_REQUIRE_PYCBC=1 /tmp/v/bin/python -m pytest -m 'not network' -rs -q` grün, ohne Skips bei golden; `git grep -nE 'gwd_core|src[.]gwd_core' -- src tests main.py` leer; `test ! -e tests/conftest.py && test ! -e requirements.txt`; `VIRTUAL_ENV=/tmp/v uv pip check` ohne Konflikte; `/tmp/v/bin/python -m gwd.env` nennt das aktive Backend.
 
 <a id="p22"></a>
 #### P2.2: ruff-Basis, Format-Commit und schlanke CI
@@ -994,8 +1000,8 @@ Hinweis an den Besitzer: Ergab F1 'kein pycbc', erzeugt die Pipeline ab jetzt Py
 
 (3) .github/workflows/ci.yml mit zwei Jobs, ubuntu-latest, Python 3.12, pip-Cache:
 
-- test (jeder Push/PR): `pip install -e '.[physics,gwdata,dev]'` (ohne TensorFlow, aber mit pycbc, damit der produktive PyCBC-Pfad getestet wird), `ruff format --check . && ruff check .`, `GWD_REQUIRE_PYCBC=1 pytest -m 'not slow and not network and not apps'`. Tests, die TF brauchen, nutzen importorskip.
-- slow (nur workflow_dispatch): `pip install -e '.[all,dev]'` und `pytest -m 'slow or apps or golden'`.
+- test (jeder Push/PR): `uv pip install -c requirements-linux-py312.lock -e '.[physics,gwdata,dev]'` (Versionen aus dem Lock aus P2.1; ohne TensorFlow, aber mit pycbc, damit der produktive PyCBC-Pfad getestet wird), `ruff format --check . && ruff check .`, `GWD_REQUIRE_PYCBC=1 pytest -m 'not slow and not network and not apps'`. Tests, die TF brauchen, nutzen importorskip.
+- slow (nur workflow_dispatch): `uv pip install -r requirements-linux-py312.lock && uv pip install -e . --no-deps` und `pytest -m 'slow or apps or golden'`.
 
 - **Dateien:** `.github/workflows/ci.yml`, `pyproject.toml`, `.git-blame-ignore-revs`, `src/**/*.py`, `tests/**/*.py`, `main.py`
 - **Behebt:** HYG-20, HYG-19, HYG-12, DATA-18, CORE-18, hygiene:HYG-M1
@@ -1876,7 +1882,7 @@ Ohne Antwort wird keine Lizenz erfunden, und die bestehende Zeile bleibt.
 
 *Aufwand S · hängt ab von P2.2 · wartet auf – (D7 = B entschieden)*
 
-D7 = B ist entschieden. Ausgangspunkt sind die Pins aus `~/gwd-env-pc.txt` (PC-Umgebung, mit der die Modelle trainiert wurden; siehe Abschnitt 5, Umgebung): Sie kommen als Untergrenzen bzw. Constraints in den Compile, damit das Lock nicht stillschweigend auf neuere numpy- oder pandas-Hauptversionen springt. `uv pip compile pyproject.toml --all-extras --python-version 3.12 -c constraints-pc.txt -o requirements-linux-py312.lock`. Beide CI-Jobs installieren daraus, das README beschreibt die Aktualisierung. Damit stimmt die Aussage 'reproduzierbar' tatsächlich, und die Golden-Toleranzen müssen nicht mehr Versionsdrift abfangen. Ein Lock mit TF und pycbc gilt nur für Linux; das steht im Dateinamen.
+**Das Lock selbst entsteht schon in P2.1 (Commit 0).** Hier bleibt: CI-Jobs auf das Lock umstellen, falls P2.2 das noch nicht tut, und im README beschreiben, wie das Lock aktualisiert wird. D7 = B ist entschieden. Ausgangspunkt sind die Pins aus `~/gwd-env-pc.txt` (PC-Umgebung, mit der die Modelle trainiert wurden; siehe Abschnitt 5, Umgebung): Sie kommen als Untergrenzen bzw. Constraints in den Compile, damit das Lock nicht stillschweigend auf neuere numpy- oder pandas-Hauptversionen springt. `uv pip compile pyproject.toml --all-extras --python-version 3.12 -c constraints-pc.txt -o requirements-linux-py312.lock`. Beide CI-Jobs installieren daraus, das README beschreibt die Aktualisierung. Damit stimmt die Aussage 'reproduzierbar' tatsächlich, und die Golden-Toleranzen müssen nicht mehr Versionsdrift abfangen. Ein Lock mit TF und pycbc gilt nur für Linux; das steht im Dateinamen.
 
 - **Dateien:** `requirements-linux-py312.lock`, `.github/workflows/ci.yml`, `README.md`
 - **Behebt:** HYG-6, core:MISS-1
