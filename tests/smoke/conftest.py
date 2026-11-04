@@ -24,8 +24,6 @@ def assert_ran_cleanly(name, result):
 def pipeline_home(tmp_path_factory):
     """Run every pipeline stage once, in order, and return the temporary project root."""
     home = tmp_path_factory.mktemp("pipeline")
-    # LEADERBOARD_FILE points here and nothing creates the folder (evaluation:MISS-3). Removed in P1.2.
-    (home / "analysis").mkdir()
     for name, stage in PIPELINE.items():
         assert_ran_cleanly(name, run_stage(stage, home))
     return home

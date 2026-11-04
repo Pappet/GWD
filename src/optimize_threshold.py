@@ -327,6 +327,7 @@ def main():
                                    for k, v in optimal_thresholds.items()}
         }
         
+        os.makedirs(os.path.dirname(OPTIMAL_THRESHOLDS_FILE), exist_ok=True)
         with open(OPTIMAL_THRESHOLDS_FILE, 'w') as f:
             json.dump(output, f, indent=2)
         print(f"✓ Gespeichert in {OPTIMAL_THRESHOLDS_FILE}")

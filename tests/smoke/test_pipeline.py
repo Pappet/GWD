@@ -30,13 +30,15 @@ def test_training_writes_one_model_and_one_config(pipeline_home):
 
 
 def test_leaderboard_has_one_row(pipeline_home):
-    leaderboard = pd.read_csv(pipeline_home / "analysis" / "model_leaderboard.csv", dtype=str)
+    leaderboard = pd.read_csv(pipeline_home / "results" / "model_leaderboard.csv", dtype=str)
     assert leaderboard.shape == (1, LEADERBOARD_COLUMNS)
+    assert not (pipeline_home / "analysis").exists()
 
 
 def test_thresholds_and_comparison_plot_exist(pipeline_home):
     plots = pipeline_home / "plots" / "evaluation_models"
-    assert (plots / "optimal_thresholds.json").exists()
+    assert (pipeline_home / "results" / "optimal_thresholds.json").exists()
+    assert not (plots / "optimal_thresholds.json").exists()
     assert len(list(plots.glob("plot_compare_roc_*.png"))) == 1
 
 

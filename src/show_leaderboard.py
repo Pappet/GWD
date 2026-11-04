@@ -5,8 +5,12 @@ from config import LEADERBOARD_FILE
 
 import pandas as pd
 
+sys.path.append(os.path.dirname(__file__))
+from utils.evaluation import migrate_legacy_leaderboard
+
 
 def main():
+    migrate_legacy_leaderboard()
     if not os.path.exists(LEADERBOARD_FILE):
         print(f"No leaderboard yet: {LEADERBOARD_FILE} does not exist. Run src/evaluate_model_with_roc.py first.")
         return 0
