@@ -822,19 +822,21 @@ Zweck: P1–P3 müssen alle Werte unverändert lassen.
 Vorher: `git status --porcelain --ignored > /tmp/vorher.txt`. Die neue .gitignore wird in LF geschrieben. Nutzt Default von D9 (results/ komplett lokal).
 
 - Global bleiben nur Binärendungen: *.npy, *.npz, *.h5, *.hdf5, *.keras, *.pkl, *.parquet, *.pt, *.pth, *.ckpt, *.onnx, *.wav.
-- Verzeichnisregeln: data/, models_registry/, plots/, results/, analysis/*.csv (Übergang, schützt die lokale CSV).
-- Altpfade aus der Zeit vor f724856: gw_training_data/, gw_noise_background/, datasets/, models/, /model_leaderboard.csv, /optimal_thresholds.json, /plot_*.png. cc6a3bc hat diese Ordnerregeln gestrichen; seither verstecken nur die globalen *.csv/*.json/*.png-Muster die Dateien.
-- Tool-Zustand: .swarm/, .claude-flow/, CLAUDE.local.md. .mcp.json und .claude/ nur, wenn sie laut Vorher-Inventar lokal von ruflo stammen.
-- Caches: .pytest_cache/, .ruff_cache/, *.egg-info/, build/, dist/, temp_sound.wav.
+- Verzeichnisregeln, an der Wurzel verankert: /data/, /models_registry/, /plots/, /results/, /analysis/*.csv (Übergang, schützt die lokale CSV). Ohne Verankerung würde `data/` auch src/gwd/data/ und tests/data/ aus P2 und P3 verstecken.
+- Altpfade aus der Zeit vor f724856: /gw_training_data/, /gw_noise_background/, /datasets/, /models/, /model_leaderboard.csv, /optimal_thresholds.json, /plot_*.png. cc6a3bc hat diese Ordnerregeln gestrichen; seither verstecken nur die globalen *.csv/*.json/*.png-Muster die Dateien.
+- Tool-Zustand: .swarm/, .claude-flow/, CLAUDE.local.md und .claude/settings.local.json (lokale Claude-Code-Rechte, bisher nur durch das globale *.json versteckt).
+- Caches: .pytest_cache/, .mypy_cache/, .ruff_cache/, *.egg-info/, build/, dist/, temp_sound.wav.
 - Lokale Dateien: docs/*.pdf und PROJECT_MEMORY.md (seit P0.5). Diese Einträge müssen in der neuen .gitignore erhalten bleiben.
 - Entfernt werden: globale *.json/*.csv/*.png, *.deb/*.deb.1, KI-Chat-Kommentare.
 
 Dann `git rm -r --cached .swarm .claude-flow` (nur aus dem Index, der lokale ruflo-Zustand bleibt) und `git rm -r .planning` (falscher KI-Selbstbericht). Kein History-Rewrite.
 
+**Nach dem Merge, in jedem Checkout (Laptop und PC):** Der `git pull` löscht die bisher getrackten Dateien auch von der Platte (.swarm/memory.db, hnsw.index, schema.sql und 4 Logs in .claude-flow/). Wiederherstellen ohne Index-Änderung: `git archive pre-cleanup .swarm .claude-flow | tar -x`. Danach sind sie ignoriert und `git status` bleibt leer.
+
 - **Dateien:** `.gitignore`, `.swarm/ (nur Index)`, `.claude-flow/ (nur Index)`, `.planning/walkthrough.md`
 - **Behebt:** HYG-8, data-training:GITIGNORE-ART, HYG-5, HYG-11, EVAL-19
 - **Risiko:** Ohne die globalen *.json/*.csv-Muster könnten lokale Dateien als '??' auftauchen und mit `git add -A` committet werden. Gegenmittel: Verzeichnis- und Altpfadregeln im selben Commit und ein Vorher/Nachher-Vergleich.
-- **Prüfung:** `git status --porcelain --ignored > /tmp/nachher.txt; diff <(grep '^??' /tmp/vorher.txt) <(grep '^??' /tmp/nachher.txt)` zeigt keine neuen Daten-, Ergebnis- oder Tool-Dateien; `git check-ignore analysis/model_leaderboard.csv models_registry/m.json models_registry/m.keras data/training/labels.csv plots/a.png results/x.csv .swarm/memory.db temp_sound.wav gw_noise_background/r.npy gw_training_data/labels.csv model_leaderboard.csv optimal_thresholds.json plot_x.png docs/x.pdf PROJECT_MEMORY.md | wc -l` → 15; `git check-ignore docs/img/a.png tests/fixtures/a.json; echo $?` → 1; `git ls-files .swarm .claude-flow .planning | wc -l` → 0; `test -d .swarm` (lokal noch da); `file .gitignore | grep -c CRLF` → 0.
+- **Prüfung:** `git status --porcelain --ignored > /tmp/nachher.txt; diff <(grep '^??' /tmp/vorher.txt) <(grep '^??' /tmp/nachher.txt)` zeigt keine neuen Daten-, Ergebnis- oder Tool-Dateien; `git check-ignore analysis/model_leaderboard.csv models_registry/m.json models_registry/m.keras data/training/labels.csv plots/a.png results/x.csv .swarm/memory.db temp_sound.wav gw_noise_background/r.npy gw_training_data/labels.csv model_leaderboard.csv optimal_thresholds.json plot_x.png docs/x.pdf PROJECT_MEMORY.md | wc -l` → 15; `git check-ignore docs/img/a.png tests/fixtures/a.json src/gwd/data/x.py tests/data/x.py; echo $?` → 1; `git ls-files .swarm .claude-flow .planning | wc -l` → 0; `test -d .swarm` (lokal noch da); `file .gitignore | grep -c CRLF` → 0.
 
 <a id="p12"></a>
 #### P1.2: Leaderboard und Schwellen-JSON nach results/ verlegen – vor dem Löschen von analysis/
