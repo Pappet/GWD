@@ -47,11 +47,11 @@ def run_show(tmp_path, code=None):
                           capture_output=True, text=True)
 
 
-def write_show_csv(tmp_path, roc_values):
-    analysis = tmp_path / "analysis"
-    analysis.mkdir()
+def write_show_csv(tmp_path, roc_values, folder="results"):
+    target = tmp_path / folder
+    target.mkdir()
     rows = [f"m{i},{value}" for i, value in enumerate(roc_values)]
-    (analysis / "model_leaderboard.csv").write_text("\n".join(["Model,ROC_AUC", *rows]) + "\n")
+    (target / "model_leaderboard.csv").write_text("\n".join(["Model,ROC_AUC", *rows]) + "\n")
 
 
 def test_physik_gap_ignores_baseline(tmp_path):
@@ -107,7 +107,7 @@ def test_show_without_file_explains_and_exits_zero(tmp_path):
     assert result.returncode == 0
     assert "No leaderboard yet" in result.stdout
     assert "Traceback" not in result.stderr
-    assert not (tmp_path / "analysis" / "model_leaderboard.csv").exists()
+    assert not (tmp_path / "results" / "model_leaderboard.csv").exists()
 
 
 def test_show_sorts_by_roc_auc_descending_with_failures_last(tmp_path):
@@ -116,6 +116,14 @@ def test_show_sorts_by_roc_auc_descending_with_failures_last(tmp_path):
     assert result.returncode == 0
     positions = [result.stdout.index(name) for name in ("m2", "m3", "m0", "m1")]
     assert positions == sorted(positions)
+
+
+def test_show_reads_a_leaderboard_migrated_from_analysis(tmp_path):
+    write_show_csv(tmp_path, ["0.80", "0.95"], folder="analysis")
+    result = run_show(tmp_path)
+    assert result.returncode == 0
+    assert "Copied leaderboard" in result.stdout
+    assert result.stdout.index("m1") < result.stdout.rindex("m0")
 
 
 def test_show_has_main_guard(tmp_path):
@@ -127,9 +135,9 @@ def test_show_has_main_guard(tmp_path):
 
 
 def test_show_hides_old_physik_gap_and_keeps_csv(tmp_path):
-    analysis = tmp_path / "analysis"
-    analysis.mkdir()
-    leaderboard = analysis / "model_leaderboard.csv"
+    results = tmp_path / "results"
+    results.mkdir()
+    leaderboard = results / "model_leaderboard.csv"
     original = "Model,ROC_AUC,Physik_Gap\nm0,0.9,+1.39\n"
     leaderboard.write_text(original)
 

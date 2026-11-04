@@ -860,7 +860,7 @@ Einmal-Migration ohne Datenverlust. Sie läuft NICHT beim Import (das wäre wied
 
 Im Smoke-Test entfällt die Vorab-Anlage von $GWD_HOME/analysis/, und test_pipeline.py prüft die neuen Pfade. Dieser Schritt muss vor P1.3 gemergt sein.
 
-- **Dateien:** `config.py`, `src/utils/evaluation.py`, `src/optimize_threshold.py`, `src/show_leaderboard.py`, `tests/smoke/conftest.py`, `tests/smoke/test_pipeline.py`, `tests/test_results_paths.py`
+- **Dateien:** `config.py`, `src/utils/evaluation.py`, `src/optimize_threshold.py`, `src/show_leaderboard.py`, `tests/smoke/conftest.py`, `tests/smoke/test_pipeline.py`, `tests/test_results_paths.py`, `tests/test_leaderboard.py`
 - **Behebt:** HYG-2, DATA-8, evaluation:MISS-3, EVAL-19, hygiene:HYG-M3
 - **Risiko:** Alte und neue Datei koexistieren eine Weile. Das Risiko ist gering, weil die Kopie idempotent ist und nichts gelöscht wird.
 - **Prüfung:** `python -m pytest -m slow tests/smoke -q` grün ohne Vorab-Anlage von analysis/. `python -m pytest tests/test_results_paths.py -q` prüft: Kopie entsteht, Original byte-identisch; ein Root-Leaderboard löst nur einen Hinweis aus; `import config` legt results/ nicht an. Beim Besitzer zeigt `python src/show_leaderboard.py` die bisherigen Einträge, danach meldet `cmp analysis/model_leaderboard.csv results/model_leaderboard.csv` identisch.

@@ -10,15 +10,22 @@ DATA_DIR_TRAIN = os.path.join(ROOT_DIR, "data/training")
 DATA_DIR_NOISE = os.path.join(ROOT_DIR, "data/noise_background")
 MODELS_DIR = os.path.join(ROOT_DIR, "models_registry")
 
+# Created by the code that writes there, not on import
+RESULTS_DIR = os.path.join(ROOT_DIR, "results")
+
 PLOTS_DIR = os.path.join(ROOT_DIR, "plots")
 VALIDATION_DATASET_PLOTS_DIR = os.path.join(ROOT_DIR, "plots/validation_dataset")
 TRAINING_PLOTS_DIR = os.path.join(ROOT_DIR, "plots/training")
 EVALUATION_MODELS_PLOTS_DIR = os.path.join(ROOT_DIR, "plots/evaluation_models")
 
 # Dateinamen
-LEADERBOARD_FILE = os.path.join(ROOT_DIR, "analysis/model_leaderboard.csv")
+LEADERBOARD_FILE = os.path.join(RESULTS_DIR, "model_leaderboard.csv")
+LEGACY_LEADERBOARD_FILES = (
+    os.path.join(ROOT_DIR, "analysis/model_leaderboard.csv"),
+    os.path.join(ROOT_DIR, "model_leaderboard.csv"),
+)
 LABELS_FILE = "labels.csv" # Relativ zu DATA_DIR_TRAIN
-OPTIMAL_THRESHOLDS_FILE = os.path.join(EVALUATION_MODELS_PLOTS_DIR, "optimal_thresholds.json")
+OPTIMAL_THRESHOLDS_FILE = os.path.join(RESULTS_DIR, "optimal_thresholds.json")
 
 # --- KONSTANTEN ---
 SAMPLE_RATE = 4096
