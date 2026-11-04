@@ -703,7 +703,8 @@ validate_dataset.py:183: `boxplot(..., labels=[...])` wird zu `tick_labels=`. Da
 
 - main-Guard;
 - ohne Datei eine verständliche Meldung und Exit 0;
-- Sortierung nach ROC_AUC absteigend statt nach Sim_SNR50, das immer feuernde Modelle belohnt (evaluation:MISS-1).
+- Sortierung nach ROC_AUC absteigend statt nach Sim_SNR50, das immer feuernde Modelle belohnt (evaluation:MISS-1);
+- Spalte Physik_Gap nur in der Anzeige durch '-' ersetzen und darunter 'Physik_Gap hidden: values were based on an invalid baseline (EVAL-6).' ausgeben, weil Altzeilen noch Werte aus der ungültigen Baseline enthalten. Die CSV bleibt unverändert.
 
 (d) README:
 
@@ -1643,7 +1644,7 @@ Leaderboard v2:
 - Spalten u. a. model, date, testset_hash, eval_scenario, backend, noise_source, roc_auc, ap, threshold, tpr_at_fpr, fpr_achieved, snr50, snr90, real_loaded, real_found;
 - formatiert wird nur in show().
 
-Die alte results/model_leaderboard.csv wird nie mehr beschrieben und bleibt als Archiv liegen (kein --legacy-Modus). Physik_Gap, BASELINE_FILE und der Parameter baseline_file entfallen; der Moratoriums-Test aus P0.4 geht im v2-Test auf. Das v2-Schema kommt in docs/evaluation.md (bzw. in P7.1, falls es die Datei noch nicht gibt). Für Altmodelle steht im README die Schleife `gwd eval thresholds --model <m> --save`.
+Die alte results/model_leaderboard.csv wird nie mehr beschrieben und bleibt als Archiv liegen (kein --legacy-Modus). Physik_Gap, BASELINE_FILE und der Parameter baseline_file entfallen, ebenso die Ausblendung der Spalte und der Hinweis aus show_leaderboard (P0.4); der Moratoriums-Test aus P0.4 geht im v2-Test auf. Das v2-Schema kommt in docs/evaluation.md (bzw. in P7.1, falls es die Datei noch nicht gibt). Für Altmodelle steht im README die Schleife `gwd eval thresholds --model <m> --save`.
 
 - **Dateien:** `src/gwd/evaluation/thresholds.py`, `src/gwd/evaluation/leaderboard.py`, `src/gwd/evaluation/metrics.py`, `src/gwd/registry.py`, `src/gwd/evaluation/evaluate.py`, `src/gwd/evaluation/compare.py`, `src/gwd/apps/glitch_hunter/app.py`, `src/gwd/config.py`, `tests/evaluation/test_leaderboard.py`, `tests/evaluation/test_thresholds.py`, `README.md`, `docs/evaluation.md`
 - **Behebt:** EVAL-15, APP-3, APP-4, hygiene:HYG-M3, evaluation:MISS-1, evaluation:MISS-5, EVAL-7, EVAL-8, EVAL-22, HYG-4
