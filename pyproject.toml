@@ -1,0 +1,9 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+    "slow: runs the full pipeline, takes minutes on CPU",
+    "apps: starts the apps without an interactive backend",
+    "golden: compares against stored golden values",
+    "network: needs network access",
+]
