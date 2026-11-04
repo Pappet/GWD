@@ -733,7 +733,8 @@ Das CSV-Schema bleibt (12 Spalten, formatierte Strings); Rohzahlen kommen erst i
 - Skriptmodul importieren, Seeds setzen (random, np.random, tf.keras.utils.set_random_seed);
 - train_cnn.EPOCHS=1 patchen;
 - evaluate_real_world durch einen Stub ohne Netz ersetzen ({'found':0,'total':0,'far_text':'n/a','event_scores':{}});
-- main() aufrufen; optimize_threshold bekommt 'y' über stdin.
+- main() aufrufen; optimize_threshold bekommt 'y' über stdin;
+- compare_models_roc.load_all_models so patchen, dass das eine Modell zweimal zurückkommt, weil compare bei nur einem Modell ohne Plot endet.
 
 Spätere Umzüge ändern nur diese Tabelle.
 
