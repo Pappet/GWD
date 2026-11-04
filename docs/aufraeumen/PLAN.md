@@ -320,7 +320,7 @@ Ablauf in acht Phasen; nach jedem PR läuft das Projekt:
 | **P4** | Robustheit und sichtbare Fehler (Szenarien unverändert) | 6 | 3 | P4.3, P4.4, P4.5 | – |
 | **P5** | Physik-Kern und Messprotokoll ehrlich machen (entscheidungsarm, angekündigte Verhaltensänderungen) | 8 | 4 | P5.2, P5.4, P5.7, P5.8 | – |
 | **P6** | Fachliche Korrekturen als additive Szenario-Version V2 | 5 | 0 | P6.2 | P6.1, P6.3, P6.4, P6.5 |
-| **P7** | Doku und Abschluss | 4 | 1 | P7.1 | P7.2, P7.3 |
+| **P7** | Doku und Abschluss | 4 | 1 | P7.1 | – (P7.2 und P7.3 seit D12/D7 frei; LICENSE schon in PR #1) |
 
 Entscheidungen: Es gibt 12 Fragen. Sie werden direkt nach P0.1 gestellt, zusammen mit den dort per Befehl erhobenen Fakten: F1 PyCBC aktiv?, F2 Rauschen der Altmodelle, F3 Windows nativ?, F4 lokale Ergebnisdateien.
 
@@ -343,17 +343,42 @@ Defaults sind additiv, erhalten den Status quo oder entfernen nachweislich Ungü
 
 ## 5. Entscheidungen für den Besitzer
 
-### Stand der Antworten (03.11.2026)
+### Stand der Antworten (04.11.2026)
+
+**Entscheidungen**
 
 | | Antwort | Wirkung |
 |---|---|---|
-| **D7** | **B**: Python ≥ 3.11, CI auf 3.12, plus Lockfile | P7.3 ist nicht mehr blockiert und kann direkt nach P2.2 laufen |
+| **D1** | faktisch **A** (siehe F1/F3): überall Linux bzw. WSL, pycbc vorhanden | P6.1 kann als Variante A laufen, sobald der Besitzer es bestätigt |
+| **D7** | **B**: Python ≥ 3.11, CI auf 3.12, plus Lockfile | P7.3 ist nicht mehr blockiert und kann direkt nach P2.2 laufen; Grundlage ist die PC-Umgebung (siehe Umgebung unten) |
 | **D8** | **A**: ein Paket `gwd` | wie geplant |
-| **D11** | **B: alles Englisch**: Bezeichner, Spalten, Kommentare, Konsolenausgaben, Doku (README, `docs/architecture.md`, `docs/evaluation.md`, AGENTS.md) | Neue Dateien sind ab sofort englisch, bestehende werden beim Anfassen übersetzt (kein Big-Bang). Gilt auch für Commit-Messages und PR-Texte. Dieser Arbeitsordner bleibt deutsch und entfällt in P7.4. |
-| **D12** | **GPL-3.0-or-later**, Copyright Peter Paprotny. LICENSE und README-Abschnitt sind bereits in PR #1 umgesetzt; offen bleibt nur `license = "GPL-3.0-or-later"` in pyproject.toml (P2.1). | P7.2 ist frei: LICENSE mit GPL-3.0-Volltext, Lizenzabschnitt im README, `license` in pyproject. Weil das Repo öffentlich ist und das README bisher „MIT“ behauptet, sollte das vorgezogen werden, als eigener kleiner PR direkt nach P0. |
-| **F2/F4 (Laptop)** | `tuxedo-laptop`: 1 Modell (13 MB in `models_registry/`), `data/` und `plots/` leer. Das echte Rauschen liegt im **Altpfad** `gw_noise_background/` (512 Chunks), das Leaderboard im **Altpfad** `./model_leaderboard.csv` (Root). Laptop-`main` steht auf dem lokalen Commit `7788a90 stuff`, der auf GitHub fehlt (nicht gepusht). Das Modell `gwd_model_20251121-181752` ist älter als der erste GitHub-Commit; dazu liegt eine `physics_baseline.json` da (→ Moratorium P0.4 nötig). Ungetrackt: `docs/Projekt Glitch Hunter.pdf` und `docs/Projektbericht.pdf`; sie sind nicht von P1.4 betroffen und gehören ins Backup. PC siehe nächste Zeile. |
-| **F1–F4 (PC `Tesseract`, WSL Ubuntu 24.04)** | **F1:** pycbc 2.10.0 installiert, TF 2.20 sieht die RTX 3060. Die PC-Modelle sind also mit PyCBC-Wellenformen entstanden, nicht mit dem fehlerhaften Newton-Pfad. **F2:** `data/noise_background/` mit 1024 Chunks (133 MB), `data/training/` 1,3 GB. **F4:** 8 Modelle vom 24.11. bis 05.12.2025 (149 MB), `physics_baseline.json`, `analysis/model_leaderboard.csv`, `plots/` 3,8 MB. **Git:** Stand `f724856` (altes Layout ohne `src/`) mit **uncommitteten Änderungen in 11 Dateien**. | Der PC ist der Ausgangspunkt für das Backup in P0.1. Die uncommitteten Änderungen werden vorher auf einem eigenen Branch gesichert und mit `main` verglichen. D1 = A ist damit faktisch entschieden: Gearbeitet wird überall unter Linux bzw. WSL, pycbc ist vorhanden. | Der heutige Code liest Rauschen aus `data/noise_background/`. Auf dem Laptop würde ein Training also still mit 100 % Gauß-Rauschen laufen (hygiene:HYG-M1). Die Altpfade müssen in P0.1 ins Backup und in P1.1 in die `.gitignore`; beides ist im Plan schon vorgesehen. |
-| **F3** | Verlauf der Rechner: Linux-Laptop → Windows-PC mit RTX 3060 (WSL, `b113e2b`) → jetzt Laptop mit Ryzen AI 9 HX 370. Offen: Betriebssystem auf dem neuen Laptop. | Spricht für D1 = A (PyCBC Pflicht, Windows nur über WSL) |
+| **D11** | **B: alles Englisch**: Bezeichner, Spalten, Kommentare, Konsolenausgaben, Doku (README, `docs/architecture.md`, `docs/evaluation.md`, AGENTS.md), Commit-Messages und PR-Texte | Neue Dateien sind englisch. **Übersetzungsregel:** Bis P3.6 werden nur die Zeilen übersetzt, die ein Schritt ohnehin ändert, damit verhaltensgleiche Diffs lesbar bleiben. Ab P3.6 wird ein Modul, das ein Schritt umschreibt, in einem eigenen `docs:`-Commit im selben PR vollständig übersetzt. Den Rest erledigt P7.1. Dieser Arbeitsordner bleibt deutsch und entfällt in P7.4. |
+| **D12** | **GPL-3.0-or-later**, Copyright Peter Paprotny | LICENSE und README-Abschnitt sind umgesetzt (PR #1). Offen bleibt nur `license = "GPL-3.0-or-later"` in pyproject.toml (P2.1). |
+
+**Fakten**
+
+| | Befund | Folge |
+|---|---|---|
+| **F1** | PC: pycbc 2.10.0, TF 2.20 sieht die RTX 3060 | Die vorhandenen Modelle sind mit PyCBC-Wellenformen entstanden, nicht mit dem fehlerhaften Newton-Pfad |
+| **F2** | PC: `data/noise_background/` mit 1024 Chunks (133 MB), `data/training/` 1,3 GB. Laptop: 512 Chunks im **Altpfad** `gw_noise_background/` | Seit P0.1 liegen die 1024 PC-Chunks auf dem Laptop in `data/noise_background/`. Die Pipeline nutzt damit wieder echtes Rauschen. `gw_noise_background/` bleibt unangetastet. |
+| **F3** | Rechner-Verlauf: Linux-Laptop → Windows-PC `Tesseract` mit RTX 3060 (WSL Ubuntu 24.04) → jetzt `tuxedo-laptop` (Ryzen AI 9 HX 370, Fedora, keine GPU für TF) | Gearbeitet wird auf dem Laptop (CPU-Training). Große Trainingsläufe (P6.5) laufen auf dem PC unter WSL. |
+| **F4** | Laptop nach P0.1: 9 Modelle in `models_registry/` (8 vom PC, 24.11.–05.12.2025, und 1 vom 21.11.2025), `analysis/model_leaderboard.csv` (PC), `plots/` (PC), zwei Baselines (`physics_baseline.json` vom Laptop, `physics_baseline.pc-tesseract.json` vom PC). Altpfade unverändert: `gw_noise_background/`, `gw_training_data/`, `./model_leaderboard.csv`. Ungetrackt: `examples/`, `docs/Projekt Glitch Hunter.pdf`, `docs/Projektbericht.pdf` | Bis P0.4 keine Evaluation laufen lassen, sonst entsteht aus der Baseline ein ungültiger `Physik_Gap`. Die PDFs und `examples/` fasst kein Schritt an. |
+| **Git** | Der lokale Laptop-Commit `7788a90` enthielt nur claude-flow-Logs; er wurde aufgelöst und liegt im Branch `sicherung/stuff-7788a90`. Die 11 „geänderten“ Dateien auf dem PC hatten nur andere Zeilenenden und wurden verworfen. | nichts verloren |
+
+**Umgebung (ab P0.1)**
+
+- Laptop-`.venv` mit Python 3.12.14, aufgebaut aus `~/gwd-env-pc.txt` (`pip freeze` der PC-Umgebung, ohne die `nvidia-*`-Pakete) plus pytest 8.3.4. Wichtige Versionen: tensorflow 2.20.0, keras 3.12.0, **numpy 1.26.4**, pandas 2.3.3, pycbc 2.10.0, gwpy 3.0.13. Alle 9 Modelle laden.
+- `requirements.txt` beschreibt diese Umgebung **nicht** (pycbc 2.4.0, numpy 2.2.6). Das Lockfile in P7.3 entsteht aus `~/gwd-env-pc.txt`, bis dahin ist diese Datei die einzige Quelle der Pins.
+- `.venv-broken-py313` ist das alte, defekte venv, aufbewahrt und ignoriert.
+- Git-Commits laufen über die noreply-Adresse `23141484+Pappet@users.noreply.github.com`, weil GitHub Pushes mit privater Adresse ablehnt.
+
+**Fortschritt**
+
+| Schritt | PR | Stand |
+|---|---|---|
+| Plan, Register, Lizenz | #1 | gemergt |
+| P0.1 Backup, Import, Tag `pre-cleanup` (→ `2eec4b5`), AGENTS.md, CLAUDE.md | #2 | gemergt |
+| P0.2 GWD_HOME-Haken | #3 | Review von einem zweiten Agenten: freigegeben, drei unkritische Hinweise (siehe P2.3) |
 
 Für P0 und P1 braucht es keine Antwort. Ideal ist eine Antwort auf **D7 und D8 vor P2.1**. Bleibt eine Frage offen, gilt der genannte Default: Er ist additiv, erhält den Status quo oder entfernt nachweislich Ungültiges.
 
@@ -979,6 +1004,12 @@ Hinweis an den Besitzer: Ergab F1 'kein pycbc', erzeugt die Pipeline ab jetzt Py
 *Aufwand M · hängt ab von P2.2 · wartet auf –*
 
 Commit 1: `git mv config.py src/gwd/config.py`. Die Wurzel wird NICHT mehr aus dem Modulpfad abgeleitet, sonst landen Daten still unter src/gwd/ oder in site-packages (Prüfer-Einwand data-training). Reihenfolge: GWD_HOME, sonst der nächste Elternordner von __file__ mit pyproject.toml (editable Install), sonst ein Fehler 'GWD_HOME setzen'. Im Root bleibt eine 2-Zeilen-Weiche config.py (`from gwd.config import *`, entfällt in P2.6), damit alle Skripte unverändert laufen. tests/test_config_paths.py: Ohne GWD_HOME zeigen DATA_DIR_TRAIN, DATA_DIR_NOISE, MODELS_DIR, PLOTS_DIR, LEADERBOARD_FILE und LEGACY_LEADERBOARD_FILES exakt auf dieselben absoluten Pfade wie vorher.
+
+Aus dem Review von P0.2 (PR #3) zusätzlich:
+
+- Ist `GWD_HOME` gesetzt, wird beim ersten Import einmal gewarnt („Using GWD_HOME=…“), damit eine vergessene Variable nicht unbemerkt alle Daten umleitet.
+- Ein leerer oder nur aus Leerzeichen bestehender Wert gilt als nicht gesetzt (`os.environ.get('GWD_HOME', '').strip()`).
+- Beides bekommt einen Fall in tests/test_config_paths.py.
 
 Commit 2: Die makedirs-Aufrufe auf Modulebene fallen weg. `ensure_dirs(*paths)` wird nur dort aufgerufen, wo geschrieben wird: Rauschdownload, Training, Validierung, Evaluation, Thresholds, Compare. Der tote Zweig `if not os.path.exists(MODELS_DIR)` im Glitch Hunter wird dadurch erreichbar. Die Smoke-Tests im leeren GWD_HOME finden vergessene Stellen.
 
@@ -1784,8 +1815,8 @@ Danach werden config.DEFAULT_SCENARIO und der Start-Modus des Glitch Hunters auf
 | Schritt | Titel | Aufwand | hängt ab von | Entscheidung |
 |---|---|---|---|---|
 | [P7.1](#p71) | README neu, docs/evaluation.md, Sprachregel, Doku-Befehlstest | M | P3.6 | – |
-| [P7.2](#p72) | Lizenz festlegen (D12) | S | P7.1 | D12 |
-| [P7.3](#p73) | Lockfile für reproduzierbare Umgebung (D7) | S | P2.2 | D7 |
+| [P7.2](#p72) | Lizenz festlegen (D12) | S | P7.1 | D12 ✔ (LICENSE in PR #1; nur pyproject offen) |
+| [P7.3](#p73) | Lockfile für reproduzierbare Umgebung (D7) | S | P2.2 | D7 ✔ |
 | [P7.4](#p74) | Abschlussprüfung: Ende-zu-Ende, leere ALLOWLIST, Schritt-Checkliste | M | P7.1, P5.8, P4.4, P4.5, P5.4, P5.6 | – |
 
 <a id="p71"></a>
@@ -1839,9 +1870,9 @@ Ohne Antwort wird keine Lizenz erfunden, und die bestehende Zeile bleibt.
 <a id="p73"></a>
 #### P7.3: Lockfile für reproduzierbare Umgebung (D7)
 
-*Aufwand S · hängt ab von P2.2 · wartet auf D7*
+*Aufwand S · hängt ab von P2.2 · wartet auf – (D7 = B entschieden)*
 
-Bei D7=B: `uv pip compile pyproject.toml --all-extras --python-version 3.12 -o requirements-linux-py312.lock`. Beide CI-Jobs installieren daraus, das README beschreibt die Aktualisierung. Damit stimmt die Aussage 'reproduzierbar' tatsächlich, und die Golden-Toleranzen müssen nicht mehr Versionsdrift abfangen. Ein Lock mit TF und pycbc gilt nur für Linux; das steht im Dateinamen.
+D7 = B ist entschieden. Ausgangspunkt sind die Pins aus `~/gwd-env-pc.txt` (PC-Umgebung, mit der die Modelle trainiert wurden; siehe Abschnitt 5, Umgebung): Sie kommen als Untergrenzen bzw. Constraints in den Compile, damit das Lock nicht stillschweigend auf neuere numpy- oder pandas-Hauptversionen springt. `uv pip compile pyproject.toml --all-extras --python-version 3.12 -c constraints-pc.txt -o requirements-linux-py312.lock`. Beide CI-Jobs installieren daraus, das README beschreibt die Aktualisierung. Damit stimmt die Aussage 'reproduzierbar' tatsächlich, und die Golden-Toleranzen müssen nicht mehr Versionsdrift abfangen. Ein Lock mit TF und pycbc gilt nur für Linux; das steht im Dateinamen.
 
 - **Dateien:** `requirements-linux-py312.lock`, `.github/workflows/ci.yml`, `README.md`
 - **Behebt:** HYG-6, core:MISS-1
