@@ -2,8 +2,8 @@
 import os
 
 # --- PFADE ---
-# Das Root-Verzeichnis ist dort, wo diese Datei liegt
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+# The root directory is GWD_HOME if set, otherwise the directory of this file
+ROOT_DIR = os.environ.get('GWD_HOME') or os.path.dirname(os.path.abspath(__file__))
 
 # Daten-Ordner
 DATA_DIR_TRAIN = os.path.join(ROOT_DIR, "data/training")
