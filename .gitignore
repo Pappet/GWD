@@ -49,3 +49,7 @@ models/
 #CUDA
 *.deb
 *.deb.1
+
+# Local files that stay out of git
+PROJECT_MEMORY.md
+docs/*.pdf
