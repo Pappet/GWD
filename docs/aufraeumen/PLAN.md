@@ -911,7 +911,7 @@ utility/test_imports.py bleibt bis P2.1 (danach gwd.env).
 
 - die Komponenten config, core, data, registry, training, evaluation, apps, cli;
 - die Importregel-Tabelle, die P2.6 als Test umsetzt;
-- die Verschiebetabelle 'heute: <Pfad> → Ziel: <Pfad>';
+- die Verschiebetabelle 'current: <path> → target: <path>' (englisch, D11);
 - die Liste der zusammenzuführenden Funktionen: Injektion 6×, Konditionierung 3×, z-Score ~10×, Modellsuche 4×, Event-Liste 2×, Schwellen 0.15/0.46/0.75;
 - den Abschnitt 'Szenarien und SNR-Definition (Ist-Zustand V1)' mit den Skews und Issue-IDs;
 - die Ausgangslage F1–F4 aus P0.1 und die Antworten auf D1–D12 (bzw. 'Default gilt');
@@ -922,7 +922,7 @@ Die Falschaussagen von PROJECT_OVERVIEW werden korrigiert (alles in src/, gw_tra
 - **Dateien:** `PROJECT_OVERVIEW.md → docs/architecture.md`
 - **Behebt:** HYG-9, APP-14, CORE-5, hygiene:HYG-M5, HYG-23, data-training:SNR-DEF
 - **Risiko:** Details können sich durch spätere Antworten ändern. Die Checkliste wird mitgepflegt, nicht jede Issue-ID einzeln.
-- **Prüfung:** `test -f docs/architecture.md && test ! -e PROJECT_OVERVIEW.md`; `python -c 'import re,subprocess; t=open("docs/architecture.md").read(); f=set(subprocess.check_output(["git","ls-files"]).decode().split()); m=[p for p in re.findall("heute: ([^ |]+)", t) if p not in f]; print(m); assert not m'` (jeder heute-Pfad existiert); `for i in $(seq 1 12); do grep -qw D$i docs/architecture.md || echo fehlt D$i; done` gibt nichts aus; `grep -cE 'F[1-4]' docs/architecture.md` ≥ 4.
+- **Prüfung:** `test -f docs/architecture.md && test ! -e PROJECT_OVERVIEW.md`; `python -c 'import re,subprocess; t=open("docs/architecture.md").read(); f=set(subprocess.check_output(["git","ls-files"]).decode().split()); m=[p for p in re.findall("current: ([^ |]+)", t) if p not in f]; print(m); assert not m'` (jeder current-Pfad existiert); `for i in $(seq 1 12); do grep -qw D$i docs/architecture.md || echo missing D$i; done` gibt nichts aus; `grep -cE 'F[1-4]' docs/architecture.md` ≥ 4.
 
 <a id="p16"></a>
 #### P1.6: Zeilenenden normalisieren (reiner Format-Commit)
