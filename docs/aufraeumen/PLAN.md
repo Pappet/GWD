@@ -374,15 +374,7 @@ Defaults sind additiv, erhalten den Status quo oder entfernen nachweislich Ungü
 
 **Fortschritt**
 
-| Schritt | PR | Stand |
-|---|---|---|
-| Plan, Register, Lizenz | #1 | gemergt |
-| P0.1 Backup, Import, Tag `pre-cleanup` (→ `2eec4b5`), AGENTS.md, CLAUDE.md | #2 | gemergt |
-| P0.2 GWD_HOME-Haken | #3 | gemergt; Review-Hinweise in P2.3 übernommen |
-| P0.3 validate_dataset lauffähig | #5 | gemergt |
-| P0.4 Leaderboard-Sofortkorrekturen und Moratorium (alte Physik_Gap-Werte in der Anzeige ausgeblendet) | #6, #7 | gemergt |
-| P0.5 pytest-Konfiguration, Pipeline- und App-Smoke | #8 | gemergt |
-| P0.6 Golden-Kennwerte | #9 | offen. PyCBC-Werte auf dem Laptop gemessen (pycbc 2.10.0, lalsuite 7.26.1, numpy 1.26.4); die Messung bricht ab, wenn PyCBC still auf Newton zurückfällt |
+Der Stand steht in der Schritt-Checkliste in [docs/architecture.md](../architecture.md#step-checklist).
 
 Für P0 und P1 braucht es keine Antwort. Ideal ist eine Antwort auf **D7 und D8 vor P2.1**. Bleibt eine Frage offen, gilt der genannte Default: Er ist additiv, erhält den Status quo oder entfernt nachweislich Ungültiges.
 

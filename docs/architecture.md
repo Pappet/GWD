@@ -183,7 +183,7 @@ Training, evaluation, and the Glitch Hunter draw from different distributions. P
 
 ## Step checklist
 
-The checklist is kept up to date with each step. Steps are done once their PR is merged.
+Each step PR ticks its own step, so a tick takes effect when that PR is merged.
 
 | Done | Step | Title | PR |
 |---|---|---|---|
@@ -197,7 +197,7 @@ The checklist is kept up to date with each step. Steps are done once their PR is
 | [x] | P1.2 | Move leaderboard and thresholds to `results/` | #12 |
 | [x] | P1.3 | Remove duplicate scripts in `analysis/` and `apps/` | #13 |
 | [x] | P1.4 | Remove dead scripts and misleading AI notes | #14 |
-| [ ] | P1.5 | Write down the target picture: this document | |
+| [x] | P1.5 | Write down the target picture: this document | #16 |
 | [x] | P1.6 | Normalize line endings | #15 |
 | [ ] | P2.1 | `pyproject.toml`, lockfile, `gwd_core` → `gwd.core`, update tests | |
 | [ ] | P2.2 | ruff baseline, format commit, lean CI | |

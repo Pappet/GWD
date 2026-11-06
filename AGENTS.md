@@ -15,6 +15,7 @@ Rules for AI assistants working in this repository.
 - One topic per commit, with a prefix: `chore`, `fix`, `refactor`, `test`,
   `docs`, or `golden` (see c54acd5).
 - Name the step ID from `docs/aufraeumen/PLAN.md` in the pull request.
+- Each step PR ticks its own step in the checklist in `docs/architecture.md`.
 - Before every commit, run `pytest -m 'not slow and not network'`.
   Before opening a pull request, run all tests.
 - Change golden values only in `golden:` commits, and state the reason.
