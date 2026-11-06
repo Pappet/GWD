@@ -1,5 +1,7 @@
 # ROC-Analyse und formale Metriken
 
+> **Note:** The commands in this document are outdated; `evaluate_classic_fixed.py` never existed; the Matched Filter baseline is currently not available.
+
 ## Übersicht
 
 Dieses Projekt nutzt jetzt professionelle Signalverarbeitungs-Metriken:

@@ -1,5 +1,7 @@
 # 🎯 ROC-Analyse Integration - Komplette Übersicht
 
+> **Note:** The commands in this document are outdated; `evaluate_classic_fixed.py` never existed; the Matched Filter baseline is currently not available.
+
 ## 📦 Was wurde hinzugefügt?
 
 ### Neue Dateien:
