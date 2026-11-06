@@ -893,14 +893,14 @@ Gelöscht werden:
 - utility/fix_plots.py: ein erledigter Einmal-Codemod, der Dateien in place überschreibt;
 - docs/FINAL_SUMMARY.md und docs/INSTALLATION_CHECKLIST.md: KI-Chat-Liefernotizen mit erfundenen Werten und Kopieranleitungen aus /mnt/user-data/outputs. Die Historie behält sie; ein Archivordner würde KI-Assistenten weiter in die Irre führen.
 
-docs/ROC_ANALYSIS_README.md und docs/ROC_INTEGRATION_OVERVIEW.md bleiben bis P7.1, weil ihre Erklärungen zu Metriken, Plots und Strategien stimmen. Sie bekommen oben den Hinweis 'Befehle veraltet; evaluate_classic_fixed.py hat nie existiert; Matched-Filter-Baseline derzeit nicht vorhanden'.
+docs/ROC_ANALYSIS_README.md und docs/ROC_INTEGRATION_OVERVIEW.md bleiben bis P7.1, weil ihre Erklärungen zu Metriken, Plots und Strategien stimmen. Sie bekommen oben einen englischen Hinweis (D11): 'The commands in this document are outdated; `evaluate_classic_fixed.py` never existed; the Matched Filter baseline is currently not available.'
 
 utility/test_imports.py bleibt bis P2.1 (danach gwd.env).
 
 - **Dateien:** `utility/fix_plots.py`, `docs/FINAL_SUMMARY.md`, `docs/INSTALLATION_CHECKLIST.md`, `docs/ROC_ANALYSIS_README.md`, `docs/ROC_INTEGRATION_OVERVIEW.md`
 - **Behebt:** HYG-17, EVAL-26, HYG-13, HYG-3, HYG-14, DATA-24, hygiene:HYG-M2
 - **Risiko:** Gering, die Historie behält alles.
-- **Prüfung:** `git ls-files utility/fix_plots.py docs/FINAL_SUMMARY.md docs/INSTALLATION_CHECKLIST.md | wc -l` → 0; `head -5 docs/ROC_ANALYSIS_README.md docs/ROC_INTEGRATION_OVERVIEW.md | grep -c veraltet` → 2; `python -m pytest -q` grün.
+- **Prüfung:** `git ls-files utility/fix_plots.py docs/FINAL_SUMMARY.md docs/INSTALLATION_CHECKLIST.md | wc -l` → 0; `head -5 docs/ROC_ANALYSIS_README.md docs/ROC_INTEGRATION_OVERVIEW.md | grep -c outdated` → 2; `python -m pytest -q` grün.
 
 <a id="p15"></a>
 #### P1.5: Zielbild festschreiben: docs/architecture.md (aus PROJECT_OVERVIEW.md)
