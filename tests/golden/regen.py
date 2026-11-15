@@ -7,10 +7,8 @@ directory, generate_dataset would mix in the real noise from data/noise_backgrou
 and the values would differ on every machine without those files.
 """
 
-import contextlib
 import glob
 import importlib.metadata
-import io
 import json
 import os
 import pprint
@@ -148,12 +146,10 @@ def _measure_interferometer(interferometer):
 def _measure_pycbc(time, waveforms):
     import numpy as np
 
-    output = io.StringIO()
-    with contextlib.redirect_stdout(output):
-        strain, freq = waveforms.generate_astrophysical_chirp(time, **CHIRP)
-    # The waveform code falls back to Newton on any PyCBC error and only prints a message.
-    if "PyCBC" in output.getvalue():
-        raise RuntimeError(f"PyCBC path did not run: {output.getvalue()}")
+    # The waveform code falls back to Newton on any PyCBC error and only warns.
+    strain, freq, backend = waveforms.chirp_and_backend(time, **CHIRP)
+    if backend != "pycbc":
+        raise RuntimeError(f"PyCBC path did not run, the backend was {backend}")
     peak = int(np.argmax(np.abs(strain)))
     return {
         "peak_index": peak,

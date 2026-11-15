@@ -5,18 +5,54 @@ Dieses Modul stellt Funktionen bereit, um realistische Gravitationswellen-Signal
 von verschmelzenden schwarzen Löchern (Binary Black Hole Mergers) zu generieren.
 """
 
+import importlib.metadata
+import logging
+import warnings
+
 import numpy as np
+
+_log = logging.getLogger(__name__)
 
 try:
     from pycbc.waveform import get_td_waveform
 
     HAS_PYCBC = True
-except ImportError:
+except ImportError as error:
     HAS_PYCBC = False
-    print("⚠️ PyCBC nicht installiert - verwende Newton-Approximation als Fallback")
+    # Logged, not printed: importing this module writes nothing (CORE-17). The
+    # pipeline states the backend itself, see active_backend().
+    _log.info(
+        "PyCBC not importable (%s); waveforms use the Newtonian approximation", error
+    )
 
 
-def generate_astrophysical_chirp(
+class WaveformFallbackWarning(RuntimeWarning):
+    """PyCBC was asked for a waveform, but the Newtonian approximation produced it."""
+
+
+def active_backend():
+    """The waveform backend in use: 'pycbc <version>' or 'newton'.
+
+    It is decided once, on import, by whether PyCBC can be imported. A single chirp can
+    still fall back to Newton if PyCBC fails for its parameters; chirp_and_backend()
+    reports that per chirp and warns with WaveformFallbackWarning.
+    """
+    if not HAS_PYCBC:
+        return "newton"
+    try:
+        version = importlib.metadata.version("pycbc")
+    except importlib.metadata.PackageNotFoundError:
+        version = "unknown version"
+    return f"pycbc {version}"
+
+
+def generate_astrophysical_chirp(time_array, **kwargs):
+    """The chirp of chirp_and_backend() as (strain, frequency), without the backend name."""
+    strain, frequency, _ = chirp_and_backend(time_array, **kwargs)
+    return strain, frequency
+
+
+def chirp_and_backend(
     time_array,
     t_merger=None,
     mass1=30,
@@ -49,9 +85,10 @@ def generate_astrophysical_chirp(
         approximant: Wellenform-Approximation (nur für PyCBC).
 
     Returns:
-        tuple: (strain, frequency)
+        tuple: (strain, frequency, backend)
             - strain: np.array mit der Amplitude der Gravitationswelle
             - frequency: np.array mit der instantanen Frequenz über die Zeit
+            - backend: "pycbc" or "newton", the backend that produced this chirp
     """
 
     # Standard-Merger-Zeit bestimmen, falls nicht gegeben
@@ -124,10 +161,14 @@ def generate_astrophysical_chirp(
                 if m > 0:
                     strain_out /= m
 
-            return strain_out, freq_out
+            return strain_out, freq_out, "pycbc"
 
         except Exception as e:
-            print(f"⚠️ PyCBC Fehler: {e} -> Fallback auf Newton.")
+            warnings.warn(
+                f"PyCBC failed ({e}); this chirp uses the Newtonian approximation.",
+                WaveformFallbackWarning,
+                stacklevel=2,
+            )
 
     # --- VARIANTE B: Newtonsche Physik (Fallback) ---
     # Formeln für die Inspiral-Phase (vor dem Merger)
@@ -177,7 +218,7 @@ def generate_astrophysical_chirp(
         if m > 0:
             strain_out /= m
 
-    return strain_out, freq_newton
+    return strain_out, freq_newton, "newton"
 
 
 def generate_realistic_chirp(
@@ -211,8 +252,11 @@ def generate_realistic_chirp(
     """
 
     if not HAS_PYCBC:
-        # Fallback auf Newton-Approximation
-        print("⚠️ PyCBC nicht verfügbar - verwende Newton-Approximation")
+        warnings.warn(
+            "PyCBC is not available; using the Newtonian approximation.",
+            WaveformFallbackWarning,
+            stacklevel=2,
+        )
         return generate_astrophysical_chirp(
             time_array,
             mass1=mass1,

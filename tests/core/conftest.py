@@ -1,4 +1,5 @@
 import os
+import warnings
 
 import numpy as np
 import pytest
@@ -27,12 +28,6 @@ def require_pycbc():
     pytest.skip("pycbc missing")
 
 
-def _no_silent_fallback(*args, **kwargs):
-    message = " ".join(str(arg) for arg in args)
-    # pytest.fail raises Failed, not AssertionError, so xfail(raises=AssertionError) cannot hide it.
-    pytest.fail(f"PyCBC backend fell back to Newton: {message}")
-
-
 @pytest.fixture
 def needs_pycbc():
     require_pycbc()
@@ -42,13 +37,15 @@ def needs_pycbc():
 def backend(request, monkeypatch):
     """Select the waveform backend through waveforms.HAS_PYCBC.
 
-    On 'pycbc', the silent fallback to Newton (CORE-4) fails the test: its only trace
-    is a print, so the fixture replaces print in the waveforms module.
+    On 'pycbc', a fallback to Newton (CORE-4) fails the test: its WaveformFallbackWarning
+    becomes an error. The error is not an AssertionError, so xfail(raises=AssertionError)
+    cannot hide it.
     """
-    if request.param == "pycbc":
-        require_pycbc()
-        monkeypatch.setattr(waveforms, "HAS_PYCBC", True)
-        monkeypatch.setattr(waveforms, "print", _no_silent_fallback, raising=False)
-    else:
-        monkeypatch.setattr(waveforms, "HAS_PYCBC", False)
-    return request.param
+    with warnings.catch_warnings():
+        if request.param == "pycbc":
+            require_pycbc()
+            monkeypatch.setattr(waveforms, "HAS_PYCBC", True)
+            warnings.simplefilter("error", waveforms.WaveformFallbackWarning)
+        else:
+            monkeypatch.setattr(waveforms, "HAS_PYCBC", False)
+        yield request.param
