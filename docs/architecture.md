@@ -262,7 +262,7 @@ Each step PR ticks its own step, so a tick takes effect when that PR is merged.
 | [x] | P3.5 | Central injection with named V1 scenarios | #29 |
 | [x] | P3.6 | Unified `gwd` CLI, `gwd env`, thin menu | #30 |
 | [x] | P3.7 | Split training into `model.py` and `train.py` | #31 |
-| [ ] | P4.1 | Make silent switches visible: logging, manifest, metadata, exit codes | |
+| [x] | P4.1 | Make silent switches visible: logging, manifest, metadata, exit codes | #32 |
 | [ ] | P4.2 | Simulation evaluation fixes, `metrics.py` as pure functions | |
 | [ ] | P4.3 | Real data field test: padding, honest counting, only with `--real` | |
 | [ ] | P4.4 | Untangle Glitch Hunter: GUI, sources, audio; fix threading; modes | |
