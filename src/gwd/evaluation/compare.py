@@ -9,7 +9,6 @@ import os
 import sys
 
 import matplotlib
-import numpy as np
 
 from gwd.config import (
     EVALUATION_MODELS_PLOTS_DIR,
@@ -27,47 +26,67 @@ from gwd.registry import list_models, load_model, model_name, resolve
 TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
-def load_models(paths):
-    """Load the given models, oldest first when they come from list_models()."""
-    models = []
+def score_models(paths, X_test, y_true):
+    """Load the models one after another and compute each ROC curve once.
+
+    Only one model is in memory at a time. Returns (name, fpr, tpr, roc_auc) per model that
+    loads, in the order of paths (oldest first when they come from list_models()).
+    """
+    curves = []
     for path in paths:
         try:
             model = load_model(path)
-            name = model_name(path)
-            models.append((name, model))
-            print(f"✓ Geladen: {name}")
         except Exception as e:
             print(f"✗ Fehler bei {path}: {e}")
+            continue
+        name = model_name(path)
+        print(f"✓ Geladen: {name}")
+        y_scores = model.predict(X_test, verbose=0).flatten()
+        del model
+        fpr, tpr, _ = roc_curve(y_true, y_scores)
+        curves.append((name, fpr, tpr, auc(fpr, tpr)))
+    return curves
 
-    return models
+
+def model_colors(names):
+    """One fixed color per model name, the same in every plot of a run.
+
+    The names are sorted, so the same set of models gets the same colors in every run.
+    """
+    unique = sorted(set(names))
+    cmap = plt.cm.tab10 if len(unique) <= 10 else plt.cm.tab20
+    return {name: cmap(i % cmap.N) for i, name in enumerate(unique)}
 
 
-def compare_models_roc(models, X_test, y_true):
-    """Vergleicht mehrere Modelle in einer ROC-Kurve."""
+def short_name(name, length=30):
+    """The model name for a legend, cut to length characters."""
+    return name if len(name) <= length else name[:length] + "..."
 
-    print("\n🧠 Berechne ROC-Kurven für alle Modelle...")
+
+def save_plot(fig, filename):
+    """Save fig in the evaluation plot folder and return the path."""
+    ensure_dirs(EVALUATION_MODELS_PLOTS_DIR)
+    path = os.path.join(EVALUATION_MODELS_PLOTS_DIR, filename)
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    print(f"📊 Plot: {path}")
+    return path
+
+
+def compare_models_roc(curves, colors):
+    """Plot all ROC curves and the AUC ranking. Returns the ranking, best first."""
+
+    print("\n🧠 Plotting the ROC curves of all models...")
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
 
-    # Farben für die Modelle
-    colors = plt.cm.tab10(np.linspace(0, 1, len(models)))
-
-    auc_scores = []
-
-    for (name, model), color in zip(models, colors):
-        print(f"   → {name}...")
-
-        # Predictions
-        y_scores = model.predict(X_test, verbose=0).flatten()
-
-        # ROC berechnen
-        fpr, tpr, thresholds = roc_curve(y_true, y_scores)
-        roc_auc = auc(fpr, tpr)
-        auc_scores.append((name, roc_auc))
-
-        # Plotten
+    for name, fpr, tpr, roc_auc in curves:
         ax1.plot(
-            fpr, tpr, color=color, lw=2, label=f"{name[:30]}... (AUC={roc_auc:.3f})"
+            fpr,
+            tpr,
+            color=colors[name],
+            lw=2,
+            label=f"{short_name(name)} (AUC={roc_auc:.3f})",
         )
 
     # Zufall-Linie
@@ -80,11 +99,19 @@ def compare_models_roc(models, X_test, y_true):
     ax1.grid(True, alpha=0.3)
 
     # --- AUC Bar Chart ---
-    auc_scores_sorted = sorted(auc_scores, key=lambda x: x[1], reverse=True)
-    names = [x[0][:30] for x in auc_scores_sorted]
+    auc_scores_sorted = sorted(
+        ((name, roc_auc) for name, _, _, roc_auc in curves),
+        key=lambda x: x[1],
+        reverse=True,
+    )
+    names = [short_name(name) for name, _ in auc_scores_sorted]
     aucs = [x[1] for x in auc_scores_sorted]
 
-    bars = ax2.barh(range(len(names)), aucs, color=colors[: len(names)])
+    bars = ax2.barh(
+        range(len(names)),
+        aucs,
+        color=[colors[name] for name, _ in auc_scores_sorted],
+    )
     ax2.set_yticks(range(len(names)))
     ax2.set_yticklabels(names, fontsize=9)
     ax2.set_xlabel("ROC AUC", fontsize=12, fontweight="bold")
@@ -105,21 +132,13 @@ def compare_models_roc(models, X_test, y_true):
             color="white",
         )
 
-    plt.tight_layout()
-    ensure_dirs(EVALUATION_MODELS_PLOTS_DIR)
-    plt.savefig(
-        os.path.join(EVALUATION_MODELS_PLOTS_DIR, f"plot_compare_roc_{TIMESTAMP}.png"),
-        dpi=150,
-    )
-    print(
-        f"📊 Plot: {os.path.join(EVALUATION_MODELS_PLOTS_DIR, f'plot_compare_roc_{TIMESTAMP}.png')}"
-    )
-    plt.close()
+    fig.tight_layout()
+    save_plot(fig, f"plot_compare_roc_{TIMESTAMP}.png")
 
     return auc_scores_sorted
 
 
-def zoom_to_relevant_region(models, X_test, y_true):
+def zoom_to_relevant_region(curves, colors):
     """
     BONUS: Zoomed ROC Plot
     Im GW-Bereich sind wir meist bei sehr niedriger FPR interessiert.
@@ -128,23 +147,18 @@ def zoom_to_relevant_region(models, X_test, y_true):
     print("\n🔍 Erstelle Zoom auf relevante Region (FPR < 0.1)...")
 
     fig, ax = plt.subplots(figsize=(10, 8))
-    colors = plt.cm.tab10(np.linspace(0, 1, len(models)))
 
-    for (name, model), color in zip(models, colors):
-        y_scores = model.predict(X_test, verbose=0).flatten()
-        fpr, tpr, _ = roc_curve(y_true, y_scores)
-        roc_auc = auc(fpr, tpr)
-
+    for name, fpr, tpr, roc_auc in curves:
         # Nur FPR < 0.1 plotten
         mask = fpr <= 0.1
         ax.plot(
             fpr[mask],
             tpr[mask],
-            color=color,
+            color=colors[name],
             lw=2,
             marker="o",
             markersize=3,
-            label=f"{name[:30]}... (AUC={roc_auc:.3f})",
+            label=f"{short_name(name)} (AUC={roc_auc:.3f})",
         )
 
     ax.set_xlabel("False Positive Rate", fontsize=12, fontweight="bold")
@@ -159,16 +173,8 @@ def zoom_to_relevant_region(models, X_test, y_true):
     ax.set_xlim(0, 0.1)
     ax.set_ylim(0, 1)
 
-    plt.tight_layout()
-    ensure_dirs(EVALUATION_MODELS_PLOTS_DIR)
-    plt.savefig(
-        os.path.join(EVALUATION_MODELS_PLOTS_DIR, f"plot_compare_roc_{TIMESTAMP}.png"),
-        dpi=150,
-    )
-    print(
-        f"📊 Plot: {os.path.join(EVALUATION_MODELS_PLOTS_DIR, f'plot_compare_roc_{TIMESTAMP}.png')}"
-    )
-    plt.close()
+    fig.tight_layout()
+    save_plot(fig, f"plot_compare_roc_{TIMESTAMP}_zoom.png")
 
 
 def run(models=None):
@@ -177,33 +183,44 @@ def run(models=None):
     print("🏆 ROC CURVE COMPARISON TOOL")
     print("=" * 70)
 
-    # 1. Modelle laden
+    # 1. Modelle finden
     try:
         paths = [resolve(spec) for spec in models] if models else list_models()
     except FileNotFoundError as error:
         print(f"❌ {error}")
         return 1
-    models = load_models(paths)
 
-    if len(models) == 0:
+    if len(paths) == 0:
         print("\n❌ No models to compare.")
         return 1
 
-    if len(models) == 1:
+    if len(paths) == 1:
         print("\n⚠️ Nur ein Modell gefunden. Trainiere mehr Modelle für Vergleiche!")
         return 0
-
-    print(f"\n✅ {len(models)} Modelle geladen.")
 
     # 2. Test-Set generieren
     n_samples = 1000
     print(f"\n📊 Generating {n_samples} test samples ({EVAL_V1.name})...")
     X_test, y_true = make_test_set(EVAL_V1, n_samples)
 
-    # 3. Vergleich durchführen
-    rankings = compare_models_roc(models, X_test, y_true)
+    # 3. Load each model in turn and score it once
+    curves = score_models(paths, X_test, y_true)
 
-    # 4. Ranking ausgeben
+    if len(curves) == 0:
+        print("\n❌ No models to compare.")
+        return 1
+
+    if len(curves) == 1:
+        print("\n⚠️ Nur ein Modell gefunden. Trainiere mehr Modelle für Vergleiche!")
+        return 0
+
+    print(f"\n✅ {len(curves)} Modelle geladen.")
+    colors = model_colors([name for name, *_ in curves])
+
+    # 4. Vergleich durchführen
+    rankings = compare_models_roc(curves, colors)
+
+    # 5. Ranking ausgeben
     print("\n" + "=" * 70)
     print("📊 FINAL RANKING:")
     print("=" * 70)
@@ -211,10 +228,9 @@ def run(models=None):
         print(f"  {i}. {name[:50]:<50s} | AUC: {auc_val:.4f}")
     print("=" * 70)
 
-    # 5. Bonus: Zoom
-    if len(models) > 1:
-        print("\n💡 Erstelle zusätzlichen Zoom-Plot für niedrige FPR...")
-        zoom_to_relevant_region(models, X_test, y_true)
+    # 6. Bonus: Zoom
+    print("\n💡 Erstelle zusätzlichen Zoom-Plot für niedrige FPR...")
+    zoom_to_relevant_region(curves, colors)
     return 0
 
 
