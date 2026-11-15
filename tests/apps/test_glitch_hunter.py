@@ -49,3 +49,25 @@ def test_a_rejected_download_falls_back_to_simulation(hunter):
     hunter.error = StrainError("H1: 3 NaN samples")
     hunter.load_random_real_thread()
     assert hunter.plots == [{"fallback": True}]
+
+
+def test_the_simulation_mode_draws_from_app_v1():
+    """Simulated samples come from gwd.data.injection with APP_V1 (P3.5)."""
+    from gwd.data.scenarios import APP_V1
+
+    app = app_module.GlitchHunterApp.__new__(app_module.GlitchHunterApp)
+    app.time = np.linspace(0, DURATION, N_SAMPLES)
+    app.update_plot_threadsafe = lambda **kwargs: None
+    np.random.seed(4)
+    seen = set()
+    for _ in range(20):
+        app.generate_new_sample(None)
+        seen.add(app.has_signal)
+        assert app.current_data.shape == (N_SAMPLES,)
+        if app.has_signal:
+            low, high = APP_V1.snr_range
+            assert low <= app.true_snr <= high
+            assert np.isclose(np.max(np.abs(app.pure_signal)), app.true_snr)
+        else:
+            assert app.true_snr == 0.0 and not app.pure_signal.any()
+    assert seen == {True, False}
