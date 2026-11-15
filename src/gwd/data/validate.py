@@ -11,8 +11,6 @@ Usage:
 import argparse
 import os
 
-import matplotlib.gridspec as gridspec
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy import signal
@@ -184,6 +182,9 @@ def validate_samples(df, data_folder, num_check=10):
 
 def create_visualizations(df, data_folder, output_folder=VALIDATION_DATASET_PLOTS_DIR):
     """Erstellt umfassende Visualisierungen des Datensatzes."""
+    # Lazy, so importing gwd.data does not load matplotlib (docs/architecture.md).
+    import matplotlib.gridspec as gridspec
+    import matplotlib.pyplot as plt
 
     ensure_dirs(output_folder)
 
