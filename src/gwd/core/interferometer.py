@@ -3,15 +3,15 @@ import numpy as np
 
 class InterferometerModel:
     """
-    Berechnet die theoretische Sensitivität eines GW-Detektors.
-    (Logik extrahiert aus Interferometer Designer V2)
+    Computes the sensitivity (ASD) of a GW detector as a simple learning model (D6).
+    (Logic taken from Interferometer Designer V2.)
     """
 
     def __init__(self):
-        # Standard-Parameter
-        self.laser_power = 200  # Watt
+        # Default parameters
+        self.laser_power = 200  # watts
         self.mirror_reflectivity = 0.999
-        self.arm_length = 4000  # Meter
+        self.arm_length = 4000  # metres
         self.beamsplitter_loss = 1e-4
 
         # Features
@@ -19,11 +19,11 @@ class InterferometerModel:
         self.signal_recycling = False
         self.squeezed_light = False
 
-        # Konstanten
+        # Constants
         self.c = 299792458
         self.h = 6.626e-34
 
-        # Frequenzbereich für Berechnungen
+        # Frequency range of the curve
         self.freq = np.logspace(1, 3.5, 1000)  # 10 Hz - 3 kHz
 
     @property
