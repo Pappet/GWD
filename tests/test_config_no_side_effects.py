@@ -7,7 +7,6 @@ import sys
 import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC = os.path.join(ROOT, "src")
 
 # Modules without TensorFlow, so the fast CI job can import them.
 LIGHT_MODULES = [
@@ -16,15 +15,18 @@ LIGHT_MODULES = [
     "gwd.data.generate",
     "gwd.data.validate",
     "gwd.data.fetch_noise",
-    "utils.evaluation",
-    "show_leaderboard",
+    "gwd.data.preprocessing",
+    "gwd.evaluation.leaderboard",
+    "gwd.registry",
+    "gwd.apps.waveform_explorer",
+    "gwd.apps.interferometer_designer",
 ]
 TF_MODULES = [
     "gwd.training.train",
-    "evaluate_model_with_roc",
-    "optimize_threshold",
-    "compare_models_roc",
-    "glitch_hunter_app",
+    "gwd.evaluation.evaluate",
+    "gwd.evaluation.thresholds",
+    "gwd.evaluation.compare",
+    "gwd.apps.glitch_hunter.app",
 ]
 
 
@@ -32,7 +34,7 @@ def import_in_empty_home(home, modules):
     code = "\n".join(
         [
             "import sys",
-            f"sys.path[:0] = [{ROOT!r}, {SRC!r}]",
+            f"sys.path.insert(0, {ROOT!r})",
             *(f"import {module}" for module in modules),
         ]
     )

@@ -4,16 +4,9 @@ Gravitationswellen-Detektor Simulator - GUI Frontend
 Uses gwd.core for the simulation.
 """
 
-import os
-import sys
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button, Slider
 
-# --- IMPORT SETUP ---
-sys.path.append(os.path.dirname(__file__))
 from gwd.core.simulation import TimeDomainSimulator
 
 

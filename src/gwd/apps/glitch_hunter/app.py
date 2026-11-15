@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-import os
-import sys
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import glob
+import os
 import platform
 import random
 import subprocess
+import sys
 import threading
 
 import matplotlib.pyplot as plt
@@ -16,10 +14,7 @@ import tensorflow as tf
 from gwpy.timeseries import TimeSeries
 from matplotlib.widgets import Button, Slider
 
-from config import MODELS_DIR
-
-# Imports aus deinem Core
-sys.path.append(os.path.dirname(__file__))
+from gwd.config import MODELS_DIR
 from gwd.core.noise import generate_gaussian_noise
 from gwd.core.waveforms import generate_astrophysical_chirp
 

@@ -14,16 +14,16 @@ MENU = [
     ("2", "[DATA]   Generate training data", "module", "gwd.data.generate"),
     ("3", "[DATA]   Validate dataset", "module", "gwd.data.validate"),
     ("4", "[TRAIN]  Train CNN model", "module", "gwd.training.train"),
+    ("5", "[EVAL]   Evaluate model (ROC & plots)", "module", "gwd.evaluation.evaluate"),
+    ("6", "[EVAL]   Optimize threshold", "module", "gwd.evaluation.thresholds"),
+    ("7", "[EVAL]   Compare models", "module", "gwd.evaluation.compare"),
     (
-        "5",
-        "[EVAL]   Evaluate model (ROC & plots)",
-        "path",
-        "src/evaluate_model_with_roc.py",
+        "8",
+        "[APP]    Glitch Hunter (interactive)",
+        "module",
+        "gwd.apps.glitch_hunter.app",
     ),
-    ("6", "[EVAL]   Optimize threshold", "path", "src/optimize_threshold.py"),
-    ("7", "[EVAL]   Compare models", "path", "src/compare_models_roc.py"),
-    ("8", "[APP]    Glitch Hunter (interactive)", "path", "src/glitch_hunter_app.py"),
-    ("9", "[APP]    Waveform simulator", "path", "src/gw_simulator.py"),
+    ("9", "[APP]    Waveform simulator", "module", "gwd.apps.waveform_explorer"),
 ]
 
 

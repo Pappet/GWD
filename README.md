@@ -77,10 +77,10 @@ python -m gwd.training.train
 ### 3. Evaluate Results
 ```bash
 # Run advanced ROC metric evaluation
-python src/evaluate_model_with_roc.py
+python -m gwd.evaluation.evaluate
 
 # Optimize inference threshold
-python src/optimize_threshold.py
+python -m gwd.evaluation.thresholds
 ```
 
 ### 4. Menu
