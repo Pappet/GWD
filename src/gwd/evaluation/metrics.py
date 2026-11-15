@@ -24,14 +24,55 @@ def calculate_operating_point(y_true, y_scores, threshold):
     return tpr, fpr
 
 
+def finite_roc(fpr, tpr, thresholds):
+    """Drop the points of a ROC curve whose threshold is not finite."""
+    finite = np.isfinite(thresholds)
+    return fpr[finite], tpr[finite], thresholds[finite]
+
+
+def point_at_fpr(fpr, tpr, thresholds, target_fpr, y_scores):
+    """The ROC point with the highest TPR among those with FPR <= target_fpr.
+
+    Ties go to the lower FPR. If no point meets the target, the threshold lies just above the
+    highest score: nothing is detected, so TPR and FPR are 0.
+    """
+    allowed = np.flatnonzero(fpr <= target_fpr)
+    if len(allowed) == 0:
+        return {
+            "threshold": float(np.nextafter(np.max(y_scores), np.inf)),
+            "tpr": 0.0,
+            "fpr": 0.0,
+        }
+    best = allowed[tpr[allowed] == tpr[allowed].max()]
+    i = best[np.argmin(fpr[best])]
+    return {"threshold": thresholds[i], "tpr": tpr[i], "fpr": fpr[i]}
+
+
+def point_at_tpr(fpr, tpr, thresholds, target_tpr):
+    """The ROC point with the lowest FPR among those with TPR >= target_tpr.
+
+    Ties go to the higher TPR. The lowest threshold detects every signal, so a point exists
+    for any target up to 1.
+    """
+    allowed = np.flatnonzero(tpr >= target_tpr)
+    best = allowed[fpr[allowed] == fpr[allowed].min()]
+    i = best[np.argmax(tpr[best])]
+    return {"threshold": thresholds[i], "tpr": tpr[i], "fpr": fpr[i]}
+
+
 def find_optimal_thresholds(y_true, y_scores):
     """
     Compute thresholds by several criteria.
 
     Returns:
-        (dict of threshold proposals by strategy name, (fpr, tpr, thresholds))
+        (dict of threshold proposals by strategy name, (fpr, tpr, thresholds)). The ROC
+        curve is the full one from roc_curve, for plotting; the proposals never use its
+        infinite threshold.
     """
-    fpr, tpr, thresholds = roc_curve(y_true, y_scores)
+    roc = roc_curve(y_true, y_scores)
+    # roc_curve starts with an infinite threshold (nothing detected); no strategy may choose
+    # it, because it is no usable threshold and json writes it as the invalid 'Infinity'.
+    fpr, tpr, thresholds = finite_roc(*roc)
     precision, recall, pr_thresholds = precision_recall_curve(y_true, y_scores)
 
     results = {}
@@ -69,24 +110,18 @@ def find_optimal_thresholds(y_true, y_scores):
         "description": "Maximizes the F1 score - good for unbalanced data",
     }
 
-    # 3. Fixed FPR = 0.05 (5% false alarm rate)
+    # 3. Fixed FPR <= 0.05 (5% false alarm rate)
     target_fpr = 0.05
-    idx_fpr = np.argmin(np.abs(fpr - target_fpr))
     results["fixed_fpr_5"] = {
-        "threshold": thresholds[idx_fpr],
-        "tpr": tpr[idx_fpr],
-        "fpr": fpr[idx_fpr],
-        "description": f"Maximizes TPR at FPR ≈ {target_fpr:.0%}",
+        **point_at_fpr(fpr, tpr, thresholds, target_fpr, y_scores),
+        "description": f"Maximizes TPR at FPR ≤ {target_fpr:.0%}",
     }
 
-    # 4. Fixed FPR = 0.01 (1% false alarm rate - conservative)
+    # 4. Fixed FPR <= 0.01 (1% false alarm rate - conservative)
     target_fpr = 0.01
-    idx_fpr = np.argmin(np.abs(fpr - target_fpr))
     results["fixed_fpr_1"] = {
-        "threshold": thresholds[idx_fpr],
-        "tpr": tpr[idx_fpr],
-        "fpr": fpr[idx_fpr],
-        "description": f"Maximizes TPR at FPR ≈ {target_fpr:.0%} - conservative",
+        **point_at_fpr(fpr, tpr, thresholds, target_fpr, y_scores),
+        "description": f"Maximizes TPR at FPR ≤ {target_fpr:.0%} - conservative",
     }
 
     # 5. Cost-based (example: false negatives are 5x worse than false positives)
@@ -106,14 +141,11 @@ def find_optimal_thresholds(y_true, y_scores):
         "description": f"Minimizes the cost (FN:{fn_cost}x, FP:{fp_cost}x)",
     }
 
-    # 6. TPR = 0.9 (90% detection rate guaranteed)
+    # 6. TPR >= 0.9 (90% detection rate guaranteed)
     target_tpr = 0.90
-    idx_tpr = np.argmin(np.abs(tpr - target_tpr))
     results["fixed_tpr_90"] = {
-        "threshold": thresholds[idx_tpr],
-        "tpr": tpr[idx_tpr],
-        "fpr": fpr[idx_tpr],
-        "description": f"Minimizes FPR at TPR ≈ {target_tpr:.0%}",
+        **point_at_tpr(fpr, tpr, thresholds, target_tpr),
+        "description": f"Minimizes FPR at TPR ≥ {target_tpr:.0%}",
     }
 
-    return results, (fpr, tpr, thresholds)
+    return results, roc
