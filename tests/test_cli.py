@@ -254,6 +254,7 @@ def test_train_without_options_uses_the_config_defaults(fake_training):
 def test_train_passes_the_overrides(fake_training, monkeypatch):
     monkeypatch.setenv("TF_CPP_MIN_LOG_LEVEL", "0")
     args = "train --data d --epochs 3 --batch-size 16 --lr 0.001 --patience 2"
+    args += " --mixed-precision"
     assert cli.main(args.split()) == 0
     assert fake_training.calls == [
         {
@@ -262,6 +263,7 @@ def test_train_passes_the_overrides(fake_training, monkeypatch):
             "batch_size": 16,
             "learning_rate": 0.001,
             "patience": 2,
+            "mixed_precision": True,
         }
     ]
     assert os.environ["TF_CPP_MIN_LOG_LEVEL"] == "0"

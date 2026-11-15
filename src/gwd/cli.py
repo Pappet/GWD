@@ -91,6 +91,7 @@ def _train(args):
         "batch_size": args.batch_size,
         "learning_rate": args.lr,
         "patience": args.patience,
+        "mixed_precision": args.mixed_precision or None,
     }
     cfg = TrainConfig(
         **{name: value for name, value in overrides.items() if value is not None}
@@ -263,6 +264,12 @@ def build_parser():
         type=int,
         help="Epochs without a better val_loss before early stopping. "
         "Default: EARLY_STOPPING_PATIENCE in gwd.config.",
+    )
+    train.add_argument(
+        "--mixed-precision",
+        action="store_true",
+        help="Train with mixed_float16 even without a GPU. Default: mixed_float16 "
+        "only if TensorFlow finds a GPU, else float32.",
     )
     _add_seed(train, "Python, numpy, and TensorFlow")
     train.set_defaults(handler=_train)

@@ -37,9 +37,6 @@ from gwd.config import (
 from gwd.data.preprocessing import normalize
 from gwd.training.model import ARCHITECTURE, build_model
 
-# Mixed precision für schnelleres Training auf RTX GPUs
-tf.keras.mixed_precision.set_global_policy("mixed_float16")
-
 
 @dataclass(frozen=True)
 class TrainConfig:
@@ -52,6 +49,8 @@ class TrainConfig:
     batch_size: int = BATCH_SIZE
     learning_rate: float = LEARNING_RATE
     patience: int = EARLY_STOPPING_PATIENCE
+    # True forces mixed_float16; otherwise only a GPU turns it on (D7).
+    mixed_precision: bool = False
 
 
 @dataclass(frozen=True)
@@ -74,6 +73,21 @@ def new_run(models_dir, now=None):
         model_path=os.path.join(models_dir, f"{name}.keras"),
         config_path=os.path.join(models_dir, f"{name}.json"),
     )
+
+
+def choose_precision(mixed_precision=False, gpus=None):
+    """Return the Keras policy for a run and why: mixed_float16 on request or with a GPU.
+
+    On the CPU, mixed_float16 is slow and only emulated, so float32 is used there (D7).
+    gpus=None asks TensorFlow for the visible GPUs.
+    """
+    if mixed_precision:
+        return "mixed_float16", "--mixed-precision"
+    if gpus is None:
+        gpus = tf.config.list_physical_devices("GPU")
+    if gpus:
+        return "mixed_float16", f"{len(gpus)} GPU(s) found"
+    return "float32", "no GPU found"
 
 
 def load_data(data_folder=DATA_DIR_TRAIN):
@@ -129,7 +143,7 @@ def load_data(data_folder=DATA_DIR_TRAIN):
     return X, y
 
 
-def save_experiment_config(history_obj, final_acc, cfg, run):
+def save_experiment_config(history_obj, final_acc, cfg, run, policy):
     """
     Speichert Metadaten zum Training, damit wir später wissen, was wir getan haben.
 
@@ -138,6 +152,7 @@ def save_experiment_config(history_obj, final_acc, cfg, run):
         final_acc: Test-Set Accuracy
         cfg: TrainConfig of the run
         run: Run with the name and the .json path
+        policy: Name of the Keras precision policy the model was trained with
     """
     # Wir holen uns die letzten Werte aus der History
     final_train_acc = history_obj.history["accuracy"][-1]
@@ -153,6 +168,7 @@ def save_experiment_config(history_obj, final_acc, cfg, run):
         "batch_size": cfg.batch_size,
         "learning_rate": cfg.learning_rate,
         "early_stopping_patience": cfg.patience,
+        "precision_policy": policy,
         "test_split": TEST_SPLIT,
         "architecture": ARCHITECTURE,
         "metrics": {
@@ -223,7 +239,9 @@ def plot_history(history, plot_path):
 
 def train(cfg=None):
     """
-    Lädt Daten, trainiert Modell, evaluiert und speichert alles.
+    Train one model with the precision from choose_precision() and save it.
+
+    The precision policy is set only for the run and restored afterwards.
 
     Args:
         cfg: TrainConfig; None means all defaults.
@@ -232,6 +250,20 @@ def train(cfg=None):
         The Run with the name and the paths of the saved model and its .json.
     """
     cfg = cfg or TrainConfig()
+    policy, reason = choose_precision(cfg.mixed_precision)
+    print(f"Precision: {policy} ({reason})")
+    previous = tf.keras.mixed_precision.global_policy()
+    tf.keras.mixed_precision.set_global_policy(policy)
+    try:
+        return _train_and_save(cfg, policy)
+    finally:
+        tf.keras.mixed_precision.set_global_policy(previous)
+
+
+def _train_and_save(cfg, policy):
+    """
+    Lädt Daten, trainiert Modell, evaluiert und speichert alles.
+    """
     run = new_run(cfg.models_dir)
 
     # Daten laden und aufteilen
@@ -301,7 +333,7 @@ def train(cfg=None):
     print(f"   - Test Accuracy: {acc * 100:.2f}%")
 
     # Metadaten speichern
-    save_experiment_config(history, acc, cfg, run)
+    save_experiment_config(history, acc, cfg, run, policy)
 
     print("\n✅ Training abgeschlossen!")
     print(f"   - Modell: {run.model_path}")
