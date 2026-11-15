@@ -80,7 +80,10 @@ def test_thresholds_and_comparison_plot_exist(pipeline_home):
     plots = pipeline_home / "plots" / "evaluation_models"
     assert (pipeline_home / "results" / "optimal_thresholds.json").exists()
     assert not (plots / "optimal_thresholds.json").exists()
-    assert len(list(plots.glob("plot_compare_roc_*.png"))) == 1
+    # The comparison plot and its zoom, since P4.2 under two names (EVAL-18, HYG-24).
+    (zoom,) = plots.glob("plot_compare_roc_*_zoom.png")
+    comparison = plots / zoom.name.replace("_zoom.png", ".png")
+    assert sorted(plots.glob("plot_compare_roc_*.png")) == sorted([comparison, zoom])
 
 
 def test_real_noise_path_runs(tmp_path):
