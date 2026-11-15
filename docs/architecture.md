@@ -228,7 +228,7 @@ Each step PR ticks its own step, so a tick takes effect when that PR is merged.
 | [x] | P2.6 | Remove the shim and last `sys.path` edits; architecture test | #23 |
 | [x] | P3.1 | Central constants instead of hard-coded values | #24 |
 | [ ] | P3.2 | One conditioning and one normalization function | |
-| [ ] | P3.3 | Model registry: one model search, selection by timestamp, `--model` | |
+| [x] | P3.3 | Model registry: one model search, selection by timestamp, `--model` | #25 |
 | [ ] | P3.4 | GWOSC access and shared event list | |
 | [ ] | P3.5 | Central injection with named V1 scenarios | |
 | [ ] | P3.6 | Unified `gwd` CLI, `gwd env`, thin menu | |
