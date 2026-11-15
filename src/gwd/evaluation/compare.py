@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-ROC Comparison Tool - Vergleicht mehrere Modelle in einer ROC-Kurve
-Nützlich um zu sehen, welches Modell threshold-unabhängig besser ist.
+ROC comparison: several models on one test set, independent of a threshold.
+
+Run it with ``gwd eval compare``; it writes the comparison plot and a zoom on low FPR.
 """
 
 import datetime
@@ -37,10 +38,10 @@ def score_models(paths, X_test, y_true):
         try:
             model = load_model(path)
         except Exception as e:
-            print(f"✗ Fehler bei {path}: {e}")
+            print(f"✗ Error for {path}: {e}")
             continue
         name = model_name(path)
-        print(f"✓ Geladen: {name}")
+        print(f"✓ Loaded: {name}")
         y_scores = model.predict(X_test, verbose=0).flatten()
         del model
         fpr, tpr, _ = roc_curve(y_true, y_scores)
@@ -89,7 +90,7 @@ def compare_models_roc(curves, colors):
             label=f"{short_name(name)} (AUC={roc_auc:.3f})",
         )
 
-    # Zufall-Linie
+    # Random classifier line
     ax1.plot([0, 1], [0, 1], "k--", lw=1, alpha=0.5, label="Random Classifier")
 
     ax1.set_xlabel("False Positive Rate", fontsize=12, fontweight="bold")
@@ -120,7 +121,7 @@ def compare_models_roc(curves, colors):
     ax2.axvline(0.5, color="gray", linestyle="--", alpha=0.5, label="Random")
     ax2.grid(True, alpha=0.3, axis="x")
 
-    # Werte in die Bars schreiben
+    # Write the values into the bars
     for i, (bar, auc_val) in enumerate(zip(bars, aucs)):
         ax2.text(
             auc_val - 0.05,
@@ -140,16 +141,15 @@ def compare_models_roc(curves, colors):
 
 def zoom_to_relevant_region(curves, colors):
     """
-    BONUS: Zoomed ROC Plot
-    Im GW-Bereich sind wir meist bei sehr niedriger FPR interessiert.
-    Ein Zoom auf FPR < 0.1 zeigt die relevanten Unterschiede besser.
+    Zoomed ROC plot: gravitational wave searches care mostly about very low FPR,
+    and a zoom on FPR <= 0.1 shows the differences there better.
     """
-    print("\n🔍 Erstelle Zoom auf relevante Region (FPR < 0.1)...")
+    print("\n🔍 Zooming in on the relevant region (FPR <= 0.1)...")
 
     fig, ax = plt.subplots(figsize=(10, 8))
 
     for name, fpr, tpr, roc_auc in curves:
-        # Nur FPR < 0.1 plotten
+        # Plot only FPR <= 0.1
         mask = fpr <= 0.1
         ax.plot(
             fpr[mask],
@@ -164,7 +164,7 @@ def zoom_to_relevant_region(curves, colors):
     ax.set_xlabel("False Positive Rate", fontsize=12, fontweight="bold")
     ax.set_ylabel("True Positive Rate", fontsize=12, fontweight="bold")
     ax.set_title(
-        "ROC Curve - Zoom auf relevante Region (FPR < 0.1)",
+        "ROC Curve - Zoom on the relevant region (FPR <= 0.1)",
         fontsize=14,
         fontweight="bold",
     )
@@ -183,7 +183,7 @@ def run(models=None):
     print("🏆 ROC CURVE COMPARISON TOOL")
     print("=" * 70)
 
-    # 1. Modelle finden
+    # 1. Find the models
     try:
         paths = [resolve(spec) for spec in models] if models else list_models()
     except FileNotFoundError as error:
@@ -195,10 +195,10 @@ def run(models=None):
         return 1
 
     if len(paths) == 1:
-        print("\n⚠️ Nur ein Modell gefunden. Trainiere mehr Modelle für Vergleiche!")
+        print("\n⚠️ Only one model found. Train more models to compare them.")
         return 0
 
-    # 2. Test-Set generieren
+    # 2. Generate the test set
     n_samples = 1000
     print(f"\n📊 Generating {n_samples} test samples ({EVAL_V1.name})...")
     X_test, y_true = make_test_set(EVAL_V1, n_samples)
@@ -211,16 +211,16 @@ def run(models=None):
         return 1
 
     if len(curves) == 1:
-        print("\n⚠️ Nur ein Modell gefunden. Trainiere mehr Modelle für Vergleiche!")
+        print("\n⚠️ Only one model found. Train more models to compare them.")
         return 0
 
-    print(f"\n✅ {len(curves)} Modelle geladen.")
+    print(f"\n✅ {len(curves)} models loaded.")
     colors = model_colors([name for name, *_ in curves])
 
-    # 4. Vergleich durchführen
+    # 4. Compare
     rankings = compare_models_roc(curves, colors)
 
-    # 5. Ranking ausgeben
+    # 5. Print the ranking
     print("\n" + "=" * 70)
     print("📊 FINAL RANKING:")
     print("=" * 70)
@@ -229,7 +229,7 @@ def run(models=None):
     print("=" * 70)
 
     # 6. Bonus: Zoom
-    print("\n💡 Erstelle zusätzlichen Zoom-Plot für niedrige FPR...")
+    print("\n💡 Creating the zoom plot for low FPR...")
     zoom_to_relevant_region(curves, colors)
     return 0
 
