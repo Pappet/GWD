@@ -12,10 +12,29 @@ from sklearn.metrics import (
 )
 
 
+def predict_labels(y_scores, threshold):
+    """1 where a score reaches the threshold, else 0.
+
+    The one detection rule of the evaluation: a score counts if it is >= the threshold, as
+    in roc_curve and precision_recall_curve.
+    """
+    return (np.asarray(y_scores) >= threshold).astype(int)
+
+
+def detection_rate(y_scores, threshold):
+    """The share of scores that reach the threshold."""
+    return float(np.mean(predict_labels(y_scores, threshold)))
+
+
+def confusion_counts(y_true, y_scores, threshold):
+    """(tn, fp, fn, tp) at one threshold, also when a class is missing."""
+    y_pred = predict_labels(y_scores, threshold)
+    return confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
+
+
 def calculate_operating_point(y_true, y_scores, threshold):
     """Return (TPR, FPR) at one threshold, to mark the operating point on the ROC curve."""
-    y_pred = (y_scores >= threshold).astype(int)
-    tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
+    tn, fp, fn, tp = confusion_counts(y_true, y_scores, threshold)
 
     tpr = tp / (tp + fn) if (tp + fn) > 0 else 0
     fpr = fp / (fp + tn) if (fp + tn) > 0 else 0

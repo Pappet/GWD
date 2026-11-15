@@ -7,7 +7,6 @@ from gwd.evaluation import evaluate
 
 SIM_RESULT = {
     "acc": 0.5,
-    "far": 0.5,
     "snr50": None,
     "snr90": None,
     "roc_auc": 0.5,

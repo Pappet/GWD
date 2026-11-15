@@ -22,7 +22,6 @@ from sklearn.metrics import (
     ConfusionMatrixDisplay,
     auc,
     average_precision_score,
-    confusion_matrix,
     precision_recall_curve,
     roc_curve,
 )
@@ -33,7 +32,12 @@ from gwd.data.preprocessing import condition_strain, normalize
 from gwd.data.provenance import announce
 from gwd.data.scenarios import EVAL_V1
 from gwd.evaluation.leaderboard import update_leaderboard_roc
-from gwd.evaluation.metrics import calculate_operating_point
+from gwd.evaluation.metrics import (
+    calculate_operating_point,
+    confusion_counts,
+    detection_rate,
+    predict_labels,
+)
 from gwd.registry import load_model, resolve
 
 # ==========================================
@@ -86,7 +90,7 @@ def evaluate_simulation_with_roc(model):
     precision, recall, pr_thresholds = precision_recall_curve(y_true_roc, y_scores)
     avg_precision = average_precision_score(y_true_roc, y_scores)
 
-    # Aktueller Operating Point (bei THRESHOLD=0.75)
+    # Operating point at THRESHOLD
     op_tpr, op_fpr = calculate_operating_point(y_true_roc, y_scores, THRESHOLD)
 
     print(f"   ✅ ROC AUC: {roc_auc:.4f}")
@@ -110,7 +114,7 @@ def evaluate_simulation_with_roc(model):
 
         X = np.array(X_batch).reshape(n_batch, N_SAMPLES, 1)
         preds = model.predict(X, verbose=0).flatten()
-        detection_rates.append(np.mean(preds > THRESHOLD))
+        detection_rates.append(detection_rate(preds, THRESHOLD))
 
     # SNR50 / SNR90 bestimmen
     snr_50 = None
@@ -128,10 +132,9 @@ def evaluate_simulation_with_roc(model):
         pass
 
     # --- C. Confusion Matrix bei gewähltem Threshold ---
-    y_pred = (y_scores > THRESHOLD).astype(int)
-    tn, fp, fn, tp = confusion_matrix(y_true_roc, y_pred).ravel()
+    y_pred = predict_labels(y_scores, THRESHOLD)
+    tn, fp, fn, tp = confusion_counts(y_true_roc, y_scores, THRESHOLD)
     acc = (tp + tn) / n_roc_samples
-    far = fp / (fp + tn)
 
     # --- PLOTTING ---
     fig = plt.figure(figsize=(15, 10))
@@ -217,7 +220,6 @@ def evaluate_simulation_with_roc(model):
     ║ Accuracy:       {acc:.2%}    ║
     ║ TPR (Recall):   {op_tpr:.2%}    ║
     ║ FPR:            {op_fpr:.2%}    ║
-    ║ False Alarms:   {far:.2%}    ║
     ║                           ║
     ║ SNR50:          {snr_50 if snr_50 else "N/A"}      ║
     ║ SNR90:          {snr_90 if snr_90 else "N/A"}      ║
@@ -249,7 +251,6 @@ def evaluate_simulation_with_roc(model):
 
     return {
         "acc": acc,
-        "far": far,
         "snr50": snr_50,
         "snr90": snr_90,
         "roc_auc": roc_auc,
