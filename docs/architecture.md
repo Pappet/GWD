@@ -129,11 +129,13 @@ Each of these has several copies today. P3 leaves exactly one.
 | Logic | Copies | Where today | Target |
 |---|---|---|---|
 | Signal injection | 6 | `generate_chirp_dataset.py:126`, `evaluate_model_with_roc.py:98` and `:142`, `optimize_threshold.py:59`, `compare_models_roc.py:67`, `glitch_hunter_app.py:269` | `gwd.data.injection` (P3.5) |
-| Conditioning (notch and bandpass) | 3 | `utils/data_processing.py:9`, `fetch_real_noise.py:37`, `glitch_hunter_app.py:169`. `data_processing.py` has no 240 Hz notch. | `gwd.data.preprocessing` (P3.2) |
-| z-score | 10 | `generate_chirp_dataset.py:64`, `train_cnn.py:73`, `evaluate_model_with_roc.py:102`, `:143`, `:290`, `:327`, `optimize_threshold.py:63`, `compare_models_roc.py:71`, `glitch_hunter_app.py:181`, `:283`. Two of them add an epsilon. | `gwd.data.preprocessing` (P3.2) |
+| Conditioning (notch and bandpass) | 3 | `utils/data_processing.py:9`, `fetch_real_noise.py:37`, `glitch_hunter_app.py:169`. `data_processing.py` has no 240 Hz notch. | `condition_strain` in `gwd.data.preprocessing` (done in P3.2) |
+| z-score | 10 | `generate_chirp_dataset.py:64`, `train_cnn.py:73`, `evaluate_model_with_roc.py:102`, `:143`, `:290`, `:327`, `optimize_threshold.py:63`, `compare_models_roc.py:71`, `glitch_hunter_app.py:181`, `:283`. Two of them add an epsilon. | `normalize` in `gwd.data.preprocessing` (done in P3.2) |
 | Model search | 4 | `utils/evaluation.py:11`, `optimize_threshold.py:32`, `compare_models_roc.py:28`, `glitch_hunter_app.py:49` | `gwd.registry` (done in P3.3) |
 | Event list | 2 | `REAL_EVENTS` in `evaluate_model_with_roc.py:45`, `KNOWN_EVENTS` in `glitch_hunter_app.py:24` | `gwd.data.gwosc` (P3.4) |
 | Detection threshold | 3 values | `0.15` in `evaluate_model_with_roc.py:42`, `0.46` in `glitch_hunter_app.py:73`. `0.75` survives only in comments at `evaluate_model_with_roc.py:121` and `glitch_hunter_app.py:73`. | Per-model threshold in `gwd.registry` (P5.8) |
+
+**Preprocessing (since P3.2).** `gwd.data.preprocessing` has two public functions. `condition_strain(ts, fs, notches=NOTCH_FREQS, band=BANDPASS)` resamples a gwpy `TimeSeries` to `fs`, applies one notch per frequency, then the band-pass, and returns a numpy array. It is a band-pass, not whitening. It calls the methods of the series it gets and never imports gwpy itself. The noise download, the field test in `evaluate`, and the Glitch Hunter use it; it is bit-identical to the old download chain. The field test now also notches 240 Hz, the one behaviour change of P3.2. `normalize(x, eps=1e-10)` is the z-score `(x - mean) / (std + eps)`. The eps is absolute: on conditioned strain (std near 1e-21) it dominates the std, so the field test and the Glitch Hunter pass `eps=0` there, as they had no eps before. All other callers use the default; for the synthetic test sets, which had no eps, this changes values by a relative 1e-10.
 
 ## Scenarios and SNR definition (current state, V1)
 
@@ -156,6 +158,7 @@ Training, evaluation, and the Glitch Hunter draw from different distributions. P
 - Evaluation uses only 30/30 M☉, while training uses random masses (`EVAL-3`).
 - The Glitch Hunter's simulation mode produces data outside the training distribution (`APP-2`).
 - Real noise is filtered, but the signal is added unfiltered. V2 injects first and then conditions both together.
+- Real noise chunks reach the CNN at a much smaller scale than white noise. `generate` normalizes the raw chunks (std near 1e-21) with the default eps, which dominates, so their std is about 1e-11 instead of 1. `train` normalizes again with the same eps. For the 1024 local chunks, the noise-only inputs end up with a std of 0.07–0.21, against 1.0 for white noise. Measured in P3.2 and kept as V1.
 - Backend and noise source are silent switches and are not recorded (`hygiene:HYG-M1`). P4.1 logs them.
 
 ## Starting point
