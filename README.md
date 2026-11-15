@@ -83,6 +83,9 @@ python src/evaluate_model_with_roc.py
 python src/optimize_threshold.py
 ```
 
+### 4. Menu
+`python main.py` opens a menu with the data, training, and evaluation steps and two of the apps. It works from any folder: each entry runs in the project folder with the same Python, and the menu shows the exit code when a step fails.
+
 ## 🤝 Contribution
 Contributions are welcome! Please ensure that any structural or behavioral changes are strictly tied to synchronized documentation updates. All new code should be placed in the `src/` folder, and dependencies are declared in `pyproject.toml`.
 Remember: **Never push directly to the `main` branch.** All changes must go through a Pull Request.
