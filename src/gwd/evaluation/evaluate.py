@@ -30,6 +30,7 @@ from sklearn.metrics import (
 from gwd.data.gwosc import event, fetch_strain
 from gwd.data.injection import make_sample, make_test_set
 from gwd.data.preprocessing import condition_strain, normalize
+from gwd.data.provenance import announce
 from gwd.data.scenarios import EVAL_V1
 from gwd.evaluation.leaderboard import update_leaderboard_roc
 from gwd.registry import load_model, resolve
@@ -367,6 +368,12 @@ def evaluate_real_world(model):
 # ==========================================
 # MAIN
 # ==========================================
+def noise_description(real):
+    """The noise part of the start line: simulated test sets, and the field test."""
+    field_test = "field test on real H1 data" if real else "no field test (--no-real)"
+    return f"gaussian ({EVAL_V1.name} test sets); {field_test}"
+
+
 def run(model="latest", real=True):
     """Evaluate one model and add a leaderboard row. Returns the exit code.
 
@@ -381,7 +388,7 @@ def run(model="latest", real=True):
 
     print("=" * 70)
     print(f"🤖 COMPREHENSIVE EVALUATION: {os.path.basename(model_path)}")
-    print("=" * 70)
+    announce(noise_description(real))
 
     loaded = load_model(model_path)
 
