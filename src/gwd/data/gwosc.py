@@ -53,7 +53,7 @@ class Event:
     mass1: float
     mass2: float
     # Both masses inside the 5-100 solar masses of the training set
-    # (gwd.core.waveforms.generate_random_bbh_parameters).
+    # (TRAIN_V1.masses in gwd.data.scenarios).
     in_training_range: bool
 
 
