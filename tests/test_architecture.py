@@ -69,8 +69,6 @@ ALLOWLIST = {
     ("src/gwd/core/waveforms.py", "pycbc"),
     # CORE-17: print in library code (P4.1).
     ("src/gwd/core/waveforms.py", "print"),
-    # DATA-25: the noise download imports gwpy at module level (P3.4, gwd.data.gwosc).
-    ("src/gwd/data/fetch_noise.py", "gwpy"),
     # DATA-13: module-level side effects in training, matplotlib on top (P3.7).
     ("src/gwd/training/train.py", "matplotlib"),
     # EVAL-24: gwpy is imported directly instead of through gwd.data.gwosc (P3.4).

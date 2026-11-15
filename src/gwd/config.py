@@ -71,4 +71,5 @@ NOTCH_FREQS = (60, 120, 180, 240)  # Hz
 BANDPASS = (20, 300)  # Hz, (low, high)
 
 # Length of the real-noise segment that fetch_noise downloads (about 68 minutes).
+# The segment start is START_GPS in gwd.data.fetch_noise.
 NOISE_FETCH_SECONDS = 4096
