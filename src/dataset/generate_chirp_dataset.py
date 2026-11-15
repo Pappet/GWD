@@ -1,24 +1,23 @@
-import sys
 import os
+import sys
 
 # Import-Pfad anpassen
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # src/
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 )  # project root
-from config import DATA_DIR_TRAIN, DATA_DIR_NOISE, SAMPLES_FOR_TRAINING
-
-import pandas as pd
-import numpy as np
 import glob
 import random
 
+import numpy as np
+import pandas as pd
+
+from config import DATA_DIR_NOISE, DATA_DIR_TRAIN, SAMPLES_FOR_TRAINING
+from gwd.core.noise import generate_gaussian_noise
 from gwd.core.waveforms import (
     generate_astrophysical_chirp,
-    generate_realistic_chirp,
     generate_random_bbh_parameters,
 )
-from gwd.core.noise import generate_gaussian_noise
 
 REAL_NOISE_DIR = DATA_DIR_NOISE
 

@@ -1,10 +1,11 @@
-import os
-import glob
 import datetime
+import glob
+import os
 import shutil
 import warnings
-import pandas as pd  # type: ignore
 from typing import Optional
+
+import pandas as pd  # type: ignore
 
 from config import LEADERBOARD_FILE, LEGACY_LEADERBOARD_FILES
 

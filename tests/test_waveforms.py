@@ -1,5 +1,5 @@
 import numpy as np
-import pytest
+
 from gwd.core.waveforms import generate_astrophysical_chirp
 
 

@@ -1,4 +1,5 @@
 import numpy as np
+
 from .noise import generate_colored_noise
 from .waveforms import (
     generate_astrophysical_chirp,

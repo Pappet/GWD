@@ -8,21 +8,22 @@ Usage:
     python validate_dataset.py [--data-folder gw_training_data]
 """
 
-import sys
 import os
+import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # src/
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 )  # project root
-from config import DATA_DIR_TRAIN, VALIDATION_DATASET_PLOTS_DIR
-
 import argparse
+
+import matplotlib.gridspec as gridspec
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
 from scipy import signal
+
+from config import DATA_DIR_TRAIN, VALIDATION_DATASET_PLOTS_DIR
 
 
 def load_dataset_info(data_folder):
@@ -47,7 +48,7 @@ def print_statistics(df):
     signal_samples = df[df["has_signal"] == 1]
     noise_samples = df[df["has_signal"] == 0]
 
-    print(f"\n1. ALLGEMEINE ÜBERSICHT:")
+    print("\n1. ALLGEMEINE ÜBERSICHT:")
     print(f"   {'Gesamt Samples:':<30} {total_samples:>10,}")
     print(
         f"   {'Samples mit Signal:':<30} {len(signal_samples):>10,} ({len(signal_samples) / total_samples * 100:>5.1f}%)"
@@ -58,7 +59,7 @@ def print_statistics(df):
 
     # SNR Statistik (nur Signal-Samples)
     if len(signal_samples) > 0:
-        print(f"\n2. SNR VERTEILUNG (Signal-Samples):")
+        print("\n2. SNR VERTEILUNG (Signal-Samples):")
         print(f"   {'Minimum SNR:':<30} {signal_samples['snr'].min():>10.4f}")
         print(f"   {'Maximum SNR:':<30} {signal_samples['snr'].max():>10.4f}")
         print(f"   {'Durchschnitt SNR:':<30} {signal_samples['snr'].mean():>10.4f}")
@@ -66,7 +67,7 @@ def print_statistics(df):
         print(f"   {'Standardabweichung:':<30} {signal_samples['snr'].std():>10.4f}")
 
         # SNR Kategorien
-        print(f"\n   SNR Kategorien:")
+        print("\n   SNR Kategorien:")
         print(
             f"   {'SNR < 5 (sehr schwach):':<30} {(signal_samples['snr'] < 5).sum():>10,} ({(signal_samples['snr'] < 5).sum() / len(signal_samples) * 100:>5.1f}%)"
         )
@@ -84,22 +85,22 @@ def print_statistics(df):
         )
 
         # Qualitäts-Check
-        print(f"\n   💡 QUALITÄTS-CHECK:")
+        print("\n   💡 QUALITÄTS-CHECK:")
         if signal_samples["snr"].median() < 5:
-            print(f"   ❌ WARNUNG: Median SNR zu niedrig! Signale schwer detektierbar.")
+            print("   ❌ WARNUNG: Median SNR zu niedrig! Signale schwer detektierbar.")
         elif signal_samples["snr"].median() < 8:
-            print(f"   ⚠️  ACHTUNG: Median SNR niedrig. Training könnte schwierig sein.")
+            print("   ⚠️  ACHTUNG: Median SNR niedrig. Training könnte schwierig sein.")
         elif signal_samples["snr"].median() < 12:
-            print(f"   ✅ OK: Median SNR im akzeptablen Bereich.")
+            print("   ✅ OK: Median SNR im akzeptablen Bereich.")
         else:
-            print(f"   ✅ EXCELLENT: Median SNR optimal für Training!")
+            print("   ✅ EXCELLENT: Median SNR optimal für Training!")
 
     # Physikalische Parameter (nur Signal-Samples)
     if len(signal_samples) > 0:
-        print(f"\n3. PHYSIKALISCHE PARAMETER:")
+        print("\n3. PHYSIKALISCHE PARAMETER:")
 
         # Massen
-        print(f"\n   Massen (Sonnenmassen):")
+        print("\n   Massen (Sonnenmassen):")
         print(
             f"   {'Mass 1 - Bereich:':<30} {signal_samples['mass1'].min():>8.1f} - {signal_samples['mass1'].max():.1f}"
         )
@@ -124,7 +125,7 @@ def print_statistics(df):
         )
 
         # Distanz
-        print(f"\n   Distanz (Megaparsec):")
+        print("\n   Distanz (Megaparsec):")
         print(
             f"   {'Bereich:':<30} {signal_samples['distance'].min():>8.0f} - {signal_samples['distance'].max():.0f}"
         )
@@ -132,7 +133,7 @@ def print_statistics(df):
         print(f"   {'Median:':<30} {signal_samples['distance'].median():>10.0f}")
 
         # Merger Time
-        print(f"\n   Merger Zeitpunkt (Sekunden):")
+        print("\n   Merger Zeitpunkt (Sekunden):")
         print(
             f"   {'Bereich:':<30} {signal_samples['merger_time'].min():>8.2f} - {signal_samples['merger_time'].max():.2f}"
         )
@@ -141,7 +142,7 @@ def print_statistics(df):
 
 def validate_samples(df, data_folder, num_check=10):
     """Überprüft zufällige Samples auf Korrektheit."""
-    print(f"\n4. SAMPLE VALIDIERUNG:")
+    print("\n4. SAMPLE VALIDIERUNG:")
     print(f"   Überprüfe {num_check} zufällige Samples...")
 
     issues = []
@@ -180,11 +181,11 @@ def validate_samples(df, data_folder, num_check=10):
             issues.append(f"   ❌ {row['filename']}: Fehler beim Laden - {e}")
 
     if issues:
-        print(f"\n   Gefundene Probleme:")
+        print("\n   Gefundene Probleme:")
         for issue in issues:
             print(issue)
     else:
-        print(f"   ✅ Alle überprüften Samples sind OK!")
+        print("   ✅ Alle überprüften Samples sind OK!")
 
 
 def create_visualizations(df, data_folder, output_folder=VALIDATION_DATASET_PLOTS_DIR):
@@ -195,7 +196,7 @@ def create_visualizations(df, data_folder, output_folder=VALIDATION_DATASET_PLOT
     signal_samples = df[df["has_signal"] == 1]
     noise_samples = df[df["has_signal"] == 0]
 
-    print(f"\n5. VISUALISIERUNGEN:")
+    print("\n5. VISUALISIERUNGEN:")
     print(f"   Erstelle Plots in '{output_folder}/'...")
 
     # ========== PLOT 1: SNR Verteilung ==========
@@ -243,7 +244,7 @@ def create_visualizations(df, data_folder, output_folder=VALIDATION_DATASET_PLOT
         dpi=150,
         bbox_inches="tight",
     )
-    print(f"   ✅ 01_snr_distribution.png")
+    print("   ✅ 01_snr_distribution.png")
     plt.close()
 
     # ========== PLOT 2: Physikalische Parameter ==========
@@ -334,7 +335,7 @@ def create_visualizations(df, data_folder, output_folder=VALIDATION_DATASET_PLOT
         dpi=150,
         bbox_inches="tight",
     )
-    print(f"   ✅ 02_physical_parameters.png")
+    print("   ✅ 02_physical_parameters.png")
     plt.close()
 
     # ========== PLOT 3: Sample Visualisierung (verschiedene SNR) ==========
@@ -412,7 +413,7 @@ def create_visualizations(df, data_folder, output_folder=VALIDATION_DATASET_PLOT
         dpi=150,
         bbox_inches="tight",
     )
-    print(f"   ✅ 03_sample_timeseries.png")
+    print("   ✅ 03_sample_timeseries.png")
     plt.close()
 
     # ========== PLOT 4: Spektrogramme ==========
@@ -479,7 +480,7 @@ def create_visualizations(df, data_folder, output_folder=VALIDATION_DATASET_PLOT
     plt.savefig(
         os.path.join(output_folder, "04_spectrograms.png"), dpi=150, bbox_inches="tight"
     )
-    print(f"   ✅ 04_spectrograms.png")
+    print("   ✅ 04_spectrograms.png")
     plt.close()
 
     # ========== PLOT 5: Korrelations-Heatmap ==========
@@ -519,7 +520,7 @@ def create_visualizations(df, data_folder, output_folder=VALIDATION_DATASET_PLOT
             dpi=150,
             bbox_inches="tight",
         )
-        print(f"   ✅ 05_correlation_matrix.png")
+        print("   ✅ 05_correlation_matrix.png")
         plt.close()
 
     print(f"\n   ✅ Alle Visualisierungen erstellt in '{output_folder}/'")

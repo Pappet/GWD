@@ -1,36 +1,34 @@
 #!/usr/bin/env python3
-import sys
 import os
+import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from config import MODELS_DIR, LEADERBOARD_FILE, EVALUATION_MODELS_PLOTS_DIR
-
-import glob
 import datetime
-import json
-import numpy as np
-import pandas as pd
+
 import matplotlib
+import numpy as np
+
+from config import EVALUATION_MODELS_PLOTS_DIR, LEADERBOARD_FILE, MODELS_DIR
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import tensorflow as tf
-from sklearn.metrics import (
-    confusion_matrix,
-    ConfusionMatrixDisplay,
-    roc_curve,
-    auc,
-    precision_recall_curve,
-    average_precision_score,
-)
 from gwpy.timeseries import TimeSeries
+from sklearn.metrics import (
+    ConfusionMatrixDisplay,
+    auc,
+    average_precision_score,
+    confusion_matrix,
+    precision_recall_curve,
+    roc_curve,
+)
 
 # Imports aus dem Core
 sys.path.append(os.path.dirname(__file__))
-from gwd.core.waveforms import generate_astrophysical_chirp
 from gwd.core.noise import generate_gaussian_noise
-from utils.evaluation import get_latest_model, update_leaderboard_roc
+from gwd.core.waveforms import generate_astrophysical_chirp
 from utils.data_processing import preprocess_real_data
+from utils.evaluation import get_latest_model, update_leaderboard_roc
 
 # ==========================================
 # KONFIGURATION

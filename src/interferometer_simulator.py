@@ -4,15 +4,15 @@ Interferometer Designer V2 - GUI Frontend
 Uses gwd.core for the physics calculations.
 """
 
-import sys
 import os
+import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.widgets import Slider, CheckButtons
-from matplotlib.patches import Rectangle, Circle, FancyBboxPatch
+import numpy as np
+from matplotlib.patches import Circle, FancyBboxPatch, Rectangle
+from matplotlib.widgets import CheckButtons, Slider
 
 # --- IMPORT SETUP ---
 # Add src/ to the path so Python finds the 'gwd' package

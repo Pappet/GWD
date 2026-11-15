@@ -1,7 +1,6 @@
 # Datei: GWD/main.py
-import sys
 import os
-import argparse
+import sys
 
 # Pfadesetup damit Importe funktionieren
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))

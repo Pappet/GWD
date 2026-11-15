@@ -1,4 +1,5 @@
 import numpy as np
+
 from gwd.core.interferometer import InterferometerModel
 
 

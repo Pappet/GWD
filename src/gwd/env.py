@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import sys
 
 packages = {
     "numpy": "NumPy",
@@ -20,7 +19,7 @@ for module, name in packages.items():
     try:
         __import__(module)
         print(f"✓ {name:15s} OK")
-    except ImportError as e:
+    except ImportError:
         print(f"✗ {name:15s} FEHLT")
 
 # PyCBC separat (optional)

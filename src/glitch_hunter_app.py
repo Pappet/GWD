@@ -1,26 +1,27 @@
 #!/usr/bin/env python3
-import sys
 import os
+import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from config import MODELS_DIR
-
 import glob
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.widgets import Button, Slider
-import tensorflow as tf
-import scipy.io.wavfile as wavfile
-import subprocess
 import platform
 import random
+import subprocess
 import threading
+
+import matplotlib.pyplot as plt
+import numpy as np
+import scipy.io.wavfile as wavfile
+import tensorflow as tf
 from gwpy.timeseries import TimeSeries
+from matplotlib.widgets import Button, Slider
+
+from config import MODELS_DIR
 
 # Imports aus deinem Core
 sys.path.append(os.path.dirname(__file__))
-from gwd.core.waveforms import generate_astrophysical_chirp
 from gwd.core.noise import generate_gaussian_noise
+from gwd.core.waveforms import generate_astrophysical_chirp
 
 KNOWN_EVENTS = {
     "GW150914": 1126259462.4,

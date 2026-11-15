@@ -1,11 +1,11 @@
-import sys
 import os
+import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # src/
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 )  # project root
-from config import DATA_DIR_TRAIN, MODELS_DIR, TRAINING_PLOTS_DIR, LABELS_FILE
+from config import DATA_DIR_TRAIN, LABELS_FILE, MODELS_DIR, TRAINING_PLOTS_DIR
 
 # --- 1. LOGGING BEREINIGEN (Muss vor dem TensorFlow Import stehen!) ---
 # 0 = Alle Nachrichten (Standard)
@@ -16,17 +16,18 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 # oneDNN Optimierungen "leise" schalten oder deaktivieren
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 
-import json
 import datetime
+import json
+
+import matplotlib
 import numpy as np
 import pandas as pd
-import matplotlib
 
 matplotlib.use("Agg")  # Non-interactive backend
 import matplotlib.pyplot as plt
 import tensorflow as tf
-from tensorflow.keras import layers, models, callbacks
 from sklearn.model_selection import train_test_split
+from tensorflow.keras import callbacks, layers, models
 
 # Mixed precision für schnelleres Training auf RTX GPUs
 tf.keras.mixed_precision.set_global_policy("mixed_float16")
@@ -254,7 +255,7 @@ def main():
         X, y, test_size=TEST_SPLIT, random_state=42, stratify=y
     )
 
-    print(f"\n📊 Datensplit:")
+    print("\n📊 Datensplit:")
     print(f"   - Training: {len(X_train)} Samples")
     print(f"   - Test: {len(X_test)} Samples")
 
@@ -262,7 +263,7 @@ def main():
     input_shape = (X_train.shape[1], 1)
     model = build_model(input_shape)
 
-    print(f"\n🏗️ Modell-Architektur:")
+    print("\n🏗️ Modell-Architektur:")
     model.summary()
 
     # Callbacks
@@ -307,7 +308,7 @@ def main():
     # Metadaten speichern
     save_experiment_config(history, acc)
 
-    print(f"\n✅ Training abgeschlossen!")
+    print("\n✅ Training abgeschlossen!")
     print(f"   - Modell: {MODEL_SAVE_PATH}")
     print(f"   - Config: {CONFIG_SAVE_PATH}")
 
