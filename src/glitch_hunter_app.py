@@ -45,9 +45,7 @@ class GlitchHunterApp:
 
         if not os.path.exists(MODELS_DIR):
             print(f"FEHLER: Ordner '{MODELS_DIR}' nicht gefunden.")
-            print(
-                "   Bitte führe zuerst 'python dataset/train_cnn.py' aus, um ein Modell zu trainieren."
-            )
+            print("   Run 'python -m gwd.training.train' first to train a model.")
             sys.exit(1)
 
         # Suche alle .keras Dateien

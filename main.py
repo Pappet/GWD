@@ -42,13 +42,13 @@ def main_menu():
         choice = input("Wähle eine Option: ")
 
         if choice == "1":
-            run_script("src/dataset/fetch_real_noise.py")
+            run_script("src/gwd/data/fetch_noise.py")
         elif choice == "2":
-            run_script("src/dataset/generate_chirp_dataset.py")
+            run_script("src/gwd/data/generate.py")
         elif choice == "3":
-            run_script("src/dataset/validate_dataset.py")
+            run_script("src/gwd/data/validate.py")
         elif choice == "4":
-            run_script("src/dataset/train_cnn.py")
+            run_script("src/gwd/training/train.py")
         elif choice == "5":
             run_script("src/evaluate_model_with_roc.py")
         elif choice == "6":

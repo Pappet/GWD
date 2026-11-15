@@ -1,11 +1,6 @@
 import os
-import sys
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # src/
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-)  # project root
-from config import (
+from gwd.config import (
     DATA_DIR_TRAIN,
     LABELS_FILE,
     MODELS_DIR,

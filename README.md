@@ -68,10 +68,10 @@ The first lock was compiled with an extra `-c constraints-pc.txt` (the `pip free
 ### 2. Generate Data & Train
 ```bash
 # 1. Generate Training Data
-python src/dataset/generate_chirp_dataset.py
+python -m gwd.data.generate
 
 # 2. Train the CNN model
-python src/dataset/train_cnn.py
+python -m gwd.training.train
 ```
 
 ### 3. Evaluate Results
