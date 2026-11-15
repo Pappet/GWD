@@ -27,10 +27,10 @@ from sklearn.metrics import (
     roc_curve,
 )
 
-from gwd.core.noise import generate_gaussian_noise
-from gwd.core.waveforms import generate_astrophysical_chirp
 from gwd.data.gwosc import event, fetch_strain
+from gwd.data.injection import make_sample, make_test_set
 from gwd.data.preprocessing import condition_strain, normalize
+from gwd.data.scenarios import EVAL_V1
 from gwd.evaluation.leaderboard import update_leaderboard_roc
 from gwd.registry import MODEL_HELP, load_model, resolve
 
@@ -76,33 +76,12 @@ def calculate_operating_point(y_true, y_scores, threshold):
 # ==========================================
 def evaluate_simulation_with_roc(model):
     print("\n🧪 [LABOR] Starte ROC-Analyse auf Simulationsdaten...")
-    time = np.linspace(0, DURATION, N_SAMPLES)
 
     # --- A. ROC-Kurve erstellen (Threshold-unabhängig!) ---
-    print("   📊 Generiere Test-Set für ROC-Analyse...")
+    print(f"   📊 Generating the ROC test set ({EVAL_V1.name})...")
     n_roc_samples = 1000  # Große Stichprobe für stabile ROC
 
-    X_roc = []
-    y_true_roc = []
-
-    for _ in range(n_roc_samples):
-        has_sig = np.random.rand() > 0.5
-        noise = generate_gaussian_noise(len(time), 1.0)
-
-        if has_sig:
-            snr = np.random.uniform(0.5, 2.5)  # Breiter Bereich
-            t_m = np.random.uniform(2.0, 3.5)
-            sig, _ = generate_astrophysical_chirp(time, t_merger=t_m)
-            data = noise + (sig * snr)
-        else:
-            data = noise
-
-        data = normalize(data)
-        X_roc.append(data)
-        y_true_roc.append(1 if has_sig else 0)
-
-    X_roc = np.array(X_roc).reshape(n_roc_samples, len(time), 1)
-    y_true_roc = np.array(y_true_roc)
+    X_roc, y_true_roc = make_test_set(EVAL_V1, n_roc_samples)
 
     # Predictions (Wahrscheinlichkeiten, nicht binär!)
     print("   🧠 Berechne Modell-Predictions...")
@@ -135,14 +114,10 @@ def evaluate_simulation_with_roc(model):
         X_batch = []
 
         for _ in range(n_batch):
-            noise = generate_gaussian_noise(len(time), 1.0)
-            t_m = np.random.uniform(2.0, 3.5)
-            sig, _ = generate_astrophysical_chirp(time, t_merger=t_m)
-            data = noise + (sig * snr)
-            data = normalize(data)
-            X_batch.append(data)
+            sample = make_sample(EVAL_V1, has_signal=True, snr=snr)
+            X_batch.append(normalize(sample.data))
 
-        X = np.array(X_batch).reshape(n_batch, len(time), 1)
+        X = np.array(X_batch).reshape(n_batch, N_SAMPLES, 1)
         preds = model.predict(X, verbose=0).flatten()
         detection_rates.append(np.mean(preds > THRESHOLD))
 
