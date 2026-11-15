@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+"""
+Model evaluation: ROC analysis on simulated data and an optional field test on real LIGO data.
+
+Run it with ``gwd eval run``; it writes one plot with six panels and adds a row to the
+leaderboard.
+"""
+
 import datetime
 import os
 import sys
@@ -43,20 +50,20 @@ from gwd.evaluation.metrics import (
 from gwd.registry import load_model, resolve
 
 # ==========================================
-# KONFIGURATION
+# CONFIGURATION
 # ==========================================
 BASELINE_FILE = os.path.join(MODELS_DIR, "physics_baseline.json")
 TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
-# Parameter für die Tests
-THRESHOLD = 0.15  # Nur für Vergleich, ROC ist threshold-unabhängig
+# Operating point of the tests; the ROC curve itself does not depend on it
+THRESHOLD = 0.15
 
 # Field test events from gwd.data.gwosc.EVENTS, in the order they are reported
 FIELD_TEST_EVENTS = tuple(
     event(name) for name in ("GW150914", "GW170817", "GW190521", "GW170104", "GW151226")
 )
 
-# Ein Stück echtes Rauschen (Hanford, O3 Run)
+# A stretch of real noise (Hanford, O3 run)
 REAL_NOISE_START = 1253326755
 REAL_NOISE_DUR = 200
 
@@ -65,7 +72,7 @@ NO_FIELD_TEST = {"found": 0, "total": 0, "far_text": "n/a", "event_scores": {}}
 
 
 # ==========================================
-# HELFER-FUNKTIONEN
+# HELPERS
 # ==========================================
 def metrics_box(rows, width=27):
     """The metrics table of the plot: (label, formatted value) rows, None for a blank line."""
@@ -79,26 +86,27 @@ def metrics_box(rows, width=27):
 
 
 # ==========================================
-# TEST 1: SIMULATION MIT ROC-ANALYSE
+# TEST 1: SIMULATION WITH ROC ANALYSIS
 # ==========================================
 def evaluate_simulation_with_roc(model):
-    print("\n🧪 [LABOR] Starte ROC-Analyse auf Simulationsdaten...")
+    """ROC, precision-recall, sensitivity curve, and confusion matrix on EVAL_V1; one plot."""
+    print("\n🧪 [LAB] Starting the ROC analysis on simulated data...")
 
-    # --- A. ROC-Kurve erstellen (Threshold-unabhängig!) ---
+    # --- A. ROC curve (independent of the threshold) ---
     print(f"   📊 Generating the ROC test set ({EVAL_V1.name})...")
-    n_roc_samples = 1000  # Große Stichprobe für stabile ROC
+    n_roc_samples = 1000  # A large sample for a stable ROC curve
 
     X_roc, y_true_roc = make_test_set(EVAL_V1, n_roc_samples)
 
-    # Predictions (Wahrscheinlichkeiten, nicht binär!)
-    print("   🧠 Berechne Modell-Predictions...")
+    # Predictions (probabilities, not labels)
+    print("   🧠 Computing the model predictions...")
     y_scores = model.predict(X_roc, verbose=0).flatten()
 
-    # ROC-Kurve berechnen
+    # ROC curve
     fpr, tpr, thresholds = roc_curve(y_true_roc, y_scores)
     roc_auc = auc(fpr, tpr)
 
-    # Precision-Recall Kurve (Alternative Darstellung)
+    # Precision-recall curve (another view)
     precision, recall, pr_thresholds = precision_recall_curve(y_true_roc, y_scores)
     avg_precision = average_precision_score(y_true_roc, y_scores)
 
@@ -111,8 +119,8 @@ def evaluate_simulation_with_roc(model):
         f"   📍 Operating Point (Threshold={THRESHOLD}): TPR={op_tpr:.2%}, FPR={op_fpr:.2%}"
     )
 
-    # --- B. Efficiency Curve (wie vorher, aber ergänzend) ---
-    print("   📈 Berechne Sensitivity Curve...")
+    # --- B. Sensitivity curve (detection rate against SNR) ---
+    print("   📈 Computing the sensitivity curve...")
     snr_levels = np.linspace(0.0, 2.5, 15)
     detection_rates = []
 
@@ -132,7 +140,7 @@ def evaluate_simulation_with_roc(model):
     snr_50 = snr_at_rate(snr_levels, detection_rates, 0.5)
     snr_90 = snr_at_rate(snr_levels, detection_rates, 0.9)
 
-    # --- C. Confusion Matrix bei gewähltem Threshold ---
+    # --- C. Confusion matrix at THRESHOLD ---
     y_pred = predict_labels(y_scores, THRESHOLD)
     tn, fp, fn, tp = confusion_counts(y_true_roc, y_scores, THRESHOLD)
     acc = (tp + tn) / n_roc_samples
@@ -141,20 +149,20 @@ def evaluate_simulation_with_roc(model):
     fig = plt.figure(figsize=(15, 10))
     gs = fig.add_gridspec(2, 3, hspace=0.3, wspace=0.3)
 
-    # 1. ROC-Kurve (HAUPTPLOT!)
+    # 1. ROC curve (main plot)
     ax1 = fig.add_subplot(gs[0, 0])
     ax1.plot(fpr, tpr, color="blue", lw=2, label=f"ROC (AUC = {roc_auc:.3f})")
-    ax1.plot([0, 1], [0, 1], "k--", lw=1, alpha=0.5, label="Zufall")
+    ax1.plot([0, 1], [0, 1], "k--", lw=1, alpha=0.5, label="Random")
     ax1.plot(
         op_fpr, op_tpr, "ro", markersize=10, label=f"Operating Point (τ={THRESHOLD})"
     )
     ax1.set_xlabel("False Positive Rate", fontweight="bold")
     ax1.set_ylabel("True Positive Rate", fontweight="bold")
-    ax1.set_title("ROC-Kurve (Threshold-unabhängig)", fontweight="bold")
+    ax1.set_title("ROC curve (threshold-independent)", fontweight="bold")
     ax1.legend(loc="lower right")
     ax1.grid(True, alpha=0.3)
 
-    # 2. Precision-Recall Kurve
+    # 2. Precision-recall curve
     ax2 = fig.add_subplot(gs[0, 1])
     ax2.plot(
         recall, precision, color="green", lw=2, label=f"PR (AP = {avg_precision:.3f})"
@@ -162,7 +170,7 @@ def evaluate_simulation_with_roc(model):
     ax2.axhline(y=0.5, color="gray", linestyle="--", alpha=0.5)
     ax2.set_xlabel("Recall (TPR)", fontweight="bold")
     ax2.set_ylabel("Precision", fontweight="bold")
-    ax2.set_title("Precision-Recall Kurve", fontweight="bold")
+    ax2.set_title("Precision-recall curve", fontweight="bold")
     ax2.legend(loc="lower left")
     ax2.grid(True, alpha=0.3)
 
@@ -207,7 +215,7 @@ def evaluate_simulation_with_roc(model):
     ax5.legend()
     ax5.grid(True, alpha=0.3)
 
-    # 6. Metriken-Tabelle
+    # 6. Metrics table
     ax6 = fig.add_subplot(gs[1, 2])
     ax6.axis("off")
 
@@ -263,13 +271,14 @@ def evaluate_simulation_with_roc(model):
 # TEST 2: REAL DATA
 # ==========================================
 def evaluate_real_world(model):
-    print("\n🌍 [REAL WORLD] Starte Test auf echten LIGO-Daten...")
+    """Score the field test events and count false alarms on real H1 noise (network)."""
+    print("\n🌍 [REAL WORLD] Starting the test on real LIGO data...")
 
-    # --- A. Events finden ---
+    # --- A. Find the known events ---
     found_events = 0
     event_scores = {}
 
-    print("   Suche bekannte Events...", end=" ")
+    print("   Searching for known events...", end=" ")
     for ev in FIELD_TEST_EVENTS:
         name = ev.name
         try:
@@ -290,20 +299,20 @@ def evaluate_real_world(model):
             if pred > THRESHOLD:
                 found_events += 1
         except Exception as e:
-            print(f"\n⚠️ Fehler bei {name}: {e}")
+            print(f"\n⚠️ Error for {name}: {e}")
             event_scores[name] = None
 
-    print(f"-> {found_events}/{len(FIELD_TEST_EVENTS)} gefunden.")
+    print(f"-> {found_events}/{len(FIELD_TEST_EVENTS)} found.")
 
-    # Ausgabe der Scores
+    # Print the scores
     print("\n   Event Detection Scores:")
     for name, score in event_scores.items():
         if score is not None:
             status = "✓ DETECTED" if score > THRESHOLD else "✗ Missed"
             print(f"      {name:12s}: {score:.3f} {status}")
 
-    # --- B. False Alarm Rate auf Rauschen ---
-    print(f"\n   Prüfe {REAL_NOISE_DUR}s Hintergrundrauschen...", end=" ")
+    # --- B. False alarm rate on noise ---
+    print(f"\n   Checking {REAL_NOISE_DUR} s of background noise...", end=" ")
     false_alarms = 0
     total_samples = 0
     far_text = "N/A"
@@ -327,17 +336,17 @@ def evaluate_real_world(model):
 
         total_samples = num_cuts
 
-        # Berechnung Events pro Jahr
+        # Events per year
         analyzed_years = (total_samples * DURATION) / (365.25 * 24 * 3600)
         if false_alarms == 0:
             far_text = f"< {1 / analyzed_years:.1f}/y"
         else:
             far_text = f"{false_alarms / analyzed_years:.1f}/y"
 
-        print(f"-> {false_alarms} Fehler ({far_text})")
+        print(f"-> {false_alarms} false alarms ({far_text})")
 
     except Exception as e:
-        print(f"\n⚠️ Konnte LIGO-Daten nicht laden: {e}")
+        print(f"\n⚠️ Could not load the LIGO data: {e}")
 
     return {
         "found": found_events,
@@ -345,11 +354,6 @@ def evaluate_real_world(model):
         "far_text": far_text,
         "event_scores": event_scores,
     }
-
-
-# ==========================================
-# LEADERBOARD UPDATE
-# ==========================================
 
 
 # ==========================================
@@ -379,7 +383,7 @@ def run(model="latest", real=True):
 
     loaded = load_model(model_path)
 
-    # 1. Simulation mit ROC
+    # 1. Simulation with ROC
     sim_res = evaluate_simulation_with_roc(loaded)
 
     # 2. Real Data
