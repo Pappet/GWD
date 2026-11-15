@@ -17,9 +17,7 @@ import matplotlib
 import numpy as np
 
 from gwd.config import (
-    DURATION,
     EVALUATION_MODELS_PLOTS_DIR,
-    N_SAMPLES,
     OPTIMAL_THRESHOLDS_FILE,
     ensure_dirs,
 )
@@ -28,36 +26,11 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from sklearn.metrics import f1_score, precision_recall_curve, roc_curve
 
-from gwd.core.noise import generate_gaussian_noise
-from gwd.core.waveforms import generate_astrophysical_chirp
-from gwd.data.preprocessing import normalize
+from gwd.data.injection import make_test_set
+from gwd.data.scenarios import EVAL_V1
 from gwd.registry import MODEL_HELP, load_model, resolve
 
 TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-
-
-def generate_test_data(n_samples=500):
-    """Generiert Test-Daten."""
-    time = np.linspace(0, DURATION, N_SAMPLES)
-    X, y = [], []
-
-    for _ in range(n_samples):
-        has_sig = np.random.rand() > 0.5
-        noise = generate_gaussian_noise(len(time), 1.0)
-
-        if has_sig:
-            snr = np.random.uniform(0.5, 2.5)
-            t_m = np.random.uniform(2.0, 3.5)
-            sig, _ = generate_astrophysical_chirp(time, t_merger=t_m)
-            data = noise + (sig * snr)
-        else:
-            data = noise
-
-        data = normalize(data)
-        X.append(data)
-        y.append(1 if has_sig else 0)
-
-    return np.array(X).reshape(n_samples, len(time), 1), np.array(y)
 
 
 def find_optimal_thresholds(y_true, y_scores):
@@ -324,8 +297,8 @@ def main(argv=None):
     print(f"✓ Geladen: {name}")
 
     # 2. Test-Daten generieren
-    print("\n📊 Generiere Test-Daten...")
-    X_test, y_true = generate_test_data(n_samples=500)
+    print(f"\n📊 Generating the test data ({EVAL_V1.name})...")
+    X_test, y_true = make_test_set(EVAL_V1, 500)
     print(f"✓ {len(X_test)} Samples generiert")
 
     # 3. Predictions
