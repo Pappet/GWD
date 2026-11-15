@@ -105,7 +105,7 @@ gwd eval compare --model gwd_model_20251203-220536 --model latest
 ```
 
 ### 4. Apps
-The apps open matplotlib windows.
+The apps open matplotlib windows. They need an interactive matplotlib backend such as TkAgg; `gwd env` shows the backend in use. Without one (for example with `MPLBACKEND=Agg`, or on WSL without WSLg), an app exits with code 2 and says what to install.
 ```bash
 # Glitch Hunter: the latest model in models_registry/ rates simulated data or real GWOSC data
 gwd app glitch-hunter
