@@ -19,7 +19,7 @@ This file replaces `PROJECT_OVERVIEW.md`, which made these false statements:
 | Old statement | What is true |
 |---|---|
 | All executing scripts are in `src/` | `config.py`, `main.py`, and `utility/test_imports.py` are outside `src/`. |
-| `requirements.txt` locks dependencies for reproducible results | It pins `pycbc==2.4.0`, which has no usable wheels on Python 3.12, and it does not describe the environment in use. No random seed was set in the code (`core:MISS-3`). A lockfile comes in P2.1. |
+| `requirements.txt` locks dependencies for reproducible results | It pins `pycbc==2.4.0`, which has no usable wheels on Python 3.12, and it does not describe the environment in use. No random seed was set in the code (`core:MISS-3`). P2.1 replaced it with `pyproject.toml` and `requirements-linux-py312.lock`. |
 | `gw_training_data` is the ignored data folder | That is a legacy path. Training data is in `data/training/`. |
 | `src/evaluate_classic.py` computes the physics limit | It was deleted in `45b9202`, and its results were invalid (`EVAL-6`). |
 | CNN and Matched Filter are compared | Not at the moment, see D5. |
@@ -42,7 +42,7 @@ The target is one installable package, `gwd`, in `src/gwd/` (D8).
 
 `core/interferometer.py` and `core/simulation.py` stay in core on purpose. Whether app-specific physics belongs there is a design question (`APP-14`), and the import rules below keep the boundary.
 
-Today, modules find each other through `sys.path` edits with generic top-level names such as `config`, `utils`, and `dataset` (`hygiene:HYG-M5`), and tests import `src.gwd_core` while scripts import `gwd_core` (`CORE-5`). The move below removes both.
+Today, modules find each other through `sys.path` edits with generic top-level names such as `config`, `utils`, and `dataset` (`hygiene:HYG-M5`). Since P2.1, tests and scripts both import `gwd.core` (`CORE-5`). The move below removes the `sys.path` edits.
 
 ## Import rules
 
@@ -152,7 +152,7 @@ Training, evaluation, and the Glitch Hunter draw from different distributions. P
 
 - Laptop `.venv`: Python 3.12.14, built from `~/gwd-env-pc.txt` (`pip freeze` of the PC environment without the `nvidia-*` packages) plus pytest 8.3.4.
 - Key versions: tensorflow 2.20.0, keras 3.12.0, numpy 1.26.4, pandas 2.3.3, pycbc 2.10.0, lalsuite 7.26.1, gwpy 3.0.13. All 9 models load.
-- Until P2.1 creates `requirements-linux-py312.lock`, `~/gwd-env-pc.txt` is the only source of these pins. `requirements.txt` does not describe this environment.
+- `requirements-linux-py312.lock` (since P2.1) holds these pins. It was compiled with `~/gwd-env-pc.txt` without `nvidia-*` as constraints and matches the laptop `.venv`, plus ruff.
 - Commits use the noreply address, because GitHub rejects pushes with the private one.
 
 ### Decisions
@@ -172,7 +172,7 @@ Training, evaluation, and the Glitch Hunter draw from different distributions. P
 | **D9** | Version result files? | A: `results/` stays local. | Default applies | P1.1, P5.7, P5.8 |
 | **D10** | Threshold, ranking, field test? | A: per-model threshold at 1% FPR, ranking by ROC_AUC, field test optional. | Default applies | P4.3, P4.4, P5.8 |
 | **D11** | Language? | B: everything in English. Until P3.6, only lines a step changes anyway get translated. From P3.6, a rewritten module is fully translated in its own `docs:` commit. P7.1 does the rest. `docs/aufraeumen/` stays German. | Decided | All steps |
-| **D12** | License? | GPL-3.0-or-later, copyright Peter Paprotny. `LICENSE` and the README section are done (PR #1). Only the `pyproject.toml` entry is open. | Decided | P2.1 |
+| **D12** | License? | GPL-3.0-or-later, copyright Peter Paprotny. `LICENSE` and the README section are done (PR #1), and the `pyproject.toml` entry since P2.1 (#17). | Decided | P2.1 |
 
 ### Reference commits
 
@@ -199,7 +199,7 @@ Each step PR ticks its own step, so a tick takes effect when that PR is merged.
 | [x] | P1.4 | Remove dead scripts and misleading AI notes | #14 |
 | [x] | P1.5 | Write down the target picture: this document | #16 |
 | [x] | P1.6 | Normalize line endings | #15 |
-| [ ] | P2.1 | `pyproject.toml`, lockfile, `gwd_core` → `gwd.core`, update tests | |
+| [x] | P2.1 | `pyproject.toml`, lockfile, `gwd_core` → `gwd.core`, update tests | #17 |
 | [ ] | P2.2 | ruff baseline, format commit, lean CI | |
 | [ ] | P2.3 | `config` → `gwd/config.py`, `ensure_dirs()` instead of folders on import | |
 | [ ] | P2.4 | Move data and training scripts, menu independent of working directory | |
@@ -232,6 +232,6 @@ Each step PR ticks its own step, so a tick takes effect when that PR is merged.
 | [ ] | P6.4 | Rewrite the Matched Filter baseline (D5) | |
 | [ ] | P6.5 | Retrain and re-evaluate, switch to V2, archive old artifacts | |
 | [ ] | P7.1 | New README, `docs/evaluation.md`, documentation command test | |
-| [ ] | P7.2 | License entry in `pyproject.toml` (D12) | |
+| [x] | P7.2 | License entry in `pyproject.toml` (D12) | #17 (done in P2.1) |
 | [ ] | P7.3 | CI on the lockfile, README on updating it (D7) | |
 | [ ] | P7.4 | Final check: end to end, empty allowlist, checklist | |
