@@ -58,7 +58,6 @@ def test_ensure_dirs_creates_nested_folders_and_is_idempotent(tmp_path):
 
 
 def test_importing_light_modules_creates_nothing(tmp_path):
-    pytest.importorskip("gwpy")  # evaluate and the Glitch Hunter import it on top.
     assert import_in_empty_home(tmp_path, LIGHT_MODULES) == []
 
 

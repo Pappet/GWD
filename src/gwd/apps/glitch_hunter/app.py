@@ -9,7 +9,6 @@ import threading
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.io.wavfile as wavfile
-from gwpy.timeseries import TimeSeries
 from matplotlib.widgets import Button, Slider
 
 from gwd.config import (
@@ -20,20 +19,9 @@ from gwd.config import (
 )
 from gwd.core.noise import generate_gaussian_noise
 from gwd.core.waveforms import generate_astrophysical_chirp
+from gwd.data.gwosc import EVENTS, fetch_strain
 from gwd.data.preprocessing import condition_strain, normalize
 from gwd.registry import list_models, load_model
-
-KNOWN_EVENTS = {
-    "GW150914": 1126259462.4,
-    "GW151226": 1135136350.6,
-    "GW170104": 1167559936.6,
-    "GW170608": 1180922494.5,
-    "GW170814": 1186741861.5,
-    "GW170817": 1187008882.4,
-    "GW190412": 1239082262.1,
-    "GW190521": 1242442967.4,
-    "GW190814": 1249852257.0,
-}
 
 O3_START = 1238112018
 O3_END = 1253923218
@@ -145,7 +133,8 @@ class GlitchHunterApp:
         detector = "H1"
 
         if want_signal:
-            name, time = random.choice(list(KNOWN_EVENTS.items()))
+            known = random.choice(EVENTS)
+            name, time = known.name, known.gps
             print(f"Ziel: Bekanntes Event {name}")
             t0 = int(time)
             self.event_name = name
@@ -159,8 +148,8 @@ class GlitchHunterApp:
             for _ in range(5):
                 t_candidate = random.uniform(O3_START, O3_END)
                 is_event = False
-                for e_time in KNOWN_EVENTS.values():
-                    if abs(t_candidate - e_time) < 16:
+                for known in EVENTS:
+                    if abs(t_candidate - known.gps) < 16:
                         is_event = True
                         break
                 if not is_event:
@@ -175,16 +164,11 @@ class GlitchHunterApp:
 
         try:
             print(f"Download H1 Daten um {t0}...")
-            strain = TimeSeries.fetch_open_data(detector, t0 - 2, t0 + 2, verbose=False)
+            # Raises on a wrong length or NaN instead of trimming or padding
+            strain = fetch_strain(detector, t0 - 2, t0 + 2)
 
             # Notch the power line and its harmonics, then band-pass
             raw_array = condition_strain(strain, self.fs)
-
-            expected_len = len(self.time)
-            if len(raw_array) > expected_len:
-                raw_array = raw_array[:expected_len]
-            elif len(raw_array) < expected_len:
-                raw_array = np.pad(raw_array, (0, expected_len - len(raw_array)))
 
             # eps=0: the conditioned strain has a std near 1e-21, eps would dominate
             self.current_data = normalize(raw_array, eps=0.0)
