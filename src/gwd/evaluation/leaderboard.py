@@ -6,7 +6,7 @@ import warnings
 
 import pandas as pd  # type: ignore
 
-from gwd.config import LEADERBOARD_FILE, LEGACY_LEADERBOARD_FILES
+from gwd.config import LEADERBOARD_FILE, LEGACY_LEADERBOARD_FILES, ensure_dirs
 
 
 def migrate_legacy_leaderboard(leaderboard_file: str = LEADERBOARD_FILE) -> None:
@@ -21,7 +21,7 @@ def migrate_legacy_leaderboard(leaderboard_file: str = LEADERBOARD_FILE) -> None
 
     analysis_file, root_file = LEGACY_LEADERBOARD_FILES
     if os.path.exists(analysis_file):
-        os.makedirs(os.path.dirname(leaderboard_file), exist_ok=True)
+        ensure_dirs(os.path.dirname(leaderboard_file))
         shutil.copy2(analysis_file, leaderboard_file)
         print(
             f"📋 Copied leaderboard from {analysis_file} to {leaderboard_file}. The original stays in place."
@@ -65,7 +65,7 @@ def update_leaderboard_roc(
 
     df_new = pd.DataFrame([entry])
 
-    os.makedirs(os.path.dirname(os.path.abspath(leaderboard_file)), exist_ok=True)
+    ensure_dirs(os.path.dirname(os.path.abspath(leaderboard_file)))
 
     if os.path.exists(leaderboard_file):
         df_old = pd.read_csv(leaderboard_file)
