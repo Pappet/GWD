@@ -66,7 +66,7 @@ def load_random_real_noise(length):
         # WICHTIG: Normalisierung, damit SNR-Berechnung konsistent ist
         data = (data - np.mean(data)) / (np.std(data) + 1e-10)
         return data
-    except:
+    except Exception:
         return generate_gaussian_noise(length, 1.0)
 
 

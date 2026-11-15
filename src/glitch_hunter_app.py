@@ -284,7 +284,7 @@ class GlitchHunterApp:
             elif platform.system() == "Linux":
                 try:
                     subprocess.run(["aplay", filename], check=False)
-                except:
+                except Exception:
                     subprocess.run(["paplay", filename], check=False)
             elif platform.system() == "Windows":
                 import winsound

@@ -502,7 +502,7 @@ def create_visualizations(df, data_folder, output_folder=VALIDATION_DATASET_PLOT
         # Werte in Zellen schreiben
         for i in range(len(corr_cols)):
             for j in range(len(corr_cols)):
-                text = ax5.text(
+                ax5.text(
                     j,
                     i,
                     f"{corr_matrix.iloc[i, j]:.2f}",

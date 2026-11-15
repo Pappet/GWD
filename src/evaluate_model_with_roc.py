@@ -133,7 +133,6 @@ def evaluate_simulation_with_roc(model):
     detection_rates = []
 
     for snr in snr_levels:
-        detected = 0
         n_batch = 50
         X_batch = []
 
@@ -161,7 +160,7 @@ def evaluate_simulation_with_roc(model):
             snr_50 = snr_levels[idx50[0]]
         if len(idx90) > 0:
             snr_90 = snr_levels[idx90[0]]
-    except:
+    except Exception:
         pass
 
     # --- C. Confusion Matrix bei gewähltem Threshold ---

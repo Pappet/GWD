@@ -138,7 +138,6 @@ def generate_astrophysical_chirp(
     Msun = 1.989e30  # Sonnenmasse in kg
 
     # Gesamtmasse und Chirp-Masse
-    M = (mass1 + mass2) * Msun
     ch_mass = (mass1 * mass2) ** 0.6 / (mass1 + mass2) ** 0.2 * Msun
     dist_m = distance_mpc * 3.086e22  # Megaparsec in Meter
 

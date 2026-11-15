@@ -25,7 +25,7 @@ for module, name in packages.items():
 # PyCBC separat (optional)
 print("-" * 50)
 try:
-    from pycbc.waveform import get_td_waveform
+    from pycbc.waveform import get_td_waveform  # noqa: F401 (availability check)
 
     print("✓ PyCBC          OK (Profi-Wellenformen verfügbar)")
 except ImportError:
@@ -34,7 +34,7 @@ except ImportError:
 # GWD Core Test
 print("-" * 50)
 try:
-    from gwd.core.waveforms import generate_astrophysical_chirp
+    from gwd.core.waveforms import generate_astrophysical_chirp  # noqa: F401 (availability check)
 
     print("✓ GWD Core       OK")
 except ImportError as e:
