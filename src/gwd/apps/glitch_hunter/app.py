@@ -13,15 +13,14 @@ from gwpy.timeseries import TimeSeries
 from matplotlib.widgets import Button, Slider
 
 from gwd.config import (
-    BANDPASS,
     DURATION,
     MODELS_DIR,
     N_SAMPLES,
-    NOTCH_FREQS,
     SAMPLE_RATE,
 )
 from gwd.core.noise import generate_gaussian_noise
 from gwd.core.waveforms import generate_astrophysical_chirp
+from gwd.data.preprocessing import condition_strain, normalize
 from gwd.registry import list_models, load_model
 
 KNOWN_EVENTS = {
@@ -178,17 +177,8 @@ class GlitchHunterApp:
             print(f"Download H1 Daten um {t0}...")
             strain = TimeSeries.fetch_open_data(detector, t0 - 2, t0 + 2, verbose=False)
 
-            if strain.sample_rate.value != self.fs:
-                strain = strain.resample(self.fs)
-
-            # NEU: CLEANING / NOTCH FILTER
-            # Remove the 60 Hz power line hum and its harmonics (NOTCH_FREQS).
-            # Das entfernt die horizontalen Linien, die die KI verwirren!
-            for freq in NOTCH_FREQS:
-                strain = strain.notch(freq)
-
-            white_data = strain.bandpass(*BANDPASS)
-            raw_array = white_data.value
+            # Notch the power line and its harmonics, then band-pass
+            raw_array = condition_strain(strain, self.fs)
 
             expected_len = len(self.time)
             if len(raw_array) > expected_len:
@@ -196,8 +186,8 @@ class GlitchHunterApp:
             elif len(raw_array) < expected_len:
                 raw_array = np.pad(raw_array, (0, expected_len - len(raw_array)))
 
-            # Normalisierung
-            self.current_data = (raw_array - np.mean(raw_array)) / np.std(raw_array)
+            # eps=0: the conditioned strain has a std near 1e-21, eps would dominate
+            self.current_data = normalize(raw_array, eps=0.0)
 
             self.is_real_data = True
             self.pure_signal = None
@@ -319,7 +309,7 @@ class GlitchHunterApp:
             return
 
         input_data = self.current_data.reshape(1, len(self.current_data), 1)
-        input_data = (input_data - np.mean(input_data)) / np.std(input_data)
+        input_data = normalize(input_data)
 
         self.prediction = self.model.predict(input_data)[0][0]
         self.update_confidence_display(self.prediction)
