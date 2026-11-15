@@ -75,7 +75,8 @@ def create_interactive_plot():
     ax_mass1 = plt.axes([0.15, 0.15, 0.65, 0.02])
     ax_mass2 = plt.axes([0.15, 0.12, 0.65, 0.02])
     ax_distance = plt.axes([0.15, 0.09, 0.65, 0.02])
-    ax_noise = plt.axes([0.15, 0.06, 0.65, 0.02])
+    # Not ax_noise: that name hid the noise plot, which never rescaled (APP-11).
+    ax_s_noise = plt.axes([0.15, 0.06, 0.65, 0.02])
 
     s_mass1 = Slider(
         ax_mass1, "Masse 1 (M☉)", 5, 100, valinit=gui_params["mass1"], valstep=1
@@ -92,7 +93,12 @@ def create_interactive_plot():
         valstep=10,
     )
     s_noise = Slider(
-        ax_noise, "Rauschpegel", 0.1, 5, valinit=gui_params["noise_level"], valstep=0.1
+        ax_s_noise,
+        "Rauschpegel",
+        0.1,
+        5,
+        valinit=gui_params["noise_level"],
+        valstep=0.1,
     )
 
     def update(val):
