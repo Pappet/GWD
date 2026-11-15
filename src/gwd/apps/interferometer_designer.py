@@ -2,7 +2,12 @@
 """
 Interferometer Designer V2 - GUI Frontend
 Uses gwd.core for the physics calculations.
+
+build_figure() builds the figure and its widgets without showing it, so tests can move
+the sliders under Agg. main() shows it.
 """
+
+from types import SimpleNamespace
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -12,7 +17,11 @@ from matplotlib.widgets import CheckButtons, Slider
 from gwd.core.interferometer import InterferometerModel
 
 
-def main():
+def build_figure():
+    """Return (fig, state): the figure with schema, curve, info box, and widgets, not shown.
+
+    state holds the model, the three axes, the sliders, and the check buttons.
+    """
     # Instanz der Physik-Engine erstellen
     sim = InterferometerModel()
 
@@ -21,12 +30,12 @@ def main():
     fig.canvas.manager.set_window_title("Interferometer Designer")
 
     # Layout
-    ax_schema = plt.subplot2grid((3, 3), (0, 0), rowspan=2)
-    ax_sensitivity = plt.subplot2grid((3, 3), (0, 1), colspan=2, rowspan=2)
-    ax_info = plt.subplot2grid((3, 3), (2, 0), colspan=3)
+    ax_schema = plt.subplot2grid((3, 3), (0, 0), rowspan=2, fig=fig)
+    ax_sensitivity = plt.subplot2grid((3, 3), (0, 1), colspan=2, rowspan=2, fig=fig)
+    ax_info = plt.subplot2grid((3, 3), (2, 0), colspan=3, fig=fig)
     ax_info.axis("off")
 
-    plt.subplots_adjust(
+    fig.subplots_adjust(
         left=0.05, bottom=0.35, right=0.95, top=0.95, hspace=0.3, wspace=0.3
     )
 
@@ -213,12 +222,12 @@ def main():
     slider_left = 0.15
     slider_width = 0.3
 
-    ax_laser = plt.axes([slider_left, 0.26, slider_width, 0.02])
+    ax_laser = fig.add_axes([slider_left, 0.26, slider_width, 0.02])
     slider_laser = Slider(
         ax_laser, "Laser (W)", 100, 500, valinit=sim.laser_power, valstep=50
     )
 
-    ax_mirror = plt.axes([slider_left, 0.23, slider_width, 0.02])
+    ax_mirror = fig.add_axes([slider_left, 0.23, slider_width, 0.02])
     slider_mirror = Slider(
         ax_mirror,
         "Spiegel R",
@@ -228,17 +237,17 @@ def main():
         valfmt="%.5f",
     )
 
-    ax_arm = plt.axes([slider_left, 0.20, slider_width, 0.02])
+    ax_arm = fig.add_axes([slider_left, 0.20, slider_width, 0.02])
     slider_arm = Slider(
         ax_arm, "Arm (m)", 2000, 8000, valinit=sim.arm_length, valstep=500
     )
 
-    ax_bs = plt.axes([slider_left, 0.17, slider_width, 0.02])
+    ax_bs = fig.add_axes([slider_left, 0.17, slider_width, 0.02])
     slider_bs = Slider(
         ax_bs, "BS Loss", 1e-5, 1e-3, valinit=sim.beamsplitter_loss, valfmt="%.1e"
     )
 
-    ax_checks = plt.axes([0.55, 0.14, 0.3, 0.12])
+    ax_checks = fig.add_axes([0.55, 0.14, 0.3, 0.12])
     ax_checks.set_title("Erweiterte Optionen", fontweight="bold")
     checks = CheckButtons(
         ax_checks,
@@ -282,6 +291,24 @@ def main():
     checks.on_clicked(update_checks)
 
     update_all()
+
+    state = SimpleNamespace(
+        sim=sim,
+        ax_schema=ax_schema,
+        ax_sensitivity=ax_sensitivity,
+        ax_info=ax_info,
+        slider_laser=slider_laser,
+        slider_mirror=slider_mirror,
+        slider_arm=slider_arm,
+        slider_bs=slider_bs,
+        checks=checks,
+    )
+    return fig, state
+
+
+def main():
+    # The widgets only react while fig and state are referenced.
+    fig, state = build_figure()
     plt.show()
 
 
