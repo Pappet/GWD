@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-import argparse
 import datetime
 import os
+import sys
 
 import matplotlib
 import numpy as np
@@ -32,7 +32,7 @@ from gwd.data.injection import make_sample, make_test_set
 from gwd.data.preprocessing import condition_strain, normalize
 from gwd.data.scenarios import EVAL_V1
 from gwd.evaluation.leaderboard import update_leaderboard_roc
-from gwd.registry import MODEL_HELP, load_model, resolve
+from gwd.registry import load_model, resolve
 
 # ==========================================
 # KONFIGURATION
@@ -51,6 +51,9 @@ FIELD_TEST_EVENTS = tuple(
 # Ein Stück echtes Rauschen (Hanford, O3 Run)
 REAL_NOISE_START = 1253326755
 REAL_NOISE_DUR = 200
+
+# The field test result when it is skipped (--no-real)
+NO_FIELD_TEST = {"found": 0, "total": 0, "far_text": "n/a", "event_scores": {}}
 
 # ==========================================
 # HELFER-FUNKTIONEN
@@ -364,31 +367,33 @@ def evaluate_real_world(model):
 # ==========================================
 # MAIN
 # ==========================================
-def main(argv=None):
-    parser = argparse.ArgumentParser(
-        description="Evaluate one model: ROC on simulated data and the real data field test."
-    )
-    parser.add_argument(
-        "--model", default="latest", help=f"{MODEL_HELP}. Default: latest."
-    )
-    args = parser.parse_args(argv)
+def run(model="latest", real=True):
+    """Evaluate one model and add a leaderboard row. Returns the exit code.
+
+    real=False skips the real data field test, which needs network access; the row then
+    reports 0/0 events and 'n/a' as the false alarm rate.
+    """
     try:
-        model_path = resolve(args.model)
+        model_path = resolve(model)
     except FileNotFoundError as error:
         print(f"❌ {error}")
-        return
+        return 1
 
     print("=" * 70)
     print(f"🤖 COMPREHENSIVE EVALUATION: {os.path.basename(model_path)}")
     print("=" * 70)
 
-    model = load_model(model_path)
+    loaded = load_model(model_path)
 
     # 1. Simulation mit ROC
-    sim_res = evaluate_simulation_with_roc(model)
+    sim_res = evaluate_simulation_with_roc(loaded)
 
     # 2. Real Data
-    real_res = evaluate_real_world(model)
+    if real:
+        real_res = evaluate_real_world(loaded)
+    else:
+        print("\nField test skipped (--no-real).")
+        real_res = NO_FIELD_TEST
 
     # 3. Final Report
     print("\n" + "=" * 70)
@@ -407,7 +412,10 @@ def main(argv=None):
     update_leaderboard_roc(
         os.path.basename(model_path), sim_res, real_res, LEADERBOARD_FILE, BASELINE_FILE
     )
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 1:
+        sys.exit("The options are on the gwd command: gwd eval run --help")
+    sys.exit(run())

@@ -9,9 +9,10 @@ Verschiedene Optimierungs-Strategien:
 4. Fixed FPR: Maximiert TPR bei gegebenem FPR-Limit
 """
 
-import argparse
 import datetime
+import json
 import os
+import sys
 
 import matplotlib
 import numpy as np
@@ -28,7 +29,7 @@ from sklearn.metrics import f1_score, precision_recall_curve, roc_curve
 
 from gwd.data.injection import make_test_set
 from gwd.data.scenarios import EVAL_V1
-from gwd.registry import MODEL_HELP, load_model, resolve
+from gwd.registry import load_model, resolve
 
 TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -271,15 +272,8 @@ def recommend_threshold(optimal_thresholds):
     print("\n" + "=" * 70)
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(
-        description="Find detection thresholds for one model from its ROC curve."
-    )
-    parser.add_argument(
-        "--model", default="latest", help=f"{MODEL_HELP}. Default: latest."
-    )
-    args = parser.parse_args(argv)
-
+def run(model="latest", save=True):
+    """Find the thresholds of one model and save them unless save is False. Returns the exit code."""
     print("=" * 70)
     print("🎯 THRESHOLD OPTIMIZATION TOOL")
     print("=" * 70)
@@ -287,12 +281,12 @@ def main(argv=None):
     # 1. Modell laden
     print("\n📦 Lade Modell...")
     try:
-        model_path = resolve(args.model)
+        model_path = resolve(model)
     except FileNotFoundError as error:
         print(f"❌ {error}")
-        return
+        return 1
 
-    model = load_model(model_path)
+    loaded = load_model(model_path)
     name = os.path.basename(model_path)
     print(f"✓ Geladen: {name}")
 
@@ -303,7 +297,7 @@ def main(argv=None):
 
     # 3. Predictions
     print("\n🧠 Berechne Predictions...")
-    y_scores = model.predict(X_test, verbose=0).flatten()
+    y_scores = loaded.predict(X_test, verbose=0).flatten()
     print("✓ Fertig")
 
     # 4. Optimale Thresholds finden
@@ -318,29 +312,32 @@ def main(argv=None):
     # 6. Empfehlungen
     recommend_threshold(optimal_thresholds)
 
-    # 7. Export (Optional)
-    print("\n💾 Möchtest du die Ergebnisse speichern? (y/n): ", end="")
-    if input().lower() == "y":
-        import json
+    # 7. Export (default; --no-save skips it)
+    if not save:
+        print("\nNot saved (--no-save).")
+        return 0
 
-        output = {
-            "model": name,
-            "optimal_thresholds": {
-                k: {
-                    **v,
-                    "tpr": float(v["tpr"]),
-                    "fpr": float(v["fpr"]),
-                    "threshold": float(v["threshold"]),
-                }
-                for k, v in optimal_thresholds.items()
-            },
-        }
+    output = {
+        "model": name,
+        "optimal_thresholds": {
+            k: {
+                **v,
+                "tpr": float(v["tpr"]),
+                "fpr": float(v["fpr"]),
+                "threshold": float(v["threshold"]),
+            }
+            for k, v in optimal_thresholds.items()
+        },
+    }
 
-        ensure_dirs(os.path.dirname(OPTIMAL_THRESHOLDS_FILE))
-        with open(OPTIMAL_THRESHOLDS_FILE, "w") as f:
-            json.dump(output, f, indent=2)
-        print(f"✓ Gespeichert in {OPTIMAL_THRESHOLDS_FILE}")
+    ensure_dirs(os.path.dirname(OPTIMAL_THRESHOLDS_FILE))
+    with open(OPTIMAL_THRESHOLDS_FILE, "w") as f:
+        json.dump(output, f, indent=2)
+    print(f"✓ Gespeichert in {OPTIMAL_THRESHOLDS_FILE}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 1:
+        sys.exit("The options are on the gwd command: gwd eval thresholds --help")
+    sys.exit(run())

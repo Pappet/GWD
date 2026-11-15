@@ -72,7 +72,7 @@ def resolve(model: str = "latest", models_dir: str = MODELS_DIR) -> str:
         if path is None:
             raise FileNotFoundError(
                 f"No models ({MODEL_EXTENSION}) in '{models_dir}'. "
-                "Run 'python -m gwd.training.train' first to train a model."
+                "Run 'gwd train' first to train a model."
             )
         return path
     if os.path.isfile(model):

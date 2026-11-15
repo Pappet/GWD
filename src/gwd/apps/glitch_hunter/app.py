@@ -35,7 +35,7 @@ class GlitchHunterApp:
         files = list_models()
         if not files:
             print(f"ERROR: No models (.keras) in '{MODELS_DIR}'.")
-            print("   Run 'python -m gwd.training.train' first to train a model.")
+            print("   Run 'gwd train' first to train a model.")
             sys.exit(1)
 
         # The newest timestamp in the name, not ctime (apps:APPX-4).
