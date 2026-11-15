@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import datetime
 import os
 
@@ -17,7 +18,6 @@ from gwd.config import (
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import tensorflow as tf
 from gwpy.timeseries import TimeSeries
 from sklearn.metrics import (
     ConfusionMatrixDisplay,
@@ -32,7 +32,7 @@ from gwd.core.noise import generate_gaussian_noise
 from gwd.core.waveforms import generate_astrophysical_chirp
 from gwd.data.preprocessing import preprocess_real_data
 from gwd.evaluation.leaderboard import update_leaderboard_roc
-from gwd.registry import get_latest_model
+from gwd.registry import MODEL_HELP, load_model, resolve
 
 # ==========================================
 # KONFIGURATION
@@ -392,16 +392,25 @@ def evaluate_real_world(model):
 # ==========================================
 # MAIN
 # ==========================================
-def main():
-    model_path = get_latest_model(MODELS_DIR)
-    if not model_path:
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Evaluate one model: ROC on simulated data and the real data field test."
+    )
+    parser.add_argument(
+        "--model", default="latest", help=f"{MODEL_HELP}. Default: latest."
+    )
+    args = parser.parse_args(argv)
+    try:
+        model_path = resolve(args.model)
+    except FileNotFoundError as error:
+        print(f"❌ {error}")
         return
 
     print("=" * 70)
     print(f"🤖 COMPREHENSIVE EVALUATION: {os.path.basename(model_path)}")
     print("=" * 70)
 
-    model = tf.keras.models.load_model(model_path)
+    model = load_model(model_path)
 
     # 1. Simulation mit ROC
     sim_res = evaluate_simulation_with_roc(model)

@@ -9,6 +9,7 @@ Verschiedene Optimierungs-Strategien:
 4. Fixed FPR: Maximiert TPR bei gegebenem FPR-Limit
 """
 
+import argparse
 import datetime
 import os
 
@@ -18,7 +19,6 @@ import numpy as np
 from gwd.config import (
     DURATION,
     EVALUATION_MODELS_PLOTS_DIR,
-    MODELS_DIR,
     N_SAMPLES,
     OPTIMAL_THRESHOLDS_FILE,
     ensure_dirs,
@@ -26,28 +26,13 @@ from gwd.config import (
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import tensorflow as tf
 from sklearn.metrics import f1_score, precision_recall_curve, roc_curve
 
 from gwd.core.noise import generate_gaussian_noise
 from gwd.core.waveforms import generate_astrophysical_chirp
+from gwd.registry import MODEL_HELP, load_model, resolve
 
 TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-
-
-def get_latest_model():
-    """Lädt das neueste Modell."""
-    import glob
-
-    if not os.path.exists(MODELS_DIR):
-        return None
-
-    files = glob.glob(os.path.join(MODELS_DIR, "*.keras"))
-    if not files:
-        return None
-
-    latest = max(files, key=os.path.getctime)
-    return tf.keras.models.load_model(latest), os.path.basename(latest)
 
 
 def generate_test_data(n_samples=500):
@@ -312,20 +297,30 @@ def recommend_threshold(optimal_thresholds):
     print("\n" + "=" * 70)
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Find detection thresholds for one model from its ROC curve."
+    )
+    parser.add_argument(
+        "--model", default="latest", help=f"{MODEL_HELP}. Default: latest."
+    )
+    args = parser.parse_args(argv)
+
     print("=" * 70)
     print("🎯 THRESHOLD OPTIMIZATION TOOL")
     print("=" * 70)
 
     # 1. Modell laden
     print("\n📦 Lade Modell...")
-    result = get_latest_model()
-    if result is None:
-        print("❌ Kein Modell gefunden!")
+    try:
+        model_path = resolve(args.model)
+    except FileNotFoundError as error:
+        print(f"❌ {error}")
         return
 
-    model, model_name = result
-    print(f"✓ Geladen: {model_name}")
+    model = load_model(model_path)
+    name = os.path.basename(model_path)
+    print(f"✓ Geladen: {name}")
 
     # 2. Test-Daten generieren
     print("\n📊 Generiere Test-Daten...")
@@ -355,7 +350,7 @@ def main():
         import json
 
         output = {
-            "model": model_name,
+            "model": name,
             "optimal_thresholds": {
                 k: {
                     **v,

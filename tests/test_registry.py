@@ -104,6 +104,30 @@ def test_import_does_not_load_tensorflow():
     assert result.stdout.strip() == "False"
 
 
+@pytest.mark.parametrize("script", ["evaluate", "thresholds", "compare"])
+def test_evaluation_scripts_take_model_and_import_no_tensorflow(script, tmp_path):
+    pytest.importorskip("gwpy")  # gwd.evaluation.evaluate imports it at module level.
+    code = "\n".join(
+        [
+            "import sys",
+            f"from gwd.evaluation import {script} as module",
+            "module.main(['--model', 'gwd_model_19990101-000000'])",
+            "print('tensorflow' in sys.modules)",
+        ]
+    )
+    env = {**os.environ, "GWD_HOME": str(tmp_path), "MPLBACKEND": "Agg"}
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "Model 'gwd_model_19990101-000000' is neither" in result.stdout
+    assert result.stdout.splitlines()[-1] == "False"
+
+
 @pytest.mark.slow
 def test_load_model_without_compiling(tmp_path):
     tf = pytest.importorskip("tensorflow")

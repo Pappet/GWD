@@ -58,7 +58,7 @@ PIPELINE = {
     # compare stops without a plot when it finds one model, so it gets the same model twice.
     "compare": _driver(
         "gwd.evaluation.compare",
-        "loaded = module.load_all_models\nmodule.load_all_models = lambda: loaded() * 2\nmodule.main()",
+        "module.main(['--model', 'latest', '--model', 'latest'])",
     ),
     "show_leaderboard": _module("gwd.evaluation.leaderboard"),
 }
