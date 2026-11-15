@@ -261,10 +261,8 @@ def build_figure():
         update_all()
 
     def update_mirror(val):
+        # The finesse follows from R in gwd.core (APP-12).
         sim.mirror_reflectivity = val
-        # Automatische Finesse-Anpassung (Physik-Logik im Client für bessere UX)
-        if val < 1.0:
-            sim.finesse = (np.pi * np.sqrt(val)) / (1 - val)
         update_all()
 
     def update_arm(val):

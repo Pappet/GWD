@@ -13,7 +13,6 @@ class InterferometerModel:
         self.mirror_reflectivity = 0.999
         self.arm_length = 4000  # Meter
         self.beamsplitter_loss = 1e-4
-        self.finesse = 450
 
         # Features
         self.power_recycling = False
@@ -26,6 +25,17 @@ class InterferometerModel:
 
         # Frequenzbereich für Berechnungen
         self.freq = np.logspace(1, 3.5, 1000)  # 10 Hz - 3 kHz
+
+    @property
+    def finesse(self):
+        """Finesse of an arm cavity whose two mirrors both have mirror_reflectivity R.
+
+        F = pi * sqrt(R) / (1 - R), about 3140 for the default R = 0.999. Before P4.5
+        finesse was a separate start value of 450, and only the mirror slider of the
+        designer set it from R, so the curve jumped on the first touch (APP-12, CORE-11).
+        """
+        r = self.mirror_reflectivity
+        return np.pi * np.sqrt(r) / (1 - r)
 
     def calculate_shot_noise(self):
         wavelength = 1064e-9
