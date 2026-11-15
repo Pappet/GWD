@@ -71,8 +71,6 @@ ALLOWLIST = {
     ("src/gwd/core/waveforms.py", "print"),
     # DATA-13: module-level side effects in training, matplotlib on top (P3.7).
     ("src/gwd/training/train.py", "matplotlib"),
-    # EVAL-24: gwpy is imported directly instead of through gwd.data.gwosc (P3.4).
-    ("src/gwd/evaluation/evaluate.py", "gwpy"),
     # APP-7: gwpy at module level in the Glitch Hunter (P3.4).
     ("src/gwd/apps/glitch_hunter/app.py", "gwpy"),
     # HYG-16: the dependency check imports pycbc and gwd.core on top (P3.6, gwd env).

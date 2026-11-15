@@ -123,7 +123,9 @@ def test_unknown_event_raises():
         event("GW000000")
 
 
-@pytest.mark.parametrize("module", ["gwd.data.gwosc", "gwd.data.fetch_noise"])
+@pytest.mark.parametrize(
+    "module", ["gwd.data.gwosc", "gwd.data.fetch_noise", "gwd.evaluation.evaluate"]
+)
 def test_import_does_not_load_gwpy(module):
     code = f"import sys, {module}; print('gwpy' in sys.modules)"
     result = subprocess.run(

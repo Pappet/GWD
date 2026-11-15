@@ -106,7 +106,6 @@ def test_import_does_not_load_tensorflow():
 
 @pytest.mark.parametrize("script", ["evaluate", "thresholds", "compare"])
 def test_evaluation_scripts_take_model_and_import_no_tensorflow(script, tmp_path):
-    pytest.importorskip("gwpy")  # gwd.evaluation.evaluate imports it at module level.
     code = "\n".join(
         [
             "import sys",
