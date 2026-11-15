@@ -20,6 +20,9 @@ dependencies = [
     "tabulate>=0.9",
 ]
 
+[project.scripts]
+gwd = "gwd.cli:main"
+
 [project.optional-dependencies]
 # pycbc 2.4.0 has no wheels for any current Python version, and there is no PyCBC on Windows.
 physics = ['pycbc>=2.5; platform_system != "Windows"']
