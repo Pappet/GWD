@@ -13,8 +13,13 @@ ROOT_CSV = HEADER + "from_root.keras,2025-11-21 18:00,0.5,-\n"
 
 def run_python(home, *args):
     """Run Python with GWD_HOME in home, so no real file is ever read or written."""
-    return subprocess.run([sys.executable, *args], env={**os.environ, "GWD_HOME": str(home)}, cwd=home,
-                          capture_output=True, text=True)
+    return subprocess.run(
+        [sys.executable, *args],
+        env={**os.environ, "GWD_HOME": str(home)},
+        cwd=home,
+        capture_output=True,
+        text=True,
+    )
 
 
 def show(home):
@@ -41,7 +46,9 @@ def target(home):
 
 
 def test_import_config_does_not_create_results(tmp_path):
-    result = run_python(tmp_path, "-c", f"import sys; sys.path.insert(0, {str(ROOT)!r}); import config")
+    result = run_python(
+        tmp_path, "-c", f"import sys; sys.path.insert(0, {str(ROOT)!r}); import config"
+    )
     assert result.returncode == 0, result.stderr
     assert not (tmp_path / "results").exists()
 
@@ -94,7 +101,7 @@ def test_analysis_csv_wins_over_root_leaderboard(tmp_path):
 def write_row(home, destination):
     code = f"""
 import sys
-sys.path[:0] = [{str(ROOT)!r}, {str(ROOT / 'src')!r}]
+sys.path[:0] = [{str(ROOT)!r}, {str(ROOT / "src")!r}]
 import config
 from utils.evaluation import update_leaderboard_roc
 destination = {destination}

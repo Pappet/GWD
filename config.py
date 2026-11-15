@@ -3,7 +3,7 @@ import os
 
 # --- PFADE ---
 # The root directory is GWD_HOME if set, otherwise the directory of this file
-ROOT_DIR = os.environ.get('GWD_HOME') or os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.environ.get("GWD_HOME") or os.path.dirname(os.path.abspath(__file__))
 
 # Daten-Ordner
 DATA_DIR_TRAIN = os.path.join(ROOT_DIR, "data/training")
@@ -24,13 +24,13 @@ LEGACY_LEADERBOARD_FILES = (
     os.path.join(ROOT_DIR, "analysis/model_leaderboard.csv"),
     os.path.join(ROOT_DIR, "model_leaderboard.csv"),
 )
-LABELS_FILE = "labels.csv" # Relativ zu DATA_DIR_TRAIN
+LABELS_FILE = "labels.csv"  # Relativ zu DATA_DIR_TRAIN
 OPTIMAL_THRESHOLDS_FILE = os.path.join(RESULTS_DIR, "optimal_thresholds.json")
 
 # --- KONSTANTEN ---
 SAMPLE_RATE = 4096
 DURATION = 4.0
-INPUT_SHAPE = (16384, 1) # (SampleRate * Duration, Channels)
+INPUT_SHAPE = (16384, 1)  # (SampleRate * Duration, Channels)
 SAMPLES_FOR_TRAINING = 10000
 
 # Sicherstellen, dass Ordner existieren

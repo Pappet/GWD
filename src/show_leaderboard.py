@@ -1,6 +1,7 @@
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from config import LEADERBOARD_FILE
 
 import pandas as pd
@@ -12,7 +13,9 @@ from utils.evaluation import migrate_legacy_leaderboard
 def main():
     migrate_legacy_leaderboard()
     if not os.path.exists(LEADERBOARD_FILE):
-        print(f"No leaderboard yet: {LEADERBOARD_FILE} does not exist. Run src/evaluate_model_with_roc.py first.")
+        print(
+            f"No leaderboard yet: {LEADERBOARD_FILE} does not exist. Run src/evaluate_model_with_roc.py first."
+        )
         return 0
 
     df = pd.read_csv(LEADERBOARD_FILE)
@@ -25,7 +28,9 @@ def main():
 
     # 2. Sort by the numeric values, best first
     # na_position='last' puts models that failed (returned "-") at the bottom
-    df_sorted = df.sort_values(by="sort_val", ascending=False, na_position='last', kind="stable")
+    df_sorted = df.sort_values(
+        by="sort_val", ascending=False, na_position="last", kind="stable"
+    )
 
     # 3. Drop the helper column and print
     print(df_sorted.drop(columns=["sort_val"]).to_markdown(index=False))

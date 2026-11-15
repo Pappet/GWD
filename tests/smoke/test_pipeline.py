@@ -30,7 +30,9 @@ def test_training_writes_one_model_and_one_config(pipeline_home):
 
 
 def test_leaderboard_has_one_row(pipeline_home):
-    leaderboard = pd.read_csv(pipeline_home / "results" / "model_leaderboard.csv", dtype=str)
+    leaderboard = pd.read_csv(
+        pipeline_home / "results" / "model_leaderboard.csv", dtype=str
+    )
     assert leaderboard.shape == (1, LEADERBOARD_COLUMNS)
     assert not (pipeline_home / "analysis").exists()
 
@@ -55,6 +57,9 @@ def test_real_noise_path_runs(tmp_path):
     training = tmp_path / "data" / "training"
     labels = pd.read_csv(training / "labels.csv")
     assert labels.shape == (NUM_SAMPLES, LABEL_COLUMNS)
-    noise_only = [np.load(training / name) for name in labels.loc[labels["has_signal"] == 0, "filename"]]
+    noise_only = [
+        np.load(training / name)
+        for name in labels.loc[labels["has_signal"] == 0, "filename"]
+    ]
     correlations = [np.corrcoef(sample[:-1], sample[1:])[0, 1] for sample in noise_only]
     assert max(correlations) > 0.9

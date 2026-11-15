@@ -12,16 +12,35 @@ from utils.evaluation import update_leaderboard_roc
 
 pytestmark = pytest.mark.filterwarnings("ignore:Physics baseline currently invalid")
 
-SHOW_LEADERBOARD = Path(__file__).resolve().parent.parent / "src" / "show_leaderboard.py"
+SHOW_LEADERBOARD = (
+    Path(__file__).resolve().parent.parent / "src" / "show_leaderboard.py"
+)
 COLUMNS = [
-    "Model", "Date", "ROC_AUC", "Avg_Precision", "Sim_Accuracy", "TPR", "FPR",
-    "Sim_SNR50", "Sim_SNR90", "Physik_Gap", "Real_Events_Found", "Real_Noise_FAR",
+    "Model",
+    "Date",
+    "ROC_AUC",
+    "Avg_Precision",
+    "Sim_Accuracy",
+    "TPR",
+    "FPR",
+    "Sim_SNR50",
+    "Sim_SNR90",
+    "Physik_Gap",
+    "Real_Events_Found",
+    "Real_Noise_FAR",
 ]
 
 
 def sim_metrics(**overrides):
-    metrics = {"roc_auc": 0.9, "avg_precision": 0.8, "acc": 0.75, "tpr": 0.7, "fpr": 0.01,
-               "snr50": 2.0, "snr90": 3.0}
+    metrics = {
+        "roc_auc": 0.9,
+        "avg_precision": 0.8,
+        "acc": 0.75,
+        "tpr": 0.7,
+        "fpr": 0.01,
+        "snr50": 2.0,
+        "snr90": 3.0,
+    }
     metrics.update(overrides)
     return metrics
 
@@ -34,8 +53,13 @@ def write_row(tmp_path, **overrides):
     leaderboard = tmp_path / "leaderboard.csv"
     baseline = tmp_path / "physics_baseline.json"
     baseline.write_text(json.dumps({"SNR90": 1.0}))
-    update_leaderboard_roc("model.keras", sim_metrics(**overrides), REAL_METRICS,
-                           str(leaderboard), str(baseline))
+    update_leaderboard_roc(
+        "model.keras",
+        sim_metrics(**overrides),
+        REAL_METRICS,
+        str(leaderboard),
+        str(baseline),
+    )
     with leaderboard.open(newline="") as f:
         return list(csv.DictReader(f))[-1]
 
@@ -43,15 +67,21 @@ def write_row(tmp_path, **overrides):
 def run_show(tmp_path, code=None):
     """Run show_leaderboard with GWD_HOME in tmp_path, so the real leaderboard is never read."""
     args = ["-c", code] if code else [str(SHOW_LEADERBOARD)]
-    return subprocess.run([sys.executable, *args], env={**os.environ, "GWD_HOME": str(tmp_path)},
-                          capture_output=True, text=True)
+    return subprocess.run(
+        [sys.executable, *args],
+        env={**os.environ, "GWD_HOME": str(tmp_path)},
+        capture_output=True,
+        text=True,
+    )
 
 
 def write_show_csv(tmp_path, roc_values, folder="results"):
     target = tmp_path / folder
     target.mkdir()
     rows = [f"m{i},{value}" for i, value in enumerate(roc_values)]
-    (target / "model_leaderboard.csv").write_text("\n".join(["Model,ROC_AUC", *rows]) + "\n")
+    (target / "model_leaderboard.csv").write_text(
+        "\n".join(["Model,ROC_AUC", *rows]) + "\n"
+    )
 
 
 def test_physik_gap_ignores_baseline(tmp_path):
@@ -60,8 +90,13 @@ def test_physik_gap_ignores_baseline(tmp_path):
 
 def test_baseline_file_is_not_read(tmp_path):
     leaderboard = tmp_path / "leaderboard.csv"
-    update_leaderboard_roc("model.keras", sim_metrics(), REAL_METRICS,
-                           str(leaderboard), str(tmp_path / "missing.json"))
+    update_leaderboard_roc(
+        "model.keras",
+        sim_metrics(),
+        REAL_METRICS,
+        str(leaderboard),
+        str(tmp_path / "missing.json"),
+    )
     assert leaderboard.exists()
 
 
@@ -128,7 +163,9 @@ def test_show_reads_a_leaderboard_migrated_from_analysis(tmp_path):
 
 def test_show_has_main_guard(tmp_path):
     write_show_csv(tmp_path, ["0.80"])
-    code = f"import runpy; runpy.run_path({str(SHOW_LEADERBOARD)!r}, run_name='imported')"
+    code = (
+        f"import runpy; runpy.run_path({str(SHOW_LEADERBOARD)!r}, run_name='imported')"
+    )
     result = run_show(tmp_path, code)
     assert result.returncode == 0
     assert result.stdout == ""
@@ -147,5 +184,7 @@ def test_show_hides_old_physik_gap_and_keeps_csv(tmp_path):
     assert "+1.39" not in result.stdout
     *table, note = result.stdout.strip().splitlines()
     assert [cell.strip() for cell in table[-1].split("|")][1:-1] == ["m0", "0.9", "-"]
-    assert note == "Physik_Gap hidden: values were based on an invalid baseline (EVAL-6)."
+    assert (
+        note == "Physik_Gap hidden: values were based on an invalid baseline (EVAL-6)."
+    )
     assert leaderboard.read_text() == original

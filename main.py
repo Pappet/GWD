@@ -6,9 +6,10 @@ import argparse
 # Pfadesetup damit Importe funktionieren
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+
 def run_script(module_path):
     """Hilfsfunktion um Skripte sauber auszuführen"""
-    print(f"\n🚀 Starte: {module_path}...\n" + "-"*50)
+    print(f"\n🚀 Starte: {module_path}...\n" + "-" * 50)
     # Wir nutzen os.system für vollständige Isolation der Skripte
     # python <script>
     ret = os.system(f"{sys.executable} {module_path}")
@@ -18,11 +19,12 @@ def run_script(module_path):
         print("\n❌ Fehler aufgetreten.")
     input("\n[Enter] drücken um zum Menü zurückzukehren...")
 
+
 def main_menu():
     while True:
         # Screen clear (optional)
-        os.system('cls' if os.name == 'nt' else 'clear')
-        
+        os.system("cls" if os.name == "nt" else "clear")
+
         print("==========================================")
         print("🌊 GRAVITATIONAL WAVE DETECTOR - HUB 🌊")
         print("==========================================")
@@ -37,20 +39,32 @@ def main_menu():
         print("9. [APP]    Waveform Simulator")
         print("0. Beenden")
         print("==========================================")
-        
+
         choice = input("Wähle eine Option: ")
-        
-        if choice == '1': run_script("src/dataset/fetch_real_noise.py")
-        elif choice == '2': run_script("src/dataset/generate_chirp_dataset.py")
-        elif choice == '3': run_script("src/dataset/validate_dataset.py")
-        elif choice == '4': run_script("src/dataset/train_cnn.py")
-        elif choice == '5': run_script("src/evaluate_model_with_roc.py")
-        elif choice == '6': run_script("src/optimize_threshold.py")
-        elif choice == '7': run_script("src/compare_models_roc.py")
-        elif choice == '8': run_script("src/glitch_hunter_app.py")
-        elif choice == '9': run_script("src/gw_simulator.py")
-        elif choice == '0': sys.exit()
-        else: print("Ungültige Eingabe!")
+
+        if choice == "1":
+            run_script("src/dataset/fetch_real_noise.py")
+        elif choice == "2":
+            run_script("src/dataset/generate_chirp_dataset.py")
+        elif choice == "3":
+            run_script("src/dataset/validate_dataset.py")
+        elif choice == "4":
+            run_script("src/dataset/train_cnn.py")
+        elif choice == "5":
+            run_script("src/evaluate_model_with_roc.py")
+        elif choice == "6":
+            run_script("src/optimize_threshold.py")
+        elif choice == "7":
+            run_script("src/compare_models_roc.py")
+        elif choice == "8":
+            run_script("src/glitch_hunter_app.py")
+        elif choice == "9":
+            run_script("src/gw_simulator.py")
+        elif choice == "0":
+            sys.exit()
+        else:
+            print("Ungültige Eingabe!")
+
 
 if __name__ == "__main__":
     main_menu()

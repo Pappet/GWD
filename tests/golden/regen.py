@@ -6,6 +6,7 @@ All measuring runs in a subprocess with GWD_HOME set to a new temp dir. In the r
 directory, generate_dataset would mix in the real noise from data/noise_background,
 and the values would differ on every machine without those files.
 """
+
 import contextlib
 import glob
 import importlib.metadata
@@ -26,7 +27,13 @@ VALUES_FILE = GOLDEN_DIR / "values.py"
 SEED = 1
 NUM_DATASET_SAMPLES = 8
 ASD_FREQUENCIES = [10.0, 30.0, 100.0, 300.0, 1000.0]
-CHIRP = {"t_merger": 3.0, "mass1": 36, "mass2": 29, "distance_mpc": 400, "normalize": False}
+CHIRP = {
+    "t_merger": 3.0,
+    "mass1": 36,
+    "mass2": 29,
+    "distance_mpc": 400,
+    "normalize": False,
+}
 CHIRP_SAMPLES = [1000, 4000, 8000, 11000, 12000]
 NOISE_SAMPLES = [0, 1, 100, 8192, 16383]
 FIXED_INPUT_SAMPLES = [0, 100, 250, 500, 999]
@@ -38,10 +45,15 @@ def measure_in_temp_home():
         output = Path(home) / "measured.json"
         result = subprocess.run(
             [sys.executable, str(Path(__file__).resolve()), "--measure", str(output)],
-            env={**os.environ, "GWD_HOME": home}, cwd=home, capture_output=True, text=True,
+            env={**os.environ, "GWD_HOME": home},
+            cwd=home,
+            capture_output=True,
+            text=True,
         )
         if result.returncode != 0:
-            raise RuntimeError(f"Measuring failed (rc {result.returncode}):\n{result.stderr[-2000:]}")
+            raise RuntimeError(
+                f"Measuring failed (rc {result.returncode}):\n{result.stderr[-2000:]}"
+            )
         return json.loads(output.read_text())
 
 
@@ -75,7 +87,10 @@ def _measure_noise(noise):
     gaussian = noise.generate_gaussian_noise(16384, 1.0)
     _seed()
     colored = noise.generate_colored_noise(16384, 4096, 1.0)
-    return {"gaussian": _summary(gaussian, NOISE_SAMPLES), "colored": _summary(colored, NOISE_SAMPLES)}
+    return {
+        "gaussian": _summary(gaussian, NOISE_SAMPLES),
+        "colored": _summary(colored, NOISE_SAMPLES),
+    }
 
 
 def _measure_scaling(dataset):
@@ -105,7 +120,10 @@ def _measure_dataset(dataset):
     _seed()
     dataset.generate_dataset(NUM_DATASET_SAMPLES, dataset.DATA_DIR_TRAIN)
     labels = pd.read_csv(os.path.join(dataset.DATA_DIR_TRAIN, "labels.csv"))
-    samples = [np.load(os.path.join(dataset.DATA_DIR_TRAIN, name)) for name in labels["filename"].iloc[:2]]
+    samples = [
+        np.load(os.path.join(dataset.DATA_DIR_TRAIN, name))
+        for name in labels["filename"].iloc[:2]
+    ]
     return {
         "labels": labels.to_dict(orient="records"),
         "first_samples": [_summary(sample, NOISE_SAMPLES) for sample in samples],
@@ -117,7 +135,10 @@ def _measure_interferometer(interferometer):
 
     model = interferometer.InterferometerModel()
     model.freq = np.array(ASD_FREQUENCIES)
-    return {"frequencies": ASD_FREQUENCIES, "asd": [float(v) for v in model.calculate_total_sensitivity()]}
+    return {
+        "frequencies": ASD_FREQUENCIES,
+        "asd": [float(v) for v in model.calculate_total_sensitivity()],
+    }
 
 
 def _measure_pycbc(time, waveforms):
@@ -130,7 +151,11 @@ def _measure_pycbc(time, waveforms):
     if "PyCBC" in output.getvalue():
         raise RuntimeError(f"PyCBC path did not run: {output.getvalue()}")
     peak = int(np.argmax(np.abs(strain)))
-    return {"peak_index": peak, "max_abs_h": float(np.abs(strain[peak])), "f_at_peak": float(freq[peak])}
+    return {
+        "peak_index": peak,
+        "max_abs_h": float(np.abs(strain[peak])),
+        "f_at_peak": float(freq[peak]),
+    }
 
 
 def _measure(output):
@@ -144,11 +169,15 @@ def _measure(output):
     from gwd.core import interferometer, noise, waveforms
 
     if glob.glob(os.path.join(dataset.REAL_NOISE_DIR, "*.npy")):
-        sys.exit(f"Refusing to measure: real noise files in {dataset.REAL_NOISE_DIR} would change the values.")
+        sys.exit(
+            f"Refusing to measure: real noise files in {dataset.REAL_NOISE_DIR} would change the values."
+        )
 
     time = np.linspace(0, 4.0, 16384)
     has_pycbc = waveforms.HAS_PYCBC
-    waveforms.HAS_PYCBC = False  # Everything except the PyCBC section uses the numpy-only path.
+    waveforms.HAS_PYCBC = (
+        False  # Everything except the PyCBC section uses the numpy-only path.
+    )
     measured = {
         "newton": _measure_newton(time, waveforms),
         "noise": _measure_noise(noise),
@@ -165,8 +194,13 @@ def _measure(output):
 def _write_values():
     measured = measure_in_temp_home()
     if measured["pycbc"] is None:
-        sys.exit("Refusing to write values.py: pycbc is missing, so the PyCBC values would be lost.")
-    versions = ", ".join(f"{name} {importlib.metadata.version(name)}" for name in ("pycbc", "lalsuite", "numpy"))
+        sys.exit(
+            "Refusing to write values.py: pycbc is missing, so the PyCBC values would be lost."
+        )
+    versions = ", ".join(
+        f"{name} {importlib.metadata.version(name)}"
+        for name in ("pycbc", "lalsuite", "numpy")
+    )
     VALUES_FILE.write_text(
         '"""Golden values. Generated by tests/golden/regen.py; change only in \'golden:\' commits."""\n'
         f"# Recorded with {versions}.\n\n"
