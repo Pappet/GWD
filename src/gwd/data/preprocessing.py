@@ -6,7 +6,7 @@ calls the methods of the series it gets, so this module imports without gwpy.
 
 import numpy as np
 
-from gwd.config import BANDPASS, NOTCH_FREQS, SAMPLE_RATE
+from gwd.config import BANDPASS, NOTCH_FREQS
 
 
 def condition_strain(ts, fs, notches=NOTCH_FREQS, band=BANDPASS):
@@ -30,15 +30,3 @@ def normalize(x, eps=1e-10):
     """
     x = np.asarray(x)
     return (x - np.mean(x)) / (np.std(x) + eps)
-
-
-def preprocess_real_data(strain, sample_rate: int = SAMPLE_RATE) -> np.ndarray:
-    """WICHTIG: Die Signalverarbeitung für echte LIGO-Daten."""
-    if strain.sample_rate.value != sample_rate:
-        strain = strain.resample(sample_rate)
-
-    # Cleaning: Notch & Bandpass
-    strain = strain.notch(60).notch(120).notch(180)
-    white_data = strain.bandpass(*BANDPASS)
-
-    return white_data.value
