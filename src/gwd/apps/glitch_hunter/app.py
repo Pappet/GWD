@@ -14,7 +14,14 @@ import tensorflow as tf
 from gwpy.timeseries import TimeSeries
 from matplotlib.widgets import Button, Slider
 
-from gwd.config import MODELS_DIR
+from gwd.config import (
+    BANDPASS,
+    DURATION,
+    MODELS_DIR,
+    N_SAMPLES,
+    NOTCH_FREQS,
+    SAMPLE_RATE,
+)
 from gwd.core.noise import generate_gaussian_noise
 from gwd.core.waveforms import generate_astrophysical_chirp
 
@@ -57,9 +64,9 @@ class GlitchHunterApp:
         self.model = tf.keras.models.load_model(latest_model_path)
         print(">>> Bereit zum Jagen!")
 
-        self.fs = 4096
-        self.duration = 4.0
-        self.time = np.linspace(0, self.duration, int(self.fs * self.duration))
+        self.fs = SAMPLE_RATE
+        self.duration = DURATION
+        self.time = np.linspace(0, self.duration, N_SAMPLES)
 
         self.current_data = None
         self.pure_signal = None
@@ -180,11 +187,12 @@ class GlitchHunterApp:
                 strain = strain.resample(self.fs)
 
             # NEU: CLEANING / NOTCH FILTER
-            # Wir entfernen die 60Hz Netzbrummen und Obertöne (120, 180...)
+            # Remove the 60 Hz power line hum and its harmonics (NOTCH_FREQS).
             # Das entfernt die horizontalen Linien, die die KI verwirren!
-            strain = strain.notch(60).notch(120).notch(180).notch(240)
+            for freq in NOTCH_FREQS:
+                strain = strain.notch(freq)
 
-            white_data = strain.bandpass(20, 300)
+            white_data = strain.bandpass(*BANDPASS)
             raw_array = white_data.value
 
             expected_len = len(self.time)
