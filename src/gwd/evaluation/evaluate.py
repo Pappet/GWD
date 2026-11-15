@@ -33,6 +33,7 @@ from gwd.data.preprocessing import condition_strain, normalize
 from gwd.data.provenance import announce
 from gwd.data.scenarios import EVAL_V1
 from gwd.evaluation.leaderboard import update_leaderboard_roc
+from gwd.evaluation.metrics import calculate_operating_point
 from gwd.registry import load_model, resolve
 
 # ==========================================
@@ -59,20 +60,6 @@ NO_FIELD_TEST = {"found": 0, "total": 0, "far_text": "n/a", "event_scores": {}}
 # ==========================================
 # HELFER-FUNKTIONEN
 # ==========================================
-
-
-def calculate_operating_point(y_true, y_scores, threshold):
-    """
-    Berechnet TPR, FPR für einen spezifischen Threshold.
-    Nützlich um den gewählten Arbeitspunkt in der ROC-Kurve zu markieren.
-    """
-    y_pred = (y_scores >= threshold).astype(int)
-    tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
-
-    tpr = tp / (tp + fn) if (tp + fn) > 0 else 0
-    fpr = fp / (fp + tn) if (fp + tn) > 0 else 0
-
-    return tpr, fpr
 
 
 # ==========================================
