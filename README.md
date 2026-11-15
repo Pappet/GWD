@@ -81,13 +81,32 @@ python -m gwd.evaluation.evaluate
 
 # Optimize inference threshold
 python -m gwd.evaluation.thresholds
+
+# Compare all models in models_registry/ in one ROC plot
+python -m gwd.evaluation.compare
+
+# Show the leaderboard, sorted by ROC AUC
+python -m gwd.evaluation.leaderboard
 ```
 
-### 4. Menu
-`python main.py` opens a menu with the data, training, and evaluation steps and two of the apps. It works from any folder: each entry runs in the project folder with the same Python, and the menu shows the exit code when a step fails.
+### 4. Apps
+The apps open matplotlib windows.
+```bash
+# Glitch Hunter: the newest model in models_registry/ rates simulated data or real GWOSC data
+python -m gwd.apps.glitch_hunter.app
+
+# Waveform explorer: strain, frequency, and detector signal with sliders for masses, distance, and noise
+python -m gwd.apps.waveform_explorer
+
+# Interferometer designer: sensitivity curve of a simple learning model with sliders for laser, mirrors, and arm length
+python -m gwd.apps.interferometer_designer
+```
+
+### 5. Menu
+`python main.py` opens a menu with the data, training, and evaluation steps, the leaderboard, and the three apps. It works from any folder: each entry runs in the project folder with the same Python, and the menu shows the exit code when a step fails.
 
 ## 🤝 Contribution
-Contributions are welcome! Please ensure that any structural or behavioral changes are strictly tied to synchronized documentation updates. All new code should be placed in the `src/` folder, and dependencies are declared in `pyproject.toml`.
+Contributions are welcome! Please ensure that any structural or behavioral changes are strictly tied to synchronized documentation updates. All new code should be placed in the `gwd` package in `src/gwd/`, and dependencies are declared in `pyproject.toml`.
 Remember: **Never push directly to the `main` branch.** All changes must go through a Pull Request.
 
 ## 📄 License

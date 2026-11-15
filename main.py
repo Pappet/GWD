@@ -7,8 +7,8 @@ import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
-# (choice, label, kind, target). 'module' runs `python -m target`; 'path' runs the file
-# target, relative to this file. Only modules in the gwd package are listed as 'module'.
+# (choice, label, kind, target). 'module' runs `python -m target`; since P2.5 every entry
+# is a module in the gwd package.
 MENU = [
     ("1", "[DATA]   Fetch real noise", "module", "gwd.data.fetch_noise"),
     ("2", "[DATA]   Generate training data", "module", "gwd.data.generate"),
@@ -17,13 +17,20 @@ MENU = [
     ("5", "[EVAL]   Evaluate model (ROC & plots)", "module", "gwd.evaluation.evaluate"),
     ("6", "[EVAL]   Optimize threshold", "module", "gwd.evaluation.thresholds"),
     ("7", "[EVAL]   Compare models", "module", "gwd.evaluation.compare"),
+    ("8", "[EVAL]   Show leaderboard", "module", "gwd.evaluation.leaderboard"),
     (
-        "8",
+        "9",
         "[APP]    Glitch Hunter (interactive)",
         "module",
         "gwd.apps.glitch_hunter.app",
     ),
-    ("9", "[APP]    Waveform simulator", "module", "gwd.apps.waveform_explorer"),
+    ("10", "[APP]    Waveform explorer", "module", "gwd.apps.waveform_explorer"),
+    (
+        "11",
+        "[APP]    Interferometer designer",
+        "module",
+        "gwd.apps.interferometer_designer",
+    ),
 ]
 
 
@@ -31,8 +38,6 @@ def command(kind, target):
     """The argument list for one menu entry, independent of the working directory."""
     if kind == "module":
         return [sys.executable, "-m", target]
-    if kind == "path":
-        return [sys.executable, os.path.join(ROOT, target)]
     raise ValueError(f"Unknown menu entry kind: {kind!r}")
 
 
