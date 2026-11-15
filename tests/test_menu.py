@@ -32,7 +32,7 @@ def test_menu_entry_is_runnable(entry):
     _, _, kind, target = entry
     assert kind in ("module", "path")
     if kind == "module":
-        # Only gwd modules: the editable install also puts src/ on sys.path.
+        # Only gwd modules: the editable install also makes the scripts in src/ importable.
         assert target.startswith("gwd.")
         assert importlib.util.find_spec(target) is not None
     else:
