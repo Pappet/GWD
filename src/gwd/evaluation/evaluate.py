@@ -30,7 +30,7 @@ from sklearn.metrics import (
 
 from gwd.core.noise import generate_gaussian_noise
 from gwd.core.waveforms import generate_astrophysical_chirp
-from gwd.data.preprocessing import preprocess_real_data
+from gwd.data.preprocessing import normalize, preprocess_real_data
 from gwd.evaluation.leaderboard import update_leaderboard_roc
 from gwd.registry import MODEL_HELP, load_model, resolve
 
@@ -101,7 +101,7 @@ def evaluate_simulation_with_roc(model):
         else:
             data = noise
 
-        data = (data - np.mean(data)) / np.std(data)
+        data = normalize(data)
         X_roc.append(data)
         y_true_roc.append(1 if has_sig else 0)
 
@@ -143,7 +143,7 @@ def evaluate_simulation_with_roc(model):
             t_m = np.random.uniform(2.0, 3.5)
             sig, _ = generate_astrophysical_chirp(time, t_merger=t_m)
             data = noise + (sig * snr)
-            data = (data - np.mean(data)) / np.std(data)
+            data = normalize(data)
             X_batch.append(data)
 
         X = np.array(X_batch).reshape(n_batch, len(time), 1)

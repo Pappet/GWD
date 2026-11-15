@@ -24,6 +24,7 @@ from sklearn.metrics import auc, roc_curve
 
 from gwd.core.noise import generate_gaussian_noise
 from gwd.core.waveforms import generate_astrophysical_chirp
+from gwd.data.preprocessing import normalize
 from gwd.registry import MODEL_HELP, list_models, load_model, model_name, resolve
 
 TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -64,7 +65,7 @@ def generate_test_set(n_samples=1000):
         else:
             data = noise
 
-        data = (data - np.mean(data)) / np.std(data)
+        data = normalize(data)
         X_test.append(data)
         y_true.append(1 if has_sig else 0)
 
