@@ -12,6 +12,7 @@ from types import SimpleNamespace
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button, Slider
 
+from gwd.apps._backend import require_interactive_backend
 from gwd.config import SAMPLE_RATE
 from gwd.core.simulation import TimeDomainSimulator
 
@@ -175,6 +176,7 @@ def build_figure():
 
 
 def main():
+    require_interactive_backend("Waveform explorer")
     # The widgets only react while fig and state are referenced.
     fig, state = build_figure()
     plt.show()

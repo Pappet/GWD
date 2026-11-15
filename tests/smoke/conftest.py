@@ -13,6 +13,8 @@ def _run(args, home, stdin=None):
         **os.environ,
         "GWD_HOME": str(home),
         "MPLBACKEND": "Agg",
+        # The apps exit with rc 2 under Agg unless told that no window is fine (P4.5).
+        "GWD_HEADLESS_OK": "1",
         "CUDA_VISIBLE_DEVICES": "",
     }
     return subprocess.run(
