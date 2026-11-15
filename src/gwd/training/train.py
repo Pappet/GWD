@@ -92,19 +92,19 @@ def choose_precision(mixed_precision=False, gpus=None):
 
 def load_data(data_folder=DATA_DIR_TRAIN):
     """
-    Lädt den Trainingsdatensatz aus Numpy-Dateien und CSV-Labels.
+    Load the training dataset from the .npy files listed in labels.csv.
 
     Args:
         data_folder: Dataset folder with labels.csv.
 
     Returns:
-        X: Array der Form (n_samples, n_timesteps, 1)
-        y: Array der Labels (0 oder 1)
+        X: array of shape (n_samples, n_timesteps, 1)
+        y: array of labels (0 or 1)
     """
-    print("📂 Lade Datensatz...")
+    print("📂 Loading dataset...")
     csv_path = os.path.join(data_folder, LABELS_FILE)
     if not os.path.exists(csv_path):
-        raise FileNotFoundError(f"Konnte {csv_path} nicht finden.")
+        raise FileNotFoundError(f"Cannot find {csv_path}.")
 
     df = pd.read_csv(csv_path)
     signals = []
@@ -118,7 +118,7 @@ def load_data(data_folder=DATA_DIR_TRAIN):
             # Z-score with the default eps, as before
             data = normalize(data)
 
-            # Sicherstellen, dass die Länge stimmt (Clip/Pad)
+            # Clip or pad to the expected length
             TARGET_LEN = N_SAMPLES
             if len(data) > TARGET_LEN:
                 data = data[:TARGET_LEN]
@@ -128,16 +128,16 @@ def load_data(data_folder=DATA_DIR_TRAIN):
             signals.append(data)
             labels.append(row["has_signal"])
         except Exception as e:
-            print(f"⚠️ Fehler beim Laden von {row['filename']}: {e}")
+            print(f"⚠️ Error loading {row['filename']}: {e}")
 
     X = np.array(signals)
     y = np.array(labels)
     X = X.reshape(X.shape[0], X.shape[1], 1)
 
-    print(f"✅ Daten geladen: {len(X)} Samples. Shape: {X.shape}")
-    print(f"   - Samples mit Signal: {np.sum(y)} ({np.sum(y) / len(y) * 100:.1f}%)")
+    print(f"✅ Data loaded: {len(X)} samples. Shape: {X.shape}")
+    print(f"   - Samples with signal: {np.sum(y)} ({np.sum(y) / len(y) * 100:.1f}%)")
     print(
-        f"   - Samples ohne Signal: {len(y) - np.sum(y)} ({(len(y) - np.sum(y)) / len(y) * 100:.1f}%)"
+        f"   - Samples without signal: {len(y) - np.sum(y)} ({(len(y) - np.sum(y)) / len(y) * 100:.1f}%)"
     )
 
     return X, y
@@ -145,16 +145,16 @@ def load_data(data_folder=DATA_DIR_TRAIN):
 
 def save_experiment_config(history_obj, final_acc, cfg, run, policy):
     """
-    Speichert Metadaten zum Training, damit wir später wissen, was wir getan haben.
+    Save the metadata of a run as .json next to the model, so it can be traced later.
 
     Args:
-        history_obj: Keras History-Objekt vom Training
-        final_acc: Test-Set Accuracy
+        history_obj: Keras History object of the training
+        final_acc: test set accuracy
         cfg: TrainConfig of the run
         run: Run with the name and the .json path
         policy: Name of the Keras precision policy the model was trained with
     """
-    # Wir holen uns die letzten Werte aus der History
+    # The values of the last epoch
     final_train_acc = history_obj.history["accuracy"][-1]
     final_val_acc = history_obj.history["val_accuracy"][-1]
     final_train_loss = history_obj.history["loss"][-1]
@@ -178,20 +178,20 @@ def save_experiment_config(history_obj, final_acc, cfg, run, policy):
             "final_val_loss": float(final_val_loss),
             "test_set_accuracy": float(final_acc),
         },
-        "note": "Training mit automatischer Versionierung",
+        "note": "Training with automatic versioning",
     }
 
     with open(run.config_path, "w") as f:
         json.dump(config, f, indent=4)
-    print(f"📋 Experiment-Konfiguration gespeichert: {run.config_path}")
+    print(f"📋 Experiment config saved: {run.config_path}")
 
 
 def plot_history(history, plot_path):
     """
-    Erstellt Visualisierung des Trainingsverlaufs.
+    Plot accuracy and loss per epoch, with the best epoch marked.
 
     Args:
-        history: Keras History-Objekt
+        history: Keras History object
         plot_path: PNG file to write; its folder is created if missing.
     """
     acc = history.history["accuracy"]
@@ -208,7 +208,7 @@ def plot_history(history, plot_path):
     fig = Figure(figsize=(12, 5))
     ax_acc, ax_loss = fig.subplots(1, 2)
 
-    # Accuracy Plot
+    # Accuracy
     ax_acc.plot(epochs_range, acc, label="Training Accuracy", linewidth=2)
     ax_acc.plot(epochs_range, val_acc, label="Validation Accuracy", linewidth=2)
     ax_acc.axvline(
@@ -217,10 +217,10 @@ def plot_history(history, plot_path):
     ax_acc.legend(loc="lower right")
     ax_acc.set_xlabel("Epoch")
     ax_acc.set_ylabel("Accuracy")
-    ax_acc.set_title("Genauigkeit")
+    ax_acc.set_title("Accuracy")
     ax_acc.grid(True, alpha=0.3)
 
-    # Loss Plot
+    # Loss
     ax_loss.plot(epochs_range, loss, label="Training Loss", linewidth=2)
     ax_loss.plot(epochs_range, val_loss, label="Validation Loss", linewidth=2)
     ax_loss.axvline(
@@ -235,7 +235,7 @@ def plot_history(history, plot_path):
     fig.tight_layout()
     ensure_dirs(os.path.dirname(plot_path))
     fig.savefig(plot_path, dpi=150)
-    print(f"📊 Training-Plot gespeichert: {plot_path}")
+    print(f"📊 Training plot saved: {plot_path}")
 
 
 def train(cfg=None):
@@ -262,26 +262,24 @@ def train(cfg=None):
 
 
 def _train_and_save(cfg, policy):
-    """
-    Lädt Daten, trainiert Modell, evaluiert und speichert alles.
-    """
+    """Load the data, train, evaluate the best epoch, and save model, plot, and .json."""
     run = new_run(cfg.models_dir)
 
-    # Daten laden und aufteilen
+    # Load and split the data
     X, y = load_data(cfg.data_folder)
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=TEST_SPLIT, random_state=42, stratify=y
     )
 
-    print("\n📊 Datensplit:")
+    print("\n📊 Data split:")
     print(f"   - Training: {len(X_train)} Samples")
     print(f"   - Test: {len(X_test)} Samples")
 
-    # Modell bauen
+    # Build the model
     input_shape = (X_train.shape[1], 1)
     model = build_model(input_shape, cfg.learning_rate)
 
-    print("\n🏗️ Modell-Architektur:")
+    print("\n🏗️ Model architecture:")
     model.summary()
 
     # Callbacks
@@ -304,8 +302,8 @@ def _train_and_save(cfg, policy):
         ),
     ]
 
-    print(f"\n🚀 Starte Training: {run.name}")
-    print(f"💾 Speicherort: {cfg.models_dir}")
+    print(f"\n🚀 Starting training: {run.name}")
+    print(f"💾 Saving to: {cfg.models_dir}")
 
     # Training (the checkpoint callback writes into models_dir)
     ensure_dirs(cfg.models_dir)
@@ -319,25 +317,25 @@ def _train_and_save(cfg, policy):
         verbose=1,
     )
 
-    # Wir laden das BESTE Modell (nicht das vom letzten Epoch) für die Evaluation
+    # Evaluate the BEST model (the checkpoint), not the one from the last epoch
     best_model = models.load_model(run.model_path)
 
-    # Visualisierung erstellen
+    # Plot the history
     plot_history(
         history, os.path.join(cfg.plots_dir, f"training_history_{run.timestamp}.png")
     )
 
-    # Finale Evaluation
-    print("\n📈 Finale Evaluation:")
+    # Final evaluation
+    print("\n📈 Final evaluation:")
     loss, acc = best_model.evaluate(X_test, y_test, verbose=0)
     print(f"   - Test Loss: {loss:.4f}")
     print(f"   - Test Accuracy: {acc * 100:.2f}%")
 
-    # Metadaten speichern
+    # Save the metadata
     save_experiment_config(history, acc, cfg, run, policy)
 
-    print("\n✅ Training abgeschlossen!")
-    print(f"   - Modell: {run.model_path}")
+    print("\n✅ Training finished!")
+    print(f"   - Model: {run.model_path}")
     print(f"   - Config: {run.config_path}")
     return run
 

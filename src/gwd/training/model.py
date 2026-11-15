@@ -15,26 +15,25 @@ ARCHITECTURE = "CNN_V2_BatchNorm"
 
 def build_model(input_shape, learning_rate=LEARNING_RATE):
     """
-    Baut ein modernes CNN-Modell mit BatchNormalization.
+    Build and compile the CNN with BatchNormalization.
 
-    Architektur:
-    - 3 Conv1D Blöcke mit steigenden Filtern (16 -> 32 -> 64)
-    - BatchNormalization nach jeder Conv-Schicht
-    - MaxPooling für Dimensionsreduktion
-    - Dense Layer mit Dropout zur Regularisierung
-    - Sigmoid Output für binäre Klassifikation
+    Architecture:
+    - 3 Conv1D blocks with growing filters (16 -> 32 -> 64)
+    - BatchNormalization after each Conv layer
+    - MaxPooling to reduce the length
+    - a Dense layer with Dropout for regularization
+    - a sigmoid output for binary classification
 
     Args:
-        input_shape: Tuple (n_timesteps, n_channels)
+        input_shape: tuple (n_timesteps, n_channels)
         learning_rate: Adam learning rate. Default: LEARNING_RATE in gwd.config.
 
     Returns:
-        Kompiliertes Keras Model
+        The compiled Keras model
     """
     model = models.Sequential(
         [
-            # --- INPUT LAYER MODERNISIEREN ---
-            # Statt input_shape=... im Conv1D, nutzen wir einen expliziten Input-Layer
+            # An explicit Input layer instead of input_shape=... on the first Conv1D
             layers.Input(shape=input_shape),
             # Block 1
             layers.Conv1D(filters=16, kernel_size=32, padding="same"),
@@ -57,9 +56,8 @@ def build_model(input_shape, learning_rate=LEARNING_RATE):
             layers.BatchNormalization(),
             layers.Activation("relu"),
             layers.Dropout(0.3),
-            layers.Dense(
-                1, activation="sigmoid", dtype="float32"
-            ),  # Output immer in float32
+            # The output is always float32, also under mixed_float16
+            layers.Dense(1, activation="sigmoid", dtype="float32"),
         ]
     )
 
