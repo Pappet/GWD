@@ -32,12 +32,38 @@ python -m gwd.env
 
 The extras are `physics` (pycbc), `gwdata` (gwpy), `ml` (tensorflow), `dev` (pytest, ruff), and `all` (physics, gwdata, ml). For an NVIDIA GPU, TensorFlow also offers `pip install 'tensorflow[and-cuda]'`; this project does not install it for you.
 
-For the exact versions the golden test values were recorded with (Linux, Python 3.12), install from the lockfile instead:
+#### Reproducible environment (lockfile)
+
+`requirements-linux-py312.lock` pins every package, including TensorFlow and PyCBC, to the versions the models were trained and the golden test values were recorded with. It is valid for Linux and Python 3.12 only. Install from it in a fresh virtual environment:
 
 ```bash
 pip install -r requirements-linux-py312.lock
 pip install -e . --no-deps
 ```
+
+CI installs from the same file: the fast job with `-c requirements-linux-py312.lock` (everything except TensorFlow), the slow job with `-r` as above. CI also fails if `pyproject.toml` and the lock disagree.
+
+#### Updating the lockfile
+
+The lock is compiled with [uv](https://docs.astral.sh/uv/), on Linux, from `pyproject.toml` with all extras. Update it in the same commit as the change to `pyproject.toml`:
+
+```bash
+# After adding, removing, or changing a dependency in pyproject.toml.
+# uv keeps the versions already in the output file and only resolves what changed.
+uv pip compile pyproject.toml --all-extras --python-version 3.12 -o requirements-linux-py312.lock
+
+# Upgrade one package on purpose (repeat the flag for more packages)
+uv pip compile pyproject.toml --all-extras --python-version 3.12 -o requirements-linux-py312.lock --upgrade-package scipy
+
+# Check that the lock still matches pyproject.toml (the same check CI runs; no output means it matches)
+uv pip compile pyproject.toml --all-extras --python-version 3.12 \
+  -c requirements-linux-py312.lock --no-header --no-annotate -q -o /tmp/lock-check.txt
+diff <(grep -E '^[^ #]' requirements-linux-py312.lock) /tmp/lock-check.txt
+```
+
+Avoid `--upgrade` for everything: newer numpy, pandas, TensorFlow, or PyCBC versions can change the golden values and the behavior of the trained models. After any update, install the new lock in a fresh virtual environment and run all tests with `GWD_REQUIRE_PYCBC=1 python -m pytest`. If golden values change, update them only in a separate `golden:` commit that states the reason (see `AGENTS.md`).
+
+The first lock was compiled with an extra `-c constraints-pc.txt` (the `pip freeze` of the PC training environment without the `nvidia-*` packages, not in the repository), so its versions match that environment. The commands above keep those versions without the file. The first update rewrites the header and drops the `-c constraints-pc.txt` notes from the file; that is expected.
 
 ### 2. Generate Data & Train
 ```bash
