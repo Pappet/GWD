@@ -36,7 +36,9 @@ from gwd.evaluation.metrics import (
     calculate_operating_point,
     confusion_counts,
     detection_rate,
+    format_snr,
     predict_labels,
+    snr_at_rate,
 )
 from gwd.registry import load_model, resolve
 
@@ -61,9 +63,19 @@ REAL_NOISE_DUR = 200
 # The field test result when it is skipped (--no-real)
 NO_FIELD_TEST = {"found": 0, "total": 0, "far_text": "n/a", "event_scores": {}}
 
+
 # ==========================================
 # HELFER-FUNKTIONEN
 # ==========================================
+def metrics_box(rows, width=27):
+    """The metrics table of the plot: (label, formatted value) rows, None for a blank line."""
+    lines = ["╔" + "═" * width + "╗", "║" + "PERFORMANCE METRICS".center(width) + "║"]
+    lines.append("╠" + "═" * width + "╣")
+    for row in rows:
+        text = "" if row is None else f" {row[0]:<15s} {row[1]}"
+        lines.append("║" + text.ljust(width) + "║")
+    lines.append("╚" + "═" * width + "╝")
+    return "\n".join(lines)
 
 
 # ==========================================
@@ -116,20 +128,9 @@ def evaluate_simulation_with_roc(model):
         preds = model.predict(X, verbose=0).flatten()
         detection_rates.append(detection_rate(preds, THRESHOLD))
 
-    # SNR50 / SNR90 bestimmen
-    snr_50 = None
-    snr_90 = None
-    try:
-        arr_rates = np.array(detection_rates)
-        idx50 = np.where(arr_rates >= 0.5)[0]
-        idx90 = np.where(arr_rates >= 0.9)[0]
-
-        if len(idx50) > 0:
-            snr_50 = snr_levels[idx50[0]]
-        if len(idx90) > 0:
-            snr_90 = snr_levels[idx90[0]]
-    except Exception:
-        pass
+    # SNR50 / SNR90: the first SNR level whose detection rate reaches 50% / 90%
+    snr_50 = snr_at_rate(snr_levels, detection_rates, 0.5)
+    snr_90 = snr_at_rate(snr_levels, detection_rates, 0.9)
 
     # --- C. Confusion Matrix bei gewähltem Threshold ---
     y_pred = predict_labels(y_scores, THRESHOLD)
@@ -177,9 +178,9 @@ def evaluate_simulation_with_roc(model):
     ax4.plot(snr_levels, detection_rates, "o-", color="purple", lw=2)
     ax4.axhline(0.5, color="gray", linestyle="--", alpha=0.5, label="50%")
     ax4.axhline(0.9, color="blue", linestyle="--", alpha=0.5, label="90%")
-    if snr_50:
+    if snr_50 is not None:
         ax4.axvline(snr_50, color="orange", linestyle=":", label=f"SNR50={snr_50:.2f}")
-    if snr_90:
+    if snr_90 is not None:
         ax4.axvline(snr_90, color="red", linestyle=":", label=f"SNR90={snr_90:.2f}")
     ax4.set_xlabel("Injected SNR", fontweight="bold")
     ax4.set_ylabel("Detection Probability", fontweight="bold")
@@ -210,21 +211,19 @@ def evaluate_simulation_with_roc(model):
     ax6 = fig.add_subplot(gs[1, 2])
     ax6.axis("off")
 
-    metrics_text = f"""
-    ╔═══════════════════════════╗
-    ║   PERFORMANCE METRICS     ║
-    ╠═══════════════════════════╣
-    ║ ROC AUC:        {roc_auc:.4f}   ║
-    ║ Avg Precision:  {avg_precision:.4f}   ║
-    ║                           ║
-    ║ Accuracy:       {acc:.2%}    ║
-    ║ TPR (Recall):   {op_tpr:.2%}    ║
-    ║ FPR:            {op_fpr:.2%}    ║
-    ║                           ║
-    ║ SNR50:          {snr_50 if snr_50 else "N/A"}      ║
-    ║ SNR90:          {snr_90 if snr_90 else "N/A"}      ║
-    ╚═══════════════════════════╝
-    """
+    metrics_text = metrics_box(
+        [
+            ("ROC AUC:", f"{roc_auc:.4f}"),
+            ("Avg Precision:", f"{avg_precision:.4f}"),
+            None,
+            ("Accuracy:", f"{acc:.2%}"),
+            ("TPR (Recall):", f"{op_tpr:.2%}"),
+            ("FPR:", f"{op_fpr:.2%}"),
+            None,
+            ("SNR50:", format_snr(snr_50)),
+            ("SNR90:", format_snr(snr_90)),
+        ]
+    )
 
     ax6.text(
         0.1,
@@ -399,7 +398,7 @@ def run(model="latest", real=True):
     print(f"  Accuracy:             {sim_res['acc']:.1%}")
     print(f"  TPR (Sensitivity):    {sim_res['tpr']:.2%}")
     print(f"  FPR:                  {sim_res['fpr']:.2%}")
-    print(f"  SNR90:                {sim_res['snr90']}")
+    print(f"  SNR90:                {format_snr(sim_res['snr90'])}")
     print(f"  Real Events Found:    {real_res['found']}/{real_res['total']}")
     print(f"  False Alarm Rate:     {real_res['far_text']}")
     print("=" * 70)

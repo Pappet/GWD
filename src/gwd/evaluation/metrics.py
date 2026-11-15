@@ -32,6 +32,21 @@ def confusion_counts(y_true, y_scores, threshold):
     return confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
 
 
+def snr_at_rate(snr_levels, rates, level):
+    """The first SNR whose detection rate reaches level, or None if none does.
+
+    0.0 is a valid answer (a model that fires on pure noise), so test the result with
+    'is None', not for truth.
+    """
+    reached = np.flatnonzero(np.asarray(rates) >= level)
+    return float(snr_levels[reached[0]]) if len(reached) else None
+
+
+def format_snr(snr):
+    """An SNR from snr_at_rate for display: two decimals, or N/A for None."""
+    return "N/A" if snr is None else f"{snr:.2f}"
+
+
 def calculate_operating_point(y_true, y_scores, threshold):
     """Return (TPR, FPR) at one threshold, to mark the operating point on the ROC curve."""
     tn, fp, fn, tp = confusion_counts(y_true, y_scores, threshold)
