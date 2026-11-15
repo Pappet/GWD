@@ -1,4 +1,4 @@
-"""Where gwd.config and the root config shim put the project root (P2.3)."""
+"""Where gwd.config puts the project root (P2.3)."""
 
 import json
 import os
@@ -58,14 +58,12 @@ def environment(gwd_home=None):
     return env
 
 
-def import_both(cwd, env):
-    """Import the root shim and gwd.config in a fresh process; return both path sets and stderr."""
+def import_config(cwd, env):
+    """Import gwd.config in a fresh process; return its paths and stderr."""
     code = f"""
-import json, sys
-sys.path.insert(0, {ROOT!r})
-import config, gwd.config
-names = {PATH_NAMES!r}
-print(json.dumps([{{n: getattr(m, n) for n in names}} for m in (config, gwd.config)]))
+import json
+import gwd.config
+print(json.dumps({{n: getattr(gwd.config, n) for n in {PATH_NAMES!r}}}))
 """
     result = subprocess.run(
         [sys.executable, "-c", code],
@@ -75,28 +73,27 @@ print(json.dumps([{{n: getattr(m, n) for n in names}} for m in (config, gwd.conf
         text=True,
     )
     assert result.returncode == 0, result.stderr
-    shim, package = json.loads(result.stdout)
-    return shim, package, result.stderr
+    return json.loads(result.stdout), result.stderr
 
 
 def test_without_gwd_home_paths_are_unchanged(tmp_path):
     # cwd is a temp dir on purpose: the root must not depend on the working directory.
-    shim, package, stderr = import_both(tmp_path, environment())
-    assert shim == package == expected_paths(ROOT)
+    paths, stderr = import_config(tmp_path, environment())
+    assert paths == expected_paths(ROOT)
     assert WARNING not in stderr
 
 
 @pytest.mark.parametrize("value", ["", "   ", "\t\n"])
 def test_blank_gwd_home_counts_as_unset(tmp_path, value):
-    shim, package, stderr = import_both(tmp_path, environment(value))
-    assert shim == package == expected_paths(ROOT)
+    paths, stderr = import_config(tmp_path, environment(value))
+    assert paths == expected_paths(ROOT)
     assert WARNING not in stderr
 
 
 def test_gwd_home_moves_every_path_and_warns_once(tmp_path):
     home = str(tmp_path / "home")
-    shim, package, stderr = import_both(tmp_path, environment(f"  {home} "))
-    assert shim == package == expected_paths(home)
+    paths, stderr = import_config(tmp_path, environment(f"  {home} "))
+    assert paths == expected_paths(home)
     assert stderr.count(WARNING) == 1, stderr
     assert f"{WARNING}{home}" in stderr
 
