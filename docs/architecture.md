@@ -241,7 +241,7 @@ Each step PR ticks its own step, so a tick takes effect when that PR is merged.
 | [x] | P3.2 | One conditioning and one normalization function | #27 |
 | [x] | P3.3 | Model registry: one model search, selection by timestamp, `--model` | #25 |
 | [x] | P3.4 | GWOSC access and shared event list | #28 |
-| [ ] | P3.5 | Central injection with named V1 scenarios | |
+| [x] | P3.5 | Central injection with named V1 scenarios | #29 |
 | [ ] | P3.6 | Unified `gwd` CLI, `gwd env`, thin menu | |
 | [ ] | P3.7 | Split training into `model.py` and `train.py` | |
 | [ ] | P4.1 | Make silent switches visible: logging, manifest, metadata, exit codes | |
