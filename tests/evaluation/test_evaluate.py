@@ -1,4 +1,4 @@
-"""gwd eval run starts with the line that names backend and noise (P4.1)."""
+"""gwd eval run: the start line that names backend and noise (P4.1), the metrics box (P4.2)."""
 
 import pytest
 
@@ -52,3 +52,13 @@ def test_newton_gets_a_loud_warning(stubbed, capsys, monkeypatch):
     out, err = capsys.readouterr()
     assert "Backend: newton | Noise:" in out
     assert "the waveform backend is the Newtonian approximation" in err
+
+
+def test_the_metrics_box_has_rows_of_one_width():
+    box = evaluate.metrics_box(
+        [("Accuracy:", "100.00%"), None, ("SNR50:", "0.00"), ("SNR90:", "N/A")]
+    )
+    lines = box.splitlines()
+    assert len({len(line) for line in lines}) == 1
+    assert "║ SNR50:          0.00" in box
+    assert "N/A" in box
