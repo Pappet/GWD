@@ -17,10 +17,10 @@ from gwd.config import (
     N_SAMPLES,
     SAMPLE_RATE,
 )
-from gwd.core.noise import generate_gaussian_noise
-from gwd.core.waveforms import generate_astrophysical_chirp
 from gwd.data.gwosc import EVENTS, fetch_strain
+from gwd.data.injection import make_sample
 from gwd.data.preprocessing import condition_strain, normalize
+from gwd.data.scenarios import APP_V1
 from gwd.registry import list_models, load_model
 
 O3_START = 1238112018
@@ -197,8 +197,8 @@ class GlitchHunterApp:
             # Wir rufen einfach die Logik direkt auf
             self.is_real_data = False
             self.event_name = "Simulation (Fallback)"
-            noise = generate_gaussian_noise(len(self.time), noise_level=1.0)
-            # ... (Rest der Simulation Logik vereinfacht)
+            # Noise only, from the same scenario as the simulation mode
+            noise = make_sample(APP_V1, has_signal=False).data
             self.current_data = noise
             self.has_signal = False
             self.pure_signal = np.zeros_like(noise)
@@ -271,20 +271,14 @@ class GlitchHunterApp:
     def generate_new_sample(self, event):
         self.is_real_data = False
         self.event_name = "Simulation"
-        noise = generate_gaussian_noise(len(self.time), noise_level=1.0)
-        self.has_signal = np.random.choice([True, False])
-
-        if self.has_signal:
-            t_merger = np.random.uniform(2.0, 3.8)
-            snr = np.random.uniform(0.5, 2.0)
-            sig_raw, _ = generate_astrophysical_chirp(self.time, t_merger=t_merger)
-            self.pure_signal = sig_raw * snr
-            self.current_data = noise + self.pure_signal
-            self.true_snr = snr
+        sample = make_sample(APP_V1)
+        self.has_signal = sample.has_signal
+        self.current_data = sample.data
+        if sample.has_signal:
+            self.pure_signal = sample.signal
         else:
-            self.pure_signal = np.zeros_like(noise)
-            self.current_data = noise
-            self.true_snr = 0
+            self.pure_signal = np.zeros_like(sample.data)
+        self.true_snr = sample.snr
 
         self.update_plot_threadsafe(title="Simulierte Daten")
 
