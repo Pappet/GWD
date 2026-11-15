@@ -49,7 +49,7 @@ RULES = {
         **dict.fromkeys(["gwd.apps", "gwd.core", "gwd.data", "gwd.config"], TOP),
         "gwd.registry": TOP,
         **dict.fromkeys(["matplotlib", "numpy", "scipy.io.wavfile"], TOP),
-        **dict.fromkeys(["tensorflow", "gwpy"], LAZY),
+        "tensorflow": LAZY,
     },
     "cli": {ANY: LAZY},
     "main": {},
@@ -167,6 +167,19 @@ def test_allowlist_only_shrinks():
     assert not stale, "Fixed; remove from ALLOWLIST:\n" + "\n".join(
         f"  {path}: {name}" for path, name in sorted(stale)
     )
+
+
+def test_gwpy_is_imported_only_in_gwosc_and_preprocessing():
+    # Also closes the cli rule, which allows any lazy import (P3.4). env.py checks
+    # packages with __import__, which this test does not see.
+    allowed_files = {"src/gwd/data/gwosc.py", "src/gwd/data/preprocessing.py"}
+    found = {
+        path.relative_to(ROOT).as_posix()
+        for path in python_files()
+        for module, _ in imports(path)
+        if module.split(".")[0] == "gwpy"
+    }
+    assert found <= allowed_files, f"gwpy imported in {sorted(found - allowed_files)}"
 
 
 def test_rules_cover_every_component():
