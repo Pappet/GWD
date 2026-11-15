@@ -7,7 +7,6 @@ labels and scores and returns numbers.
 import numpy as np
 from sklearn.metrics import (
     confusion_matrix,
-    f1_score,
     precision_recall_curve,
     roc_curve,
 )
@@ -60,6 +59,22 @@ def point_at_tpr(fpr, tpr, thresholds, target_tpr):
     return {"threshold": thresholds[i], "tpr": tpr[i], "fpr": fpr[i]}
 
 
+def f1_curve(y_true, y_scores):
+    """F1 = 2PR / (P + R) at every threshold of precision_recall_curve, as (f1, thresholds).
+
+    One pass over the sorted scores instead of one f1_score call per threshold. F1 is 0
+    where precision and recall are both 0.
+    """
+    precision, recall, thresholds = precision_recall_curve(y_true, y_scores)
+    # The last point (precision 1, recall 0) has no threshold.
+    precision, recall = precision[:-1], recall[:-1]
+    total = precision + recall
+    f1 = np.divide(
+        2 * precision * recall, total, out=np.zeros_like(total), where=total > 0
+    )
+    return f1, thresholds
+
+
 def find_optimal_thresholds(y_true, y_scores):
     """
     Compute thresholds by several criteria.
@@ -73,7 +88,6 @@ def find_optimal_thresholds(y_true, y_scores):
     # roc_curve starts with an infinite threshold (nothing detected); no strategy may choose
     # it, because it is no usable threshold and json writes it as the invalid 'Infinity'.
     fpr, tpr, thresholds = finite_roc(*roc)
-    precision, recall, pr_thresholds = precision_recall_curve(y_true, y_scores)
 
     results = {}
 
@@ -89,23 +103,17 @@ def find_optimal_thresholds(y_true, y_scores):
     }
 
     # 2. Maximum F1 score
-    # F1 = 2 * (precision * recall) / (precision + recall)
-    f1_scores = []
-    for t in pr_thresholds:
-        y_pred = (y_scores >= t).astype(int)
-        f1_scores.append(f1_score(y_true, y_pred))
-
-    f1_scores = np.array(f1_scores)
+    f1_scores, pr_thresholds = f1_curve(y_true, y_scores)
     f1_max_idx = np.argmax(f1_scores)
 
-    # Find the TPR/FPR that belong to this threshold
+    # The TPR/FPR at exactly this threshold
     opt_threshold = pr_thresholds[f1_max_idx]
-    opt_idx = np.argmin(np.abs(thresholds - opt_threshold))
+    opt_tpr, opt_fpr = calculate_operating_point(y_true, y_scores, opt_threshold)
 
     results["f1"] = {
         "threshold": opt_threshold,
-        "tpr": tpr[opt_idx],
-        "fpr": fpr[opt_idx],
+        "tpr": opt_tpr,
+        "fpr": opt_fpr,
         "f1_score": f1_scores[f1_max_idx],
         "description": "Maximizes the F1 score - good for unbalanced data",
     }
