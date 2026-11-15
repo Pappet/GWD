@@ -9,6 +9,7 @@ from gwd.config import (
     ensure_dirs,
 )
 from gwd.data.preprocessing import normalize
+from gwd.training.model import ARCHITECTURE, build_model
 
 # --- 1. LOGGING BEREINIGEN (Muss vor dem TensorFlow Import stehen!) ---
 # 0 = Alle Nachrichten (Standard)
@@ -30,7 +31,7 @@ matplotlib.use("Agg")  # Non-interactive backend
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
-from tensorflow.keras import callbacks, layers, models
+from tensorflow.keras import callbacks, models
 
 # Mixed precision für schnelleres Training auf RTX GPUs
 tf.keras.mixed_precision.set_global_policy("mixed_float16")
@@ -104,62 +105,6 @@ def load_data():
     return X, y
 
 
-def build_model(input_shape):
-    """
-    Baut ein modernes CNN-Modell mit BatchNormalization.
-
-    Architektur:
-    - 3 Conv1D Blöcke mit steigenden Filtern (16 -> 32 -> 64)
-    - BatchNormalization nach jeder Conv-Schicht
-    - MaxPooling für Dimensionsreduktion
-    - Dense Layer mit Dropout zur Regularisierung
-    - Sigmoid Output für binäre Klassifikation
-
-    Args:
-        input_shape: Tuple (n_timesteps, n_channels)
-
-    Returns:
-        Kompiliertes Keras Model
-    """
-    model = models.Sequential(
-        [
-            # --- INPUT LAYER MODERNISIEREN ---
-            # Statt input_shape=... im Conv1D, nutzen wir einen expliziten Input-Layer
-            layers.Input(shape=input_shape),
-            # Block 1
-            layers.Conv1D(filters=16, kernel_size=32, padding="same"),
-            layers.BatchNormalization(),
-            layers.Activation("relu"),
-            layers.MaxPooling1D(pool_size=4),
-            # Block 2
-            layers.Conv1D(filters=32, kernel_size=16, padding="same"),
-            layers.BatchNormalization(),
-            layers.Activation("relu"),
-            layers.MaxPooling1D(pool_size=4),
-            # Block 3
-            layers.Conv1D(filters=64, kernel_size=8, padding="same"),
-            layers.BatchNormalization(),
-            layers.Activation("relu"),
-            layers.MaxPooling1D(pool_size=4),
-            # Classifier
-            layers.Flatten(),
-            layers.Dense(64),
-            layers.BatchNormalization(),
-            layers.Activation("relu"),
-            layers.Dropout(0.3),
-            layers.Dense(
-                1, activation="sigmoid", dtype="float32"
-            ),  # Output immer in float32
-        ]
-    )
-
-    opt = tf.keras.optimizers.Adam(learning_rate=0.0005)
-
-    model.compile(optimizer=opt, loss="binary_crossentropy", metrics=["accuracy"])
-
-    return model
-
-
 def save_experiment_config(history_obj, final_acc):
     """
     Speichert Metadaten zum Training, damit wir später wissen, was wir getan haben.
@@ -181,7 +126,7 @@ def save_experiment_config(history_obj, final_acc):
         "epochs": EPOCHS,
         "batch_size": BATCH_SIZE,
         "test_split": TEST_SPLIT,
-        "architecture": "CNN_V2_BatchNorm",
+        "architecture": ARCHITECTURE,
         "metrics": {
             "final_training_acc": float(final_train_acc),
             "final_val_acc": float(final_val_acc),
