@@ -41,7 +41,7 @@ def create_interactive_plot():
         # 2. Add noise (gwd.core)
         strain_noisy = sim.add_detector_noise(strain, gui_params["noise_level"])
         # 3. Compute the response (gwd.core)
-        delta_L, intensity = sim.calculate_response(strain_noisy)
+        delta_L, _ = sim.calculate_response(strain_noisy)
         return strain, freq, strain_noisy, delta_L
 
     # Initiale Daten
