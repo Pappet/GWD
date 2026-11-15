@@ -11,7 +11,13 @@ import os
 import matplotlib
 import numpy as np
 
-from gwd.config import EVALUATION_MODELS_PLOTS_DIR, MODELS_DIR, ensure_dirs
+from gwd.config import (
+    DURATION,
+    EVALUATION_MODELS_PLOTS_DIR,
+    MODELS_DIR,
+    N_SAMPLES,
+    ensure_dirs,
+)
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -21,8 +27,6 @@ from sklearn.metrics import auc, roc_curve
 from gwd.core.noise import generate_gaussian_noise
 from gwd.core.waveforms import generate_astrophysical_chirp
 
-FS = 4096
-DURATION = 4.0
 TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
@@ -54,7 +58,7 @@ def generate_test_set(n_samples=1000):
     """Generiert einen festen Test-Set für faire Vergleiche."""
     print(f"\n📊 Generiere {n_samples} Test-Samples...")
 
-    time = np.linspace(0, DURATION, int(FS * DURATION))
+    time = np.linspace(0, DURATION, N_SAMPLES)
     X_test = []
     y_true = []
 

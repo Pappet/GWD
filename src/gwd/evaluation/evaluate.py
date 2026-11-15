@@ -6,9 +6,12 @@ import matplotlib
 import numpy as np
 
 from gwd.config import (
+    DURATION,
     EVALUATION_MODELS_PLOTS_DIR,
     LEADERBOARD_FILE,
     MODELS_DIR,
+    N_SAMPLES,
+    SAMPLE_RATE,
     ensure_dirs,
 )
 
@@ -38,8 +41,6 @@ BASELINE_FILE = os.path.join(MODELS_DIR, "physics_baseline.json")
 TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
 # Parameter für die Tests
-FS = 4096
-DURATION = 4.0
 THRESHOLD = 0.15  # Nur für Vergleich, ROC ist threshold-unabhängig
 
 # Echte Events für den "Feld-Test"
@@ -79,7 +80,7 @@ def calculate_operating_point(y_true, y_scores, threshold):
 # ==========================================
 def evaluate_simulation_with_roc(model):
     print("\n🧪 [LABOR] Starte ROC-Analyse auf Simulationsdaten...")
-    time = np.linspace(0, DURATION, int(FS * DURATION))
+    time = np.linspace(0, DURATION, N_SAMPLES)
 
     # --- A. ROC-Kurve erstellen (Threshold-unabhängig!) ---
     print("   📊 Generiere Test-Set für ROC-Analyse...")
@@ -313,9 +314,9 @@ def evaluate_real_world(model):
             t_end = int(gps + 2.0)
 
             strain = TimeSeries.fetch_open_data("H1", t_start, t_end, verbose=False)
-            data = preprocess_real_data(strain, FS)
+            data = preprocess_real_data(strain, SAMPLE_RATE)
 
-            expected = int(FS * DURATION)
+            expected = N_SAMPLES
             if len(data) != expected:
                 data = np.resize(data, expected)
             data = (data - np.mean(data)) / np.std(data)
@@ -348,9 +349,9 @@ def evaluate_real_world(model):
         long_strain = TimeSeries.fetch_open_data(
             "H1", REAL_NOISE_START, REAL_NOISE_START + REAL_NOISE_DUR, verbose=False
         )
-        clean_data = preprocess_real_data(long_strain, FS)
+        clean_data = preprocess_real_data(long_strain, SAMPLE_RATE)
 
-        step = int(FS * DURATION)
+        step = N_SAMPLES
         num_cuts = len(clean_data) // step
 
         for i in range(num_cuts):
