@@ -241,7 +241,7 @@ Each step PR ticks its own step, so a tick takes effect when that PR is merged.
 | [ ] | P4.4 | Untangle Glitch Hunter: GUI, sources, audio; fix threading; modes | |
 | [ ] | P4.5 | Testable demo apps | |
 | [ ] | P4.6 | Validator and loading: full integrity and range checks | |
-| [ ] | P5.1 | Physics tests with real asserts | |
+| [x] | P5.1 | Physics tests with real asserts | #26 |
 | [ ] | P5.2 | Explicit waveform backend, no silent fallback in the pipeline | |
 | [ ] | P5.3 | Core details: `time_axis`, `rng`, `t_merger` check, constants, dead code | |
 | [ ] | P5.4 | Correct noise normalization; interferometer as an honest learning model | |
