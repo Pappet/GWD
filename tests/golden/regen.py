@@ -93,18 +93,22 @@ def _measure_noise(noise):
     }
 
 
-def _measure_scaling(dataset):
+def _measure_scaling(injection):
     import numpy as np
+
+    from gwd.data.preprocessing import normalize
 
     t = np.linspace(0, 1, 1000)
     signal = np.sin(2 * np.pi * 30 * t) * t
     noise = 0.5 * np.cos(2 * np.pi * 7 * t) + 0.25 * np.sin(2 * np.pi * 53 * t)
 
-    scaled, actual_snr = dataset.scale_signal_to_snr(signal, noise, 5.0)
+    scaled, actual_snr = injection.scale_signal_to_snr(signal, noise, 5.0)
 
-    # The formula from evaluate_model_with_roc.py is inline there, so it is repeated here. P3.5 centralizes it.
-    data = noise + (signal * 1.5)
-    data = (data - np.mean(data)) / np.std(data)
+    # The evaluation path since P3.5: the "unit" reference (noise + signal * snr) and
+    # normalize with its default eps. The values were recorded with a plain z-score;
+    # the eps changes them by a relative 1e-10, inside EXACT_RTOL.
+    unit_scaled, _ = injection.scale_signal_to_snr(signal, noise, 1.5, "unit")
+    data = normalize(noise + unit_scaled)
 
     return {
         "scaled": _summary(scaled, FIXED_INPUT_SAMPLES),
@@ -166,11 +170,13 @@ def _measure(output):
     import numpy as np
 
     import gwd.data.generate as dataset
+    from gwd.config import DATA_DIR_NOISE
     from gwd.core import interferometer, noise, waveforms
+    from gwd.data import injection
 
-    if glob.glob(os.path.join(dataset.REAL_NOISE_DIR, "*.npy")):
+    if glob.glob(os.path.join(DATA_DIR_NOISE, "*.npy")):
         sys.exit(
-            f"Refusing to measure: real noise files in {dataset.REAL_NOISE_DIR} would change the values."
+            f"Refusing to measure: real noise files in {DATA_DIR_NOISE} would change the values."
         )
 
     time = np.linspace(0, 4.0, 16384)
@@ -181,7 +187,7 @@ def _measure(output):
     measured = {
         "newton": _measure_newton(time, waveforms),
         "noise": _measure_noise(noise),
-        "scaling": _measure_scaling(dataset),
+        "scaling": _measure_scaling(injection),
         "dataset": _measure_dataset(dataset),
         "interferometer": _measure_interferometer(interferometer),
     }
