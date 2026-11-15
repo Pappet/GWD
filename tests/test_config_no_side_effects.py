@@ -23,6 +23,7 @@ LIGHT_MODULES = [
     "gwd.apps.glitch_hunter.app",
 ]
 TF_MODULES = [
+    "gwd.training.model",
     "gwd.training.train",
 ]
 
