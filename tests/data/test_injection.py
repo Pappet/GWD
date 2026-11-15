@@ -170,3 +170,40 @@ def test_conditioning_the_signal_is_not_part_of_v1():
 def test_known_skew():
     """Training and evaluation should draw from the same distribution; in V1 they do not."""
     assert TRAIN_V1.distribution() == EVAL_V1.distribution()
+
+
+def test_samples_name_their_noise_chunk_and_waveform_backend(noise_folder):
+    from gwd.core.waveforms import HAS_PYCBC
+
+    provider = injection.real_noise_provider(noise_folder)
+    samples = batch(TRAIN_V1, 8, provider, n=20)
+    chunks = {path.name for path in noise_folder.iterdir()}
+    assert {s.noise_kind for s in samples} == {"real", "white"}
+    for s in samples:
+        assert (s.noise_file in chunks) == (s.noise_kind == "real")
+        assert s.noise_file is None or s.noise_kind == "real"
+        if s.has_signal:
+            assert s.waveform_backend == ("pycbc" if HAS_PYCBC else "newton")
+        else:
+            assert s.waveform_backend is None
+
+
+def test_a_short_chunk_falls_back_to_white_noise_and_says_so(tmp_path):
+    np.save(tmp_path / "short.npy", np.zeros(10))
+    files = injection.real_noise_files(tmp_path)
+    with pytest.warns(UserWarning, match="short.npy has 10 samples"):
+        noise, name = injection.draw_real_noise(
+            N_SAMPLES, files, np.random.RandomState(0)
+        )
+    assert name is None and noise.shape == (N_SAMPLES,)
+
+
+def test_a_provider_fallback_is_recorded_as_white_noise():
+    def white_provider(length, rng=None):
+        return injection.white_noise(length, rng), None
+
+    scenario = dataclasses.replace(TRAIN_V1, name="ALL_REAL", real_noise_fraction=1.0)
+    sample = injection.make_sample(
+        scenario, np.random.RandomState(0), noise_provider=white_provider
+    )
+    assert sample.noise_kind == "white" and sample.noise_file is None
