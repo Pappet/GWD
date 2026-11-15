@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Interferometer Designer V2 - GUI Frontend
-Nutzt gwd_core für die Physik-Berechnungen.
+Uses gwd.core for the physics calculations.
 """
 import sys
 import os
@@ -13,9 +13,9 @@ from matplotlib.widgets import Slider, CheckButtons
 from matplotlib.patches import Rectangle, Circle, FancyBboxPatch
 
 # --- IMPORT SETUP ---
-# Füge den aktuellen Ordner zum Pfad hinzu, damit Python 'gwd_core' findet
+# Add src/ to the path so Python finds the 'gwd' package
 sys.path.append(os.path.dirname(__file__))
-from gwd_core.interferometer import InterferometerModel
+from gwd.core.interferometer import InterferometerModel
 
 def main():
     # Instanz der Physik-Engine erstellen
@@ -93,7 +93,7 @@ def main():
             ax_schema.text(1, y_pos, '🌀 Squeezed Light', fontsize=9, bbox=dict(boxstyle='round', fc='plum', alpha=0.7))
     
     def plot_sensitivity():
-        """Plotte Sensitivitätskurve mit Daten aus gwd_core"""
+        """Plot the sensitivity curve with data from gwd.core"""
         ax_sensitivity.clear()
         
         # HIER: Berechnung durch das Core-Modul

@@ -1,4 +1,4 @@
-# Datei: GWD/gwd_core/noise.py
+# File: src/gwd/core/noise.py
 """
 Rausch-Generierung für Gravitationswellen-Detektor Simulationen.
 

@@ -18,8 +18,8 @@ from gwpy.timeseries import TimeSeries
 
 # Imports aus deinem Core
 sys.path.append(os.path.dirname(__file__))
-from gwd_core.waveforms import generate_astrophysical_chirp
-from gwd_core.noise import generate_gaussian_noise
+from gwd.core.waveforms import generate_astrophysical_chirp
+from gwd.core.noise import generate_gaussian_noise
 
 KNOWN_EVENTS = {
     "GW150914": 1126259462.4,

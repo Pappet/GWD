@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from src.utils.evaluation import update_leaderboard_roc
+from utils.evaluation import update_leaderboard_roc
 
 pytestmark = pytest.mark.filterwarnings("ignore:Physics baseline currently invalid")
 

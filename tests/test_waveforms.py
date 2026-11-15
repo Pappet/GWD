@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from src.gwd_core.waveforms import generate_astrophysical_chirp
+from gwd.core.waveforms import generate_astrophysical_chirp
 
 def test_generate_astrophysical_chirp_normalized():
     time_array = np.linspace(0, 1, 1000)

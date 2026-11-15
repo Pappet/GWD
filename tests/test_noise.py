@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from src.gwd_core.noise import generate_gaussian_noise, generate_colored_noise
+from gwd.core.noise import generate_gaussian_noise, generate_colored_noise
 
 def test_generate_gaussian_noise():
     noise = generate_gaussian_noise(1000, 1.0)

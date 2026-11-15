@@ -141,7 +141,7 @@ def _measure(output):
     sys.path.insert(0, str(REPO_ROOT / "src" / "dataset"))
     import generate_chirp_dataset as dataset  # Also puts src/ and the project root on sys.path.
     import numpy as np
-    from gwd_core import interferometer, noise, waveforms
+    from gwd.core import interferometer, noise, waveforms
 
     if glob.glob(os.path.join(dataset.REAL_NOISE_DIR, "*.npy")):
         sys.exit(f"Refusing to measure: real noise files in {dataset.REAL_NOISE_DIR} would change the values.")
