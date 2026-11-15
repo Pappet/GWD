@@ -1,3 +1,4 @@
+import hashlib
 import json
 
 import numpy as np
@@ -12,6 +13,10 @@ pytestmark = pytest.mark.slow
 LABEL_COLUMNS = 10  # 7 until P4.1, then waveform_backend, noise_source, noise_file
 LEADERBOARD_COLUMNS = 12
 SAMPLE_LENGTH = 16384
+
+
+def sha256(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def test_dataset_structure(pipeline_home):
@@ -43,6 +48,18 @@ def test_dataset_records_backend_and_noise_source(pipeline_home):
         int(SEED),
     )
     assert manifest["real_noise_fraction"] == 0.0
+
+
+def test_the_model_metadata_names_its_dataset(pipeline_home):
+    training = pipeline_home / "data" / "training"
+    (config,) = (pipeline_home / "models_registry").glob("*.json")
+    metadata = json.loads(config.read_text())
+    manifest = json.loads((training / "manifest.json").read_text())
+    assert metadata["dataset_manifest_sha256"] == sha256(training / "manifest.json")
+    assert metadata["waveform_backend"] == manifest["waveform_backend"]
+    assert metadata["real_noise_fraction"] == 0.0
+    assert metadata["seed"] == int(SEED)
+    assert metadata["epochs_trained"] == 1
 
 
 def test_training_writes_one_model_and_one_config(pipeline_home):
