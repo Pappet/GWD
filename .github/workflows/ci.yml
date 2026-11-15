@@ -36,6 +36,13 @@ jobs:
           uv venv --python "$PYTHON_VERSION"
           echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> "$GITHUB_ENV"
           echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
+      # Fails if pyproject.toml and the lockfile disagree: a dependency added or
+      # removed without updating the lock, or a bound that excludes a locked version.
+      - name: Check lockfile against pyproject.toml
+        run: |
+          uv pip compile pyproject.toml --all-extras --python-version "$PYTHON_VERSION" \
+            -c "$LOCKFILE" --no-header --no-annotate -q -o "$RUNNER_TEMP/lock-check.txt"
+          diff <(grep -E '^[^ #]' "$LOCKFILE") "$RUNNER_TEMP/lock-check.txt"
       # Versions come from the lockfile. No TensorFlow, but PyCBC, so the production
       # PyCBC path is tested.
       - name: Install
