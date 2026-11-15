@@ -4,14 +4,13 @@ import numpy as np
 from gwpy.timeseries import TimeSeries
 
 from gwd.config import (
-    BANDPASS,
     DATA_DIR_NOISE,
     N_SAMPLES,
     NOISE_FETCH_SECONDS,
-    NOTCH_FREQS,
     SAMPLE_RATE,
     ensure_dirs,
 )
+from gwd.data.preprocessing import condition_strain
 
 # Output Ordner für das echte Rauschen
 OUTPUT_DIR = DATA_DIR_NOISE
@@ -34,20 +33,8 @@ def fetch_and_slice():
             "H1", START_GPS, START_GPS + NOISE_FETCH_SECONDS, verbose=True
         )
 
-        # 2. Preprocessing (EXAKT wie im Training/App!)
-        # Resample to SAMPLE_RATE
-        if strain.sample_rate.value != SAMPLE_RATE:
-            strain = strain.resample(SAMPLE_RATE)
-
-        # Notch filters (remove the power line and its harmonics)
-        for freq in NOTCH_FREQS:
-            strain = strain.notch(freq)
-
-        # Band-pass
-        strain = strain.bandpass(*BANDPASS)
-
-        # Als Numpy Array holen
-        data = strain.value
+        # 2. Conditioning, the same chain as the field test and the Glitch Hunter
+        data = condition_strain(strain, SAMPLE_RATE)
 
         # 3. Zerschneiden in 4s Stücke
         chunk_len = N_SAMPLES
