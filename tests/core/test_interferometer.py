@@ -65,3 +65,22 @@ def test_all_features_together_beat_each_one_alone():
     combined = asd(**dict.fromkeys(features, True))
     for feature in features:
         assert np.all(combined < asd(**{feature: True}))
+
+
+@pytest.mark.parametrize("reflectivity", [0.99, 0.999, 0.99999])
+def test_finesse_follows_the_mirror_reflectivity(reflectivity):
+    """Since P4.5 the finesse is a property of R (APP-12, CORE-11)."""
+    model = InterferometerModel()
+    model.mirror_reflectivity = reflectivity
+    expected = np.pi * np.sqrt(reflectivity) / (1 - reflectivity)
+    assert model.finesse == pytest.approx(expected)
+
+
+def test_the_default_finesse_matches_the_default_mirrors():
+    assert InterferometerModel().finesse == pytest.approx(3140, rel=1e-3)
+
+
+def test_the_finesse_cannot_be_set_apart_from_the_mirrors():
+    model = InterferometerModel()
+    with pytest.raises(AttributeError):
+        model.finesse = 450
