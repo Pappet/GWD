@@ -1,27 +1,14 @@
-import os
+"""Training of the CNN: train(cfg) loads a dataset, trains, and saves the model (P3.7).
 
-from gwd.config import (
-    DATA_DIR_TRAIN,
-    LABELS_FILE,
-    MODELS_DIR,
-    N_SAMPLES,
-    TRAINING_PLOTS_DIR,
-    ensure_dirs,
-)
-from gwd.data.preprocessing import normalize
-from gwd.training.model import ARCHITECTURE, build_model
-
-# --- 1. LOGGING BEREINIGEN (Muss vor dem TensorFlow Import stehen!) ---
-# 0 = Alle Nachrichten (Standard)
-# 1 = Info filtern
-# 2 = Warnungen filtern (Das wollen wir)
-# 3 = Fehler filtern
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
-# oneDNN Optimierungen "leise" schalten oder deaktivieren
-os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+The timestamp, the model name, and the paths come into being when train() runs, not on
+import. The hyperparameter defaults are in gwd.config, and gwd train overrides them.
+"""
 
 import datetime
 import json
+import os
+import sys
+from dataclasses import dataclass
 
 import matplotlib
 import numpy as np
@@ -33,38 +20,75 @@ import tensorflow as tf
 from sklearn.model_selection import train_test_split
 from tensorflow.keras import callbacks, models
 
+from gwd.config import (
+    BATCH_SIZE,
+    DATA_DIR_TRAIN,
+    EARLY_STOPPING_PATIENCE,
+    EPOCHS,
+    LABELS_FILE,
+    LEARNING_RATE,
+    MODELS_DIR,
+    N_SAMPLES,
+    REDUCE_LR_PATIENCE,
+    TEST_SPLIT,
+    TRAINING_PLOTS_DIR,
+    ensure_dirs,
+)
+from gwd.data.preprocessing import normalize
+from gwd.training.model import ARCHITECTURE, build_model
+
 # Mixed precision für schnelleres Training auf RTX GPUs
 tf.keras.mixed_precision.set_global_policy("mixed_float16")
 
-# ==========================================
-# KONFIGURATION & VERSIONIERUNG
-# ==========================================
-DATA_FOLDER = DATA_DIR_TRAIN
-LABEL_FILE = LABELS_FILE
 
-# Wir erstellen einen Zeitstempel für dieses Experiment
-TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-MODEL_NAME = f"gwd_model_{TIMESTAMP}"
+@dataclass(frozen=True)
+class TrainConfig:
+    """Settings of one training run. The defaults come from gwd.config."""
 
-# Pfade für Modell und Config
-MODEL_SAVE_PATH = os.path.join(MODELS_DIR, f"{MODEL_NAME}.keras")
-CONFIG_SAVE_PATH = os.path.join(MODELS_DIR, f"{MODEL_NAME}.json")
-
-BATCH_SIZE = 128
-EPOCHS = 40
-TEST_SPLIT = 0.2
+    data_folder: str = DATA_DIR_TRAIN
+    models_dir: str = MODELS_DIR
+    plots_dir: str = TRAINING_PLOTS_DIR
+    epochs: int = EPOCHS
+    batch_size: int = BATCH_SIZE
+    learning_rate: float = LEARNING_RATE
+    patience: int = EARLY_STOPPING_PATIENCE
 
 
-def load_data():
+@dataclass(frozen=True)
+class Run:
+    """Name and output files of one training run."""
+
+    timestamp: str
+    name: str
+    model_path: str
+    config_path: str
+
+
+def new_run(models_dir, now=None):
+    """Name a run after the current time, as gwd.registry expects: gwd_model_YYYYMMDD-HHMMSS."""
+    timestamp = (now or datetime.datetime.now()).strftime("%Y%m%d-%H%M%S")
+    name = f"gwd_model_{timestamp}"
+    return Run(
+        timestamp=timestamp,
+        name=name,
+        model_path=os.path.join(models_dir, f"{name}.keras"),
+        config_path=os.path.join(models_dir, f"{name}.json"),
+    )
+
+
+def load_data(data_folder=DATA_DIR_TRAIN):
     """
     Lädt den Trainingsdatensatz aus Numpy-Dateien und CSV-Labels.
+
+    Args:
+        data_folder: Dataset folder with labels.csv.
 
     Returns:
         X: Array der Form (n_samples, n_timesteps, 1)
         y: Array der Labels (0 oder 1)
     """
     print("📂 Lade Datensatz...")
-    csv_path = os.path.join(DATA_FOLDER, LABEL_FILE)
+    csv_path = os.path.join(data_folder, LABELS_FILE)
     if not os.path.exists(csv_path):
         raise FileNotFoundError(f"Konnte {csv_path} nicht finden.")
 
@@ -74,7 +98,7 @@ def load_data():
 
     for index, row in df.iterrows():
         try:
-            file_path = os.path.join(DATA_FOLDER, row["filename"])
+            file_path = os.path.join(data_folder, row["filename"])
             data = np.load(file_path)
 
             # Z-score with the default eps, as before
@@ -105,13 +129,15 @@ def load_data():
     return X, y
 
 
-def save_experiment_config(history_obj, final_acc):
+def save_experiment_config(history_obj, final_acc, cfg, run):
     """
     Speichert Metadaten zum Training, damit wir später wissen, was wir getan haben.
 
     Args:
         history_obj: Keras History-Objekt vom Training
         final_acc: Test-Set Accuracy
+        cfg: TrainConfig of the run
+        run: Run with the name and the .json path
     """
     # Wir holen uns die letzten Werte aus der History
     final_train_acc = history_obj.history["accuracy"][-1]
@@ -120,11 +146,13 @@ def save_experiment_config(history_obj, final_acc):
     final_val_loss = history_obj.history["val_loss"][-1]
 
     config = {
-        "model_name": MODEL_NAME,
-        "timestamp": TIMESTAMP,
-        "dataset_folder": DATA_FOLDER,
-        "epochs": EPOCHS,
-        "batch_size": BATCH_SIZE,
+        "model_name": run.name,
+        "timestamp": run.timestamp,
+        "dataset_folder": cfg.data_folder,
+        "epochs": cfg.epochs,
+        "batch_size": cfg.batch_size,
+        "learning_rate": cfg.learning_rate,
+        "early_stopping_patience": cfg.patience,
         "test_split": TEST_SPLIT,
         "architecture": ARCHITECTURE,
         "metrics": {
@@ -137,17 +165,18 @@ def save_experiment_config(history_obj, final_acc):
         "note": "Training mit automatischer Versionierung",
     }
 
-    with open(CONFIG_SAVE_PATH, "w") as f:
+    with open(run.config_path, "w") as f:
         json.dump(config, f, indent=4)
-    print(f"📋 Experiment-Konfiguration gespeichert: {CONFIG_SAVE_PATH}")
+    print(f"📋 Experiment-Konfiguration gespeichert: {run.config_path}")
 
 
-def plot_history(history):
+def plot_history(history, plot_path):
     """
     Erstellt Visualisierung des Trainingsverlaufs.
 
     Args:
         history: Keras History-Objekt
+        plot_path: PNG file to write; its folder is created if missing.
     """
     acc = history.history["accuracy"]
     val_acc = history.history["val_accuracy"]
@@ -186,19 +215,27 @@ def plot_history(history):
     plt.grid(True, alpha=0.3)
 
     plt.tight_layout()
-    ensure_dirs(TRAINING_PLOTS_DIR)
-    plot_path = os.path.join(TRAINING_PLOTS_DIR, f"training_history_{TIMESTAMP}.png")
+    ensure_dirs(os.path.dirname(plot_path))
     plt.savefig(plot_path, dpi=150)
     plt.close()
     print(f"📊 Training-Plot gespeichert: {plot_path}")
 
 
-def main():
+def train(cfg=None):
     """
-    Hauptfunktion: Lädt Daten, trainiert Modell, evaluiert und speichert alles.
+    Lädt Daten, trainiert Modell, evaluiert und speichert alles.
+
+    Args:
+        cfg: TrainConfig; None means all defaults.
+
+    Returns:
+        The Run with the name and the paths of the saved model and its .json.
     """
+    cfg = cfg or TrainConfig()
+    run = new_run(cfg.models_dir)
+
     # Daten laden und aufteilen
-    X, y = load_data()
+    X, y = load_data(cfg.data_folder)
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=TEST_SPLIT, random_state=42, stratify=y
     )
@@ -209,7 +246,7 @@ def main():
 
     # Modell bauen
     input_shape = (X_train.shape[1], 1)
-    model = build_model(input_shape)
+    model = build_model(input_shape, cfg.learning_rate)
 
     print("\n🏗️ Modell-Architektur:")
     model.summary()
@@ -217,36 +254,45 @@ def main():
     # Callbacks
     my_callbacks = [
         callbacks.EarlyStopping(
-            patience=5, monitor="val_loss", restore_best_weights=True, verbose=1
+            patience=cfg.patience,
+            monitor="val_loss",
+            restore_best_weights=True,
+            verbose=1,
         ),
         callbacks.ModelCheckpoint(
-            filepath=MODEL_SAVE_PATH, save_best_only=True, monitor="val_loss", verbose=1
+            filepath=run.model_path, save_best_only=True, monitor="val_loss", verbose=1
         ),
         callbacks.ReduceLROnPlateau(
-            monitor="val_loss", factor=0.5, patience=3, min_lr=1e-6, verbose=1
+            monitor="val_loss",
+            factor=0.5,
+            patience=REDUCE_LR_PATIENCE,
+            min_lr=1e-6,
+            verbose=1,
         ),
     ]
 
-    print(f"\n🚀 Starte Training: {MODEL_NAME}")
-    print(f"💾 Speicherort: {MODELS_DIR}")
+    print(f"\n🚀 Starte Training: {run.name}")
+    print(f"💾 Speicherort: {cfg.models_dir}")
 
-    # Training (the checkpoint callback writes into MODELS_DIR)
-    ensure_dirs(MODELS_DIR)
+    # Training (the checkpoint callback writes into models_dir)
+    ensure_dirs(cfg.models_dir)
     history = model.fit(
         X_train,
         y_train,
-        epochs=EPOCHS,
-        batch_size=BATCH_SIZE,
+        epochs=cfg.epochs,
+        batch_size=cfg.batch_size,
         validation_data=(X_test, y_test),
         callbacks=my_callbacks,
         verbose=1,
     )
 
     # Wir laden das BESTE Modell (nicht das vom letzten Epoch) für die Evaluation
-    best_model = models.load_model(MODEL_SAVE_PATH)
+    best_model = models.load_model(run.model_path)
 
     # Visualisierung erstellen
-    plot_history(history)
+    plot_history(
+        history, os.path.join(cfg.plots_dir, f"training_history_{run.timestamp}.png")
+    )
 
     # Finale Evaluation
     print("\n📈 Finale Evaluation:")
@@ -255,12 +301,15 @@ def main():
     print(f"   - Test Accuracy: {acc * 100:.2f}%")
 
     # Metadaten speichern
-    save_experiment_config(history, acc)
+    save_experiment_config(history, acc, cfg, run)
 
     print("\n✅ Training abgeschlossen!")
-    print(f"   - Modell: {MODEL_SAVE_PATH}")
-    print(f"   - Config: {CONFIG_SAVE_PATH}")
+    print(f"   - Modell: {run.model_path}")
+    print(f"   - Config: {run.config_path}")
+    return run
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 1:
+        sys.exit("The options are on the gwd command: gwd train --help")
+    train()
