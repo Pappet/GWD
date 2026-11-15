@@ -127,7 +127,7 @@ def main():
             ax_schema.text(
                 1,
                 y_pos,
-                "⚡ Power Recycling",
+                "Power Recycling",
                 fontsize=9,
                 bbox=dict(boxstyle="round", fc="lightgreen", alpha=0.7),
             )
@@ -136,7 +136,7 @@ def main():
             ax_schema.text(
                 1,
                 y_pos,
-                "📡 Signal Recycling",
+                "Signal Recycling",
                 fontsize=9,
                 bbox=dict(boxstyle="round", fc="lightblue", alpha=0.7),
             )
@@ -145,7 +145,7 @@ def main():
             ax_schema.text(
                 1,
                 y_pos,
-                "🌀 Squeezed Light",
+                "Squeezed Light",
                 fontsize=9,
                 bbox=dict(boxstyle="round", fc="plum", alpha=0.7),
             )
