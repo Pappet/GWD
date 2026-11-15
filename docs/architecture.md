@@ -42,7 +42,7 @@ The target is one installable package, `gwd`, in `src/gwd/` (D8).
 
 `core/interferometer.py` and `core/simulation.py` stay in core on purpose. Whether app-specific physics belongs there is a design question (`APP-14`), and the import rules below keep the boundary.
 
-Before the cleanup, the scripts in `src/` found each other through `sys.path` edits with generic top-level names such as `config` and `utils` (`hygiene:HYG-M5`). Since P2.1, tests and scripts both import `gwd.core` (`CORE-5`). Since P2.3, the root `config.py` is only a shim for `gwd.config`. Since P2.4, `gwd.data` and `gwd.training` use absolute imports without `sys.path` edits and run with `python -m`, for example `python -m gwd.data.generate`. Since P2.5, all code is in `src/gwd/`: evaluation, apps, and `gwd.data.preprocessing` import absolutely, `src/utils/` is gone, and `src/gwd` has no `sys.path` edits. `gwd.registry` so far only holds `get_latest_model`, unchanged; P3.3 makes it the one model search. The root `config.py` shim and the pytest `pythonpath` entries remain until P2.6.
+Before the cleanup, the scripts in `src/` found each other through `sys.path` edits with generic top-level names such as `config` and `utils` (`hygiene:HYG-M5`). Since P2.1, tests and scripts both import `gwd.core` (`CORE-5`). From P2.3 to P2.6, the root `config.py` was only a shim for `gwd.config`. Since P2.4, `gwd.data` and `gwd.training` use absolute imports without `sys.path` edits and run with `python -m`, for example `python -m gwd.data.generate`. Since P2.5, all code is in `src/gwd/`: evaluation, apps, and `gwd.data.preprocessing` import absolutely, `src/utils/` is gone, and `src/gwd` has no `sys.path` edits. `gwd.registry` so far only holds `get_latest_model`, unchanged; P3.3 makes it the one model search. Since P2.6, the root `config.py` shim and the pytest `pythonpath` entries (`src` and `.`) are gone. Tests import the installed `gwd` package (editable in `.venv`, `pip install -e` in CI), so the old top-level names `config`, `utils`, `dataset`, and `gwd_core` no longer resolve.
 
 **Menu (since P2.4).** `main.py` reads a `MENU` table. Since P2.5 all 11 entries are `('module', 'gwd....')` and run as `python -m`, including the leaderboard (`gwd.evaluation.leaderboard`) and the interferometer designer. Each entry runs with `subprocess.run([sys.executable, ...])` in the project folder, so the menu works from any working directory and reports the real exit code (`tests/test_menu.py`).
 
@@ -50,7 +50,21 @@ Before the cleanup, the scripts in `src/` found each other through `sys.path` ed
 
 ## Import rules
 
-P2.6 enforces these rules with `tests/test_architecture.py`.
+Since P2.6, `tests/test_architecture.py` enforces these rules. It parses every module in `src/gwd/` and `main.py` with `ast` and counts an import as lazy only inside a function body; a `try` block at module level is not lazy. The standard library is always allowed, and anything not listed under "May import" fails, so the test also limits where tensorflow, gwpy, and pycbc may appear at all. Dynamic imports (`__import__`, `importlib`) are not checked. The same test fails on any `sys.path` edit in `src/`, `tests/`, or `main.py`, and on two byte-identical `.py` files (empty `__init__.py` files excepted, `HYG-1`).
+
+Known violations are in the test's `ALLOWLIST`, each with its finding ID and the step that removes it. An entry that no longer matches a real violation fails the test, so the list can only shrink. It must be empty by P7.4. At P2.6 it has 12 entries:
+
+| File | Import | Finding | Removed in |
+|---|---|---|---|
+| `core/waveforms.py` | pycbc at module level (in `try`) | `CORE-17` | P5.2 |
+| `core/waveforms.py` | `print` in library code | `CORE-17` | P4.1 |
+| `data/fetch_noise.py` | gwpy at module level | `DATA-25` | P3.4 |
+| `training/train.py` | matplotlib at module level | `DATA-13` | P3.7 |
+| `evaluation/evaluate.py`, `thresholds.py`, `compare.py` | tensorflow directly | `EVAL-24`, `EVAL-11` | P3.3 |
+| `evaluation/evaluate.py` | gwpy directly | `EVAL-24` | P3.4 |
+| `apps/glitch_hunter/app.py` | tensorflow and gwpy at module level | `APP-7` | P3.3, P3.4 |
+| `env.py` | pycbc and `gwd.core` at module level | `HYG-16` | P3.6 |
+
 
 | Component | May import | Must not import |
 |---|---|---|
@@ -59,8 +73,8 @@ P2.6 enforces these rules with `tests/test_architecture.py`.
 | data | core, config, numpy, scipy, pandas, gwpy (lazy, only `gwosc.py` and `preprocessing.py`), matplotlib (lazy, only the validation report) | registry, training, evaluation, apps, cli, tensorflow, sklearn |
 | registry | config, standard library, tensorflow (lazy, only `load_model`) | data, training, evaluation, apps, cli, matplotlib, gwpy |
 | training | data, core, config, registry, tensorflow, sklearn, matplotlib (lazy), numpy, pandas | evaluation, apps, cli, gwpy |
-| evaluation | data, core, config, registry, sklearn, pandas, matplotlib, tabulate | training, apps, cli, gwpy directly (only through `gwd.data.gwosc`), tensorflow directly (only through registry) |
-| apps | core, data, config, registry, matplotlib, `scipy.io.wavfile` | training, evaluation, cli, tensorflow and gwpy at module level |
+| evaluation | data, core, config, registry, numpy, sklearn, pandas, matplotlib, tabulate | training, apps, cli, gwpy directly (only through `gwd.data.gwosc`), tensorflow directly (only through registry) |
+| apps | core, data, config, registry, numpy, matplotlib, `scipy.io.wavfile`; tensorflow and gwpy only lazily | training, evaluation, cli, tensorflow and gwpy at module level |
 | cli, env | Everything, but only lazily inside handlers | tensorflow, gwpy, pycbc at module level |
 | `main.py` | Standard library | `gwd` |
 
@@ -76,7 +90,7 @@ Every row names a tracked file and where it goes. Files move only with `git mv`.
 | current: src/gwd_core/interferometer.py → target: src/gwd/core/interferometer.py | P2.1 |
 | current: src/gwd_core/simulation.py → target: src/gwd/core/simulation.py | P2.1 |
 | current: utility/test_imports.py → target: src/gwd/env.py | P2.1 |
-| current: config.py → target: src/gwd/config.py (a temporary root shim stays until P2.6) | P2.3 |
+| current: config.py → target: src/gwd/config.py (the temporary root shim was removed in P2.6) | P2.3 |
 | current: src/dataset/__init__.py → target: src/gwd/data/__init__.py | P2.4 |
 | current: src/dataset/fetch_real_noise.py → target: src/gwd/data/fetch_noise.py | P2.4 |
 | current: src/dataset/generate_chirp_dataset.py → target: src/gwd/data/generate.py | P2.4 |
