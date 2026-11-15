@@ -2,7 +2,12 @@
 """
 Gravitationswellen-Detektor Simulator - GUI Frontend
 Uses gwd.core for the simulation.
+
+build_figure() builds the figure and its widgets without showing it, so tests can move
+the sliders under Agg. main() shows it.
 """
+
+from types import SimpleNamespace
 
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button, Slider
@@ -10,13 +15,19 @@ from matplotlib.widgets import Button, Slider
 from gwd.config import SAMPLE_RATE
 from gwd.core.simulation import TimeDomainSimulator
 
+# Startwerte für die GUI
+START_PARAMS = {"mass1": 30, "mass2": 30, "distance": 400, "noise_level": 1.0}
 
-def create_interactive_plot():
+
+def build_figure():
+    """Return (fig, state): the figure with plots, sliders, and button, not shown.
+
+    state holds the simulator, the current parameters, the four plot axes, their lines,
+    the sliders, and the reset button.
+    """
     # Instanz der Simulation Engine
     sim = TimeDomainSimulator(duration=0.5, sample_rate=SAMPLE_RATE)
-
-    # Startwerte für die GUI
-    gui_params = {"mass1": 30, "mass2": 30, "distance": 400, "noise_level": 1.0}
+    gui_params = dict(START_PARAMS)
 
     # Figure Setup
     fig = plt.figure(figsize=(14, 10))
@@ -70,13 +81,13 @@ def create_interactive_plot():
     ax_noise.legend()
 
     # --- SLIDER ---
-    plt.subplots_adjust(bottom=0.25)
+    fig.subplots_adjust(bottom=0.25)
 
-    ax_mass1 = plt.axes([0.15, 0.15, 0.65, 0.02])
-    ax_mass2 = plt.axes([0.15, 0.12, 0.65, 0.02])
-    ax_distance = plt.axes([0.15, 0.09, 0.65, 0.02])
+    ax_mass1 = fig.add_axes([0.15, 0.15, 0.65, 0.02])
+    ax_mass2 = fig.add_axes([0.15, 0.12, 0.65, 0.02])
+    ax_distance = fig.add_axes([0.15, 0.09, 0.65, 0.02])
     # Not ax_noise: that name hid the noise plot, which never rescaled (APP-11).
-    ax_s_noise = plt.axes([0.15, 0.06, 0.65, 0.02])
+    ax_s_noise = fig.add_axes([0.15, 0.06, 0.65, 0.02])
 
     s_mass1 = Slider(
         ax_mass1, "Masse 1 (M☉)", 5, 100, valinit=gui_params["mass1"], valstep=1
@@ -131,7 +142,7 @@ def create_interactive_plot():
     s_noise.on_changed(update)
 
     # Reset Button
-    ax_reset = plt.axes([0.85, 0.10, 0.1, 0.04])
+    ax_reset = fig.add_axes([0.85, 0.10, 0.1, 0.04])
     btn_reset = Button(ax_reset, "Reset", hovercolor="0.975")
 
     def reset(event):
@@ -142,8 +153,32 @@ def create_interactive_plot():
 
     btn_reset.on_clicked(reset)
 
+    state = SimpleNamespace(
+        sim=sim,
+        params=gui_params,
+        ax_strain=ax_strain,
+        ax_freq=ax_freq,
+        ax_detector=ax_detector,
+        ax_noise=ax_noise,
+        line_strain=line_strain,
+        line_freq=line_freq,
+        line_detector=line_detector,
+        line_noise=line_noise,
+        line_clean_ref=line_clean_ref,
+        s_mass1=s_mass1,
+        s_mass2=s_mass2,
+        s_dist=s_dist,
+        s_noise=s_noise,
+        btn_reset=btn_reset,
+    )
+    return fig, state
+
+
+def main():
+    # The widgets only react while fig and state are referenced.
+    fig, state = build_figure()
     plt.show()
 
 
 if __name__ == "__main__":
-    create_interactive_plot()
+    main()
