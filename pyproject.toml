@@ -1,6 +1,43 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gwd"
+version = "0.1.0"
+description = "Gravitational wave chirp detection with a CNN and ROC evaluation"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Peter Paprotny" }]
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.16",
+    "pandas>=2.3",
+    "matplotlib>=3.9",
+    "scikit-learn>=1.7",
+    "tabulate>=0.9",
+]
+
+[project.optional-dependencies]
+# pycbc 2.4.0 has no wheels for any current Python version, and there is no PyCBC on Windows.
+physics = ['pycbc>=2.5; platform_system != "Windows"']
+gwdata = ["gwpy>=3.0"]
+ml = ["tensorflow>=2.20"]
+dev = ["pytest>=8.3", "ruff"]
+all = ["gwd[physics,gwdata,ml]"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+# Without this, src/dataset and src/utils would be built as top-level packages (hygiene:HYG-M5).
+include = ["gwd", "gwd.*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+# Transition until P2.6: lets tests import the scripts in src/ and the root config.py.
+pythonpath = ["src", "."]
 markers = [
     "slow: runs the full pipeline, takes minutes on CPU",
     "apps: starts the apps without an interactive backend",
