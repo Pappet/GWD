@@ -76,10 +76,10 @@ python -m gwd.training.train
 
 ### 3. Evaluate Results
 ```bash
-# Run advanced ROC metric evaluation
+# Run advanced ROC metric evaluation of the latest model
 python -m gwd.evaluation.evaluate
 
-# Optimize inference threshold
+# Optimize inference threshold of the latest model
 python -m gwd.evaluation.thresholds
 
 # Compare all models in models_registry/ in one ROC plot
@@ -89,10 +89,16 @@ python -m gwd.evaluation.compare
 python -m gwd.evaluation.leaderboard
 ```
 
+The latest model is the one with the newest timestamp in its name, `gwd_model_YYYYMMDD-HHMMSS.keras`; other `.keras` files are ordered by their modification time, with a warning. `evaluate`, `thresholds`, and `compare` take `--model` with `latest`, a model name, or a path to a `.keras` file; `compare` takes it more than once:
+```bash
+python -m gwd.evaluation.evaluate --model gwd_model_20251205-232013
+python -m gwd.evaluation.compare --model gwd_model_20251203-220536 --model latest
+```
+
 ### 4. Apps
 The apps open matplotlib windows.
 ```bash
-# Glitch Hunter: the newest model in models_registry/ rates simulated data or real GWOSC data
+# Glitch Hunter: the latest model in models_registry/ rates simulated data or real GWOSC data
 python -m gwd.apps.glitch_hunter.app
 
 # Waveform explorer: strain, frequency, and detector signal with sliders for masses, distance, and noise
