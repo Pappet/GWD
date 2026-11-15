@@ -26,8 +26,8 @@ source .venv/bin/activate
 # Install the package with all extras and the development tools
 pip install -e '.[all,dev]'
 
-# Check the environment and the active waveform backend
-python -m gwd.env
+# Check the environment, the active waveform backend, and the resolved paths
+gwd env
 ```
 
 The extras are `physics` (pycbc), `gwdata` (gwpy), `ml` (tensorflow), `dev` (pytest, ruff), and `all` (physics, gwdata, ml). For an NVIDIA GPU, TensorFlow also offers `pip install 'tensorflow[and-cuda]'`; this project does not install it for you.
@@ -65,51 +65,56 @@ Avoid `--upgrade` for everything: newer numpy, pandas, TensorFlow, or PyCBC vers
 
 The first lock was compiled with an extra `-c constraints-pc.txt` (the `pip freeze` of the PC training environment without the `nvidia-*` packages, not in the repository), so its versions match that environment. The commands above keep those versions without the file. The first update rewrites the header and drops the `-c constraints-pc.txt` notes from the file; that is expected.
 
+Every step below is a `gwd` command; `gwd --help` and `gwd <command> --help` list the options. `python main.py` opens a menu that runs the same commands.
+
 ### 2. Generate Data & Train
 ```bash
-# 1. Generate Training Data
-python -m gwd.data.generate
+# 1. Generate training data (--seed makes it reproducible, --n sets the number of samples)
+gwd data generate --seed 1
 
-# 2. Train the CNN model
-python -m gwd.training.train
+# 2. Check the dataset
+gwd data validate
+
+# 3. Train the CNN model
+gwd train
 ```
 
 ### 3. Evaluate Results
 ```bash
-# Run advanced ROC metric evaluation of the latest model
-python -m gwd.evaluation.evaluate
+# ROC evaluation of the latest model; --no-real skips the real data field test (network)
+gwd eval run
 
-# Optimize inference threshold of the latest model
-python -m gwd.evaluation.thresholds
+# Detection thresholds of the latest model, saved to results/optimal_thresholds.json (--no-save to skip)
+gwd eval thresholds
 
 # Compare all models in models_registry/ in one ROC plot
-python -m gwd.evaluation.compare
+gwd eval compare
 
 # Show the leaderboard, sorted by ROC AUC
-python -m gwd.evaluation.leaderboard
+gwd eval leaderboard
 ```
 
-The latest model is the one with the newest timestamp in its name, `gwd_model_YYYYMMDD-HHMMSS.keras`; other `.keras` files are ordered by their modification time, with a warning. `evaluate`, `thresholds`, and `compare` take `--model` with `latest`, a model name, or a path to a `.keras` file; `compare` takes it more than once:
+The latest model is the one with the newest timestamp in its name, `gwd_model_YYYYMMDD-HHMMSS.keras`; other `.keras` files are ordered by their modification time, with a warning. `gwd eval run`, `gwd eval thresholds`, and `gwd eval compare` take `--model` with `latest`, a model name, or a path to a `.keras` file; `compare` takes it more than once:
 ```bash
-python -m gwd.evaluation.evaluate --model gwd_model_20251205-232013
-python -m gwd.evaluation.compare --model gwd_model_20251203-220536 --model latest
+gwd eval run --model gwd_model_20251205-232013
+gwd eval compare --model gwd_model_20251203-220536 --model latest
 ```
 
 ### 4. Apps
 The apps open matplotlib windows.
 ```bash
 # Glitch Hunter: the latest model in models_registry/ rates simulated data or real GWOSC data
-python -m gwd.apps.glitch_hunter.app
+gwd app glitch-hunter
 
 # Waveform explorer: strain, frequency, and detector signal with sliders for masses, distance, and noise
-python -m gwd.apps.waveform_explorer
+gwd app waveform
 
 # Interferometer designer: sensitivity curve of a simple learning model with sliders for laser, mirrors, and arm length
-python -m gwd.apps.interferometer_designer
+gwd app interferometer
 ```
 
 ### 5. Menu
-`python main.py` opens a menu with the data, training, and evaluation steps, the leaderboard, and the three apps. It works from any folder: each entry runs in the project folder with the same Python, and the menu shows the exit code when a step fails.
+`python main.py` opens a menu with the data, training, and evaluation steps, the leaderboard, the three apps, and `gwd env`. Each entry runs the `gwd` command with its defaults. It works from any folder: each entry runs in the project folder with the same Python, and the menu shows the exit code when a step fails.
 
 ## 🤝 Contribution
 Contributions are welcome! Please ensure that any structural or behavioral changes are strictly tied to synchronized documentation updates. All new code should be placed in the `gwd` package in `src/gwd/`, and dependencies are declared in `pyproject.toml`.
