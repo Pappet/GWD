@@ -20,10 +20,10 @@ LIGHT_MODULES = [
     "gwd.registry",
     "gwd.apps.waveform_explorer",
     "gwd.apps.interferometer_designer",
+    "gwd.apps.glitch_hunter.app",
 ]
 TF_MODULES = [
     "gwd.training.train",
-    "gwd.apps.glitch_hunter.app",
 ]
 
 

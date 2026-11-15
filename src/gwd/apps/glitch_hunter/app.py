@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import glob
 import os
 import platform
 import random
@@ -10,7 +9,6 @@ import threading
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.io.wavfile as wavfile
-import tensorflow as tf
 from gwpy.timeseries import TimeSeries
 from matplotlib.widgets import Button, Slider
 
@@ -24,6 +22,7 @@ from gwd.config import (
 )
 from gwd.core.noise import generate_gaussian_noise
 from gwd.core.waveforms import generate_astrophysical_chirp
+from gwd.registry import list_models, load_model
 
 KNOWN_EVENTS = {
     "GW150914": 1126259462.4,
@@ -45,23 +44,19 @@ class GlitchHunterApp:
     def __init__(self):
         print(">>> Lade Gehirn (Neuronales Netz)...")
 
-        if not os.path.exists(MODELS_DIR):
-            print(f"FEHLER: Ordner '{MODELS_DIR}' nicht gefunden.")
+        # One check covers a missing and an empty folder; rc 1 stays until P4.4 (APP-8).
+        files = list_models()
+        if not files:
+            print(f"ERROR: No models (.keras) in '{MODELS_DIR}'.")
             print("   Run 'python -m gwd.training.train' first to train a model.")
             sys.exit(1)
 
-        # Suche alle .keras Dateien
-        files = glob.glob(os.path.join(MODELS_DIR, "*.keras"))
-        if not files:
-            print(f"FEHLER: Keine Modelle (.keras) in '{MODELS_DIR}' gefunden.")
-            sys.exit(1)
-
-        # Wähle die neueste Datei basierend auf dem Erstellungsdatum (ctime)
-        latest_model_path = max(files, key=os.path.getctime)
+        # The newest timestamp in the name, not ctime (apps:APPX-4).
+        latest_model_path = files[-1]
         print(f"{len(files)} Modelle gefunden.")
         print(f"Lade neuestes Modell: {os.path.basename(latest_model_path)}")
 
-        self.model = tf.keras.models.load_model(latest_model_path)
+        self.model = load_model(latest_model_path)
         print(">>> Bereit zum Jagen!")
 
         self.fs = SAMPLE_RATE
