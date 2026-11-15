@@ -12,7 +12,7 @@ import random
 import numpy as np
 import pandas as pd
 
-from config import DATA_DIR_NOISE, DATA_DIR_TRAIN, SAMPLES_FOR_TRAINING
+from config import DATA_DIR_NOISE, DATA_DIR_TRAIN, SAMPLES_FOR_TRAINING, ensure_dirs
 from gwd.core.noise import generate_gaussian_noise
 from gwd.core.waveforms import (
     generate_astrophysical_chirp,
@@ -73,7 +73,7 @@ def load_random_real_noise(length):
 def generate_dataset(num_samples=SAMPLES_FOR_TRAINING, output_folder=DATA_DIR_TRAIN):
     print(f"🚀 Starte Daten-Generierung (Peak-SNR Methode). Ziel: {num_samples}")
 
-    os.makedirs(output_folder, exist_ok=True)
+    ensure_dirs(output_folder)
 
     fs = 4096
     duration = 4.0

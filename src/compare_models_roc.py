@@ -14,7 +14,7 @@ import glob
 import matplotlib
 import numpy as np
 
-from config import EVALUATION_MODELS_PLOTS_DIR, MODELS_DIR
+from config import EVALUATION_MODELS_PLOTS_DIR, MODELS_DIR, ensure_dirs
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -148,6 +148,7 @@ def compare_models_roc(models, X_test, y_true):
         )
 
     plt.tight_layout()
+    ensure_dirs(EVALUATION_MODELS_PLOTS_DIR)
     plt.savefig(
         os.path.join(EVALUATION_MODELS_PLOTS_DIR, f"plot_compare_roc_{TIMESTAMP}.png"),
         dpi=150,
@@ -201,6 +202,7 @@ def zoom_to_relevant_region(models, X_test, y_true):
     ax.set_ylim(0, 1)
 
     plt.tight_layout()
+    ensure_dirs(EVALUATION_MODELS_PLOTS_DIR)
     plt.savefig(
         os.path.join(EVALUATION_MODELS_PLOTS_DIR, f"plot_compare_roc_{TIMESTAMP}.png"),
         dpi=150,

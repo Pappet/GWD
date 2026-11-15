@@ -18,7 +18,12 @@ import datetime
 import matplotlib
 import numpy as np
 
-from config import EVALUATION_MODELS_PLOTS_DIR, MODELS_DIR, OPTIMAL_THRESHOLDS_FILE
+from config import (
+    EVALUATION_MODELS_PLOTS_DIR,
+    MODELS_DIR,
+    OPTIMAL_THRESHOLDS_FILE,
+    ensure_dirs,
+)
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -252,6 +257,7 @@ def visualize_thresholds(y_true, y_scores, optimal_thresholds, roc_data):
     )
 
     plt.suptitle("Threshold Optimization Analysis", fontsize=16, fontweight="bold")
+    ensure_dirs(EVALUATION_MODELS_PLOTS_DIR)
     plt.savefig(
         os.path.join(
             EVALUATION_MODELS_PLOTS_DIR, f"plot_optimize_threshold_{TIMESTAMP}.png"
@@ -365,7 +371,7 @@ def main():
             },
         }
 
-        os.makedirs(os.path.dirname(OPTIMAL_THRESHOLDS_FILE), exist_ok=True)
+        ensure_dirs(os.path.dirname(OPTIMAL_THRESHOLDS_FILE))
         with open(OPTIMAL_THRESHOLDS_FILE, "w") as f:
             json.dump(output, f, indent=2)
         print(f"✓ Gespeichert in {OPTIMAL_THRESHOLDS_FILE}")

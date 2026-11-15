@@ -23,7 +23,7 @@ import numpy as np
 import pandas as pd
 from scipy import signal
 
-from config import DATA_DIR_TRAIN, VALIDATION_DATASET_PLOTS_DIR
+from config import DATA_DIR_TRAIN, VALIDATION_DATASET_PLOTS_DIR, ensure_dirs
 
 
 def load_dataset_info(data_folder):
@@ -191,7 +191,7 @@ def validate_samples(df, data_folder, num_check=10):
 def create_visualizations(df, data_folder, output_folder=VALIDATION_DATASET_PLOTS_DIR):
     """Erstellt umfassende Visualisierungen des Datensatzes."""
 
-    os.makedirs(output_folder, exist_ok=True)
+    ensure_dirs(output_folder)
 
     signal_samples = df[df["has_signal"] == 1]
     noise_samples = df[df["has_signal"] == 0]
