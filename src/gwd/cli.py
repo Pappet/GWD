@@ -59,11 +59,12 @@ def _generate(args):
     from gwd.data.generate import generate_dataset
     from gwd.data.scenarios import SCENARIOS
 
-    seed_everything(args.seed)
+    # generate_dataset seeds its own RNG and records the seed in manifest.json.
     generate_dataset(
         num_samples=SAMPLES_FOR_TRAINING if args.n is None else args.n,
         output_folder=args.out or DATA_DIR_TRAIN,
         scenario=SCENARIOS[args.scenario.upper()],
+        seed=args.seed,
     )
     return 0
 
@@ -205,8 +206,8 @@ def build_parser():
     generate = data_commands.add_parser(
         "generate",
         help="Generate a training dataset.",
-        description="Write samples and labels.csv. Real noise chunks are used where the "
-        "scenario and data/noise_background/ allow it.",
+        description="Write samples, labels.csv, and manifest.json. Real noise chunks "
+        "are used where the scenario and data/noise_background/ allow it.",
     )
     generate.add_argument(
         "--n",

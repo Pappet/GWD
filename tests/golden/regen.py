@@ -121,7 +121,10 @@ def _measure_dataset(dataset):
 
     _seed()
     dataset.generate_dataset(NUM_DATASET_SAMPLES, dataset.DATA_DIR_TRAIN)
-    labels = pd.read_csv(os.path.join(dataset.DATA_DIR_TRAIN, "labels.csv"))
+    # keep_default_na: empty cells (no backend, no chunk) stay "" instead of NaN.
+    labels = pd.read_csv(
+        os.path.join(dataset.DATA_DIR_TRAIN, "labels.csv"), keep_default_na=False
+    )
     samples = [
         np.load(os.path.join(dataset.DATA_DIR_TRAIN, name))
         for name in labels["filename"].iloc[:2]

@@ -1,13 +1,15 @@
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from .conftest import assert_ran_cleanly, run_stage
-from .entrypoints import NUM_SAMPLES, PIPELINE
+from .entrypoints import NUM_SAMPLES, PIPELINE, SEED
 
 pytestmark = pytest.mark.slow
 
-LABEL_COLUMNS = 7
+LABEL_COLUMNS = 10  # 7 until P4.1, then waveform_backend, noise_source, noise_file
 LEADERBOARD_COLUMNS = 12
 SAMPLE_LENGTH = 16384
 
@@ -21,6 +23,26 @@ def test_dataset_structure(pipeline_home):
     sample = np.load(training / labels["filename"].iloc[0])
     assert sample.shape == (SAMPLE_LENGTH,)
     assert sample.dtype == np.float64
+
+
+def test_dataset_records_backend_and_noise_source(pipeline_home):
+    training = pipeline_home / "data" / "training"
+    labels = pd.read_csv(training / "labels.csv", keep_default_na=False)
+    signal = labels["has_signal"] == 1
+    assert set(labels.loc[signal, "waveform_backend"]) <= {"pycbc", "newton"}
+    assert set(labels.loc[~signal, "waveform_backend"]) == {""}
+    # The pipeline home has no noise chunks.
+    assert set(labels["noise_source"]) == {"gaussian"}
+    assert set(labels["noise_file"]) == {""}
+
+    manifest = json.loads((training / "manifest.json").read_text())
+    assert manifest["waveform_backend"]
+    assert (manifest["scenario"], manifest["n"], manifest["seed"]) == (
+        "TRAIN_V1",
+        NUM_SAMPLES,
+        int(SEED),
+    )
+    assert manifest["real_noise_fraction"] == 0.0
 
 
 def test_training_writes_one_model_and_one_config(pipeline_home):
@@ -57,6 +79,13 @@ def test_real_noise_path_runs(tmp_path):
     training = tmp_path / "data" / "training"
     labels = pd.read_csv(training / "labels.csv")
     assert labels.shape == (NUM_SAMPLES, LABEL_COLUMNS)
+    assert set(labels["noise_source"]) == {"real", "gaussian"}
+    real = labels["noise_source"] == "real"
+    assert set(labels.loc[real, "noise_file"]) <= {
+        f"real_noise_{i:04d}.npy" for i in range(4)
+    }
+    manifest = json.loads((training / "manifest.json").read_text())
+    assert manifest["real_noise_fraction"] == real.sum() / NUM_SAMPLES
     noise_only = [
         np.load(training / name)
         for name in labels.loc[labels["has_signal"] == 0, "filename"]
