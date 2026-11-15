@@ -52,18 +52,15 @@ Before the cleanup, the scripts in `src/` found each other through `sys.path` ed
 
 ## Import rules
 
-Since P2.6, `tests/test_architecture.py` enforces these rules. It parses every module in `src/gwd/` and `main.py` with `ast` and counts an import as lazy only inside a function body; a `try` block at module level is not lazy. The standard library is always allowed, and anything not listed under "May import" fails, so the test also limits where tensorflow, gwpy, and pycbc may appear at all. Dynamic imports (`__import__`, `importlib`) are not checked. The same test fails on any `sys.path` edit in `src/`, `tests/`, or `main.py`, and on two byte-identical `.py` files (empty `__init__.py` files excepted, `HYG-1`).
+Since P2.6, `tests/test_architecture.py` enforces these rules. It parses every module in `src/gwd/` and `main.py` with `ast` and counts an import as lazy only inside a function body; a `try` block at module level is not lazy. The standard library is always allowed, and anything not listed under "May import" fails, so the test also limits where tensorflow, gwpy, and pycbc may appear at all. Dynamic imports (`__import__`, `importlib`) are not checked. Since P3.4, a separate check fails on any gwpy import statement outside `data/gwosc.py` and `data/preprocessing.py`, lazy or not, in any component including cli. The same test fails on any `sys.path` edit in `src/`, `tests/`, or `main.py`, and on two byte-identical `.py` files (empty `__init__.py` files excepted, `HYG-1`).
 
-Known violations are in the test's `ALLOWLIST`, each with its finding ID and the step that removes it. An entry that no longer matches a real violation fails the test, so the list can only shrink. It must be empty by P7.4. It had 12 entries at P2.6; since P3.3 it has 8:
+Known violations are in the test's `ALLOWLIST`, each with its finding ID and the step that removes it. An entry that no longer matches a real violation fails the test, so the list can only shrink. It must be empty by P7.4. It had 12 entries at P2.6, 8 at P3.3, and since P3.4 it has 5:
 
 | File | Import | Finding | Removed in |
 |---|---|---|---|
 | `core/waveforms.py` | pycbc at module level (in `try`) | `CORE-17` | P5.2 |
 | `core/waveforms.py` | `print` in library code | `CORE-17` | P4.1 |
-| `data/fetch_noise.py` | gwpy at module level | `DATA-25` | P3.4 |
 | `training/train.py` | matplotlib at module level | `DATA-13` | P3.7 |
-| `evaluation/evaluate.py` | gwpy directly | `EVAL-24` | P3.4 |
-| `apps/glitch_hunter/app.py` | gwpy at module level | `APP-7` | P3.4 |
 | `env.py` | pycbc and `gwd.core` at module level | `HYG-16` | P3.6 |
 
 
@@ -75,8 +72,8 @@ Known violations are in the test's `ALLOWLIST`, each with its finding ID and the
 | registry | config, standard library, tensorflow (lazy, only `load_model`) | data, training, evaluation, apps, cli, matplotlib, gwpy |
 | training | data, core, config, registry, tensorflow, sklearn, matplotlib (lazy), numpy, pandas | evaluation, apps, cli, gwpy |
 | evaluation | data, core, config, registry, numpy, sklearn, pandas, matplotlib, tabulate | training, apps, cli, gwpy directly (only through `gwd.data.gwosc`), tensorflow directly (only through registry) |
-| apps | core, data, config, registry, numpy, matplotlib, `scipy.io.wavfile`; tensorflow and gwpy only lazily | training, evaluation, cli, tensorflow and gwpy at module level |
-| cli, env | Everything, but only lazily inside handlers | tensorflow, gwpy, pycbc at module level |
+| apps | core, data, config, registry, numpy, matplotlib, `scipy.io.wavfile`; tensorflow only lazily | training, evaluation, cli, tensorflow at module level, gwpy directly (only through `gwd.data.gwosc`) |
+| cli, env | Everything, but only lazily inside handlers | tensorflow, gwpy, pycbc at module level; gwpy directly (only through `gwd.data.gwosc`) |
 | `main.py` | Standard library | `gwd` |
 
 ## Move table
@@ -132,10 +129,13 @@ Each of these has several copies today. P3 leaves exactly one.
 | Conditioning (notch and bandpass) | 3 | `utils/data_processing.py:9`, `fetch_real_noise.py:37`, `glitch_hunter_app.py:169`. `data_processing.py` has no 240 Hz notch. | `condition_strain` in `gwd.data.preprocessing` (done in P3.2) |
 | z-score | 10 | `generate_chirp_dataset.py:64`, `train_cnn.py:73`, `evaluate_model_with_roc.py:102`, `:143`, `:290`, `:327`, `optimize_threshold.py:63`, `compare_models_roc.py:71`, `glitch_hunter_app.py:181`, `:283`. Two of them add an epsilon. | `normalize` in `gwd.data.preprocessing` (done in P3.2) |
 | Model search | 4 | `utils/evaluation.py:11`, `optimize_threshold.py:32`, `compare_models_roc.py:28`, `glitch_hunter_app.py:49` | `gwd.registry` (done in P3.3) |
-| Event list | 2 | `REAL_EVENTS` in `evaluate_model_with_roc.py:45`, `KNOWN_EVENTS` in `glitch_hunter_app.py:24` | `gwd.data.gwosc` (P3.4) |
+| Event list | 2 | `REAL_EVENTS` in `evaluate_model_with_roc.py:45`, `KNOWN_EVENTS` in `glitch_hunter_app.py:24` | `EVENTS` in `gwd.data.gwosc` (done in P3.4) |
+| GWOSC download | 4 | `TimeSeries.fetch_open_data` in `fetch_real_noise.py:29`, `evaluate_model_with_roc.py:284` and `:317`, `glitch_hunter_app.py:161` | `fetch_strain` in `gwd.data.gwosc` (done in P3.4) |
 | Detection threshold | 3 values | `0.15` in `evaluate_model_with_roc.py:42`, `0.46` in `glitch_hunter_app.py:73`. `0.75` survives only in comments at `evaluate_model_with_roc.py:121` and `glitch_hunter_app.py:73`. | Per-model threshold in `gwd.registry` (P5.8) |
 
 **Preprocessing (since P3.2).** `gwd.data.preprocessing` has two public functions. `condition_strain(ts, fs, notches=NOTCH_FREQS, band=BANDPASS)` resamples a gwpy `TimeSeries` to `fs`, applies one notch per frequency, then the band-pass, and returns a numpy array. It is a band-pass, not whitening. It calls the methods of the series it gets and never imports gwpy itself. The noise download, the field test in `evaluate`, and the Glitch Hunter use it; it is bit-identical to the old download chain. The field test now also notches 240 Hz, the one behaviour change of P3.2. `normalize(x, eps=1e-10)` is the z-score `(x - mean) / (std + eps)`. The eps is absolute: on conditioned strain (std near 1e-21) it dominates the std, so the field test and the Glitch Hunter pass `eps=0` there, as they had no eps before. All other callers use the default; for the synthetic test sets, which had no eps, this changes values by a relative 1e-10.
+
+**GWOSC access (since P3.4).** `gwd.data.gwosc` is the only place that downloads from GWOSC. `fetch_strain(detector, start, end, pad_s=0, cache=True, verbose=False)` imports gwpy inside the function, calls `TimeSeries.fetch_open_data` for `[start - pad_s, end + pad_s)`, and returns the raw `TimeSeries`. It raises `StrainError` (a `ValueError`) if the sample count does not match the requested span at the series' sample rate, or if any sample is NaN; nothing is resized or padded. `pad_s=0` reproduces the 4 s windows of the field test and the Glitch Hunter; the buffer with a crop after conditioning follows in P4.3. `cache=True` lets gwpy keep a local copy of the downloaded file (astropy's download cache), which the old calls did not. `EVENTS` is a tuple of `Event(name, gps, kind, mass1, mass2, in_training_range)` with the nine events of the old Glitch Hunter list, in the same order and with the same GPS times. The masses are rounded source-frame medians from GWTC-1 and GWTC-2, written down from the literature and not verified offline. `in_training_range` means both masses lie in the 5–100 M☉ of `generate_random_bbh_parameters`; GW170817 (BNS) and GW190814 (2.6 M☉ secondary) are out of range. The field test in `evaluate` picks its five events from `EVENTS` by name (`FIELD_TEST_EVENTS`, old order); a rejected download scores the event as `None` instead of an `np.resize`d window. The Glitch Hunter draws from `EVENTS` and falls back to the simulation on a rejected download instead of trimming or zero-padding. `fetch_noise` downloads its segment through `fetch_strain` and writes nothing if the download is rejected. Importing `gwd.data.gwosc`, `fetch_noise`, `evaluate`, or the Glitch Hunter no longer loads gwpy (`tests/data/test_gwosc.py`). The download length `NOISE_FETCH_SECONDS` stays in `gwd.config`: moving it next to `START_GPS` in `fetch_noise.py` would bring back the literal 4096 that the P3.1 check forbids in `gwd.data`, and P6.3 replaces the single segment with configurable windows anyway. Tests mock `fetch_open_data` or `fetch_strain`; one real download runs only under the `network` marker, which CI never selects.
 
 ## Scenarios and SNR definition (current state, V1)
 
