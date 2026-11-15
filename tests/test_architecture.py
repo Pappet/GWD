@@ -71,9 +71,6 @@ ALLOWLIST = {
     ("src/gwd/core/waveforms.py", "print"),
     # DATA-13: module-level side effects in training, matplotlib on top (P3.7).
     ("src/gwd/training/train.py", "matplotlib"),
-    # HYG-16: the dependency check imports pycbc and gwd.core on top (P3.6, gwd env).
-    ("src/gwd/env.py", "pycbc"),
-    ("src/gwd/env.py", "gwd.core"),
 }
 
 
