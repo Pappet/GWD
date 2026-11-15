@@ -4,11 +4,11 @@ import sys
 
 import pytest
 
-from .entrypoints import PIPELINE, Stage
+from .entrypoints import PIPELINE
 
 
-def run_stage(stage, home):
-    """Run one stage as a subprocess. GWD_HOME keeps all of its files inside home."""
+def _run(args, home, stdin=None):
+    """Run python with args as a subprocess. GWD_HOME keeps all of its files inside home."""
     env = {
         **os.environ,
         "GWD_HOME": str(home),
@@ -16,13 +16,18 @@ def run_stage(stage, home):
         "CUDA_VISIBLE_DEVICES": "",
     }
     return subprocess.run(
-        [sys.executable, *stage.args],
-        input=stage.stdin,
+        [sys.executable, *args],
+        input=stdin,
         env=env,
         cwd=home,
         capture_output=True,
         text=True,
     )
+
+
+def run_stage(stage, home):
+    """Run one stage as a gwd command line."""
+    return _run(("-m", "gwd.cli", *stage.args), home, stage.stdin)
 
 
 def assert_ran_cleanly(name, result):
@@ -55,5 +60,5 @@ def app_home(tmp_path_factory):
             f"tf.keras.Model(inputs, outputs).save({str(model_path)!r})",
         ]
     )
-    assert_ran_cleanly("dummy model", run_stage(Stage(("-c", code)), home))
+    assert_ran_cleanly("dummy model", _run(("-c", code), home))
     return home

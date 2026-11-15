@@ -1,14 +1,14 @@
-"""The only table of 'stage -> call' for the smoke tests.
+"""The only table of 'stage -> gwd command' for the smoke tests.
 
-Until P3.6 the stages use small throwaway drivers. Later moves only change this file.
+Since P3.6 every stage is a real gwd command line, run as ``python -m gwd.cli``. Later
+moves only change this file.
 """
 
 from dataclasses import dataclass
 from typing import Optional
 
-SEED = 1  # Chosen so the old validator does not report 'KRITISCH' by chance.
+SEED = "1"  # Chosen so the old validator does not report 'KRITISCH' by chance.
 NUM_SAMPLES = 64
-NO_NETWORK_REAL_RESULT = {"found": 0, "total": 0, "far_text": "n/a", "event_scores": {}}
 
 
 @dataclass(frozen=True)
@@ -17,54 +17,27 @@ class Stage:
     stdin: Optional[str] = None
 
 
-def _module(name, stdin=None):
-    return Stage(("-m", name), stdin)
-
-
-def _driver(module, body, tf_seed=True, stdin=None):
-    """Import a gwd module, set the seeds, then run body with it as 'module'."""
-    seed = (
-        f"tf.keras.utils.set_random_seed({SEED})"
-        if tf_seed
-        else f"random.seed({SEED}); np.random.seed({SEED})"
-    )
-    imports = "import random, numpy as np" + (
-        "; import tensorflow as tf" if tf_seed else ""
-    )
-    code = "\n".join(
-        [
-            imports,
-            f"import {module} as module",
-            seed,
-            body,
-        ]
-    )
-    return Stage(("-c", code), stdin)
-
-
 PIPELINE = {
-    "generate": _driver(
-        "gwd.data.generate",
-        f"module.generate_dataset({NUM_SAMPLES}, module.DATA_DIR_TRAIN)",
-        tf_seed=False,
-    ),
-    "validate": _module("gwd.data.validate"),
-    "train": _driver("gwd.training.train", "module.EPOCHS = 1\nmodule.main()"),
-    "evaluate": _driver(
-        "gwd.evaluation.evaluate",
-        f"module.evaluate_real_world = lambda model: {NO_NETWORK_REAL_RESULT!r}\nmodule.main()",
-    ),
-    "thresholds": _driver("gwd.evaluation.thresholds", "module.main()", stdin="y\n"),
+    "generate": Stage(("data", "generate", "--n", str(NUM_SAMPLES), "--seed", SEED)),
+    "validate": Stage(("data", "validate")),
+    "train": Stage(("train", "--epochs", "1", "--seed", SEED)),
+    "evaluate": Stage(("eval", "run", "--no-real", "--seed", SEED)),
+    # Saves by default; the empty stdin shows that it no longer asks (EVAL-17).
+    "thresholds": Stage(("eval", "thresholds", "--seed", SEED), stdin=""),
     # compare stops without a plot when it finds one model, so it gets the same model twice.
-    "compare": _driver(
-        "gwd.evaluation.compare",
-        "module.main(['--model', 'latest', '--model', 'latest'])",
+    "compare": Stage(
+        ("eval", "compare", "--model", "latest", "--model", "latest", "--seed", SEED)
     ),
-    "show_leaderboard": _module("gwd.evaluation.leaderboard"),
+    "show_leaderboard": Stage(
+        (
+            "eval",
+            "leaderboard",
+        )
+    ),
 }
 
 APPS = {
-    "waveform_explorer": _module("gwd.apps.waveform_explorer"),
-    "interferometer_designer": _module("gwd.apps.interferometer_designer"),
-    "glitch_hunter": _module("gwd.apps.glitch_hunter.app"),
+    "waveform_explorer": Stage(("app", "waveform")),
+    "interferometer_designer": Stage(("app", "interferometer")),
+    "glitch_hunter": Stage(("app", "glitch-hunter")),
 }
