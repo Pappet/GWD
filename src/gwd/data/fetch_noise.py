@@ -53,7 +53,7 @@ def fetch_and_slice(detector="H1", start_gps=START_GPS, duration=NOISE_FETCH_SEC
         print(f"✅ Done: {num_chunks} files saved in '{OUTPUT_DIR}'.")
 
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"❌ Error: {e}", file=sys.stderr)
         return 1
     return 0
 

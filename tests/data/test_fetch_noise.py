@@ -1,4 +1,7 @@
-"""The noise download goes through gwd.data.gwosc.fetch_strain (P3.4); no network."""
+"""The noise download goes through gwd.data.gwosc.fetch_strain (P3.4); no network.
+
+Since P4.1 a failing download ends gwd data fetch-noise with rc 1 (DATA-6).
+"""
 
 import numpy as np
 import pytest
@@ -38,10 +41,28 @@ def test_downloads_the_segment_and_writes_chunks(fake_fetch, tmp_path):
 def test_a_rejected_download_writes_nothing(fake_fetch, tmp_path, capsys):
     fake_fetch.error = StrainError("H1: 3 NaN samples")
     assert fetch_noise.fetch_and_slice() == 1
-    assert "3 NaN samples" in capsys.readouterr().out
+    assert "3 NaN samples" in capsys.readouterr().err
     assert not (tmp_path / "noise").exists()
 
 
 def test_detector_start_and_duration_are_parameters(fake_fetch, tmp_path):
     assert fetch_noise.fetch_and_slice("L1", 1000, 40) == 0
     assert fake_fetch == [("L1", 1000, 1040, {"verbose": True})]
+
+
+def test_a_failing_download_ends_the_command_with_a_nonzero_exit(
+    monkeypatch, tmp_path, capsys
+):
+    """The error comes from gwpy itself, below fetch_strain, as on a network failure."""
+    timeseries = pytest.importorskip("gwpy.timeseries")
+    from gwd import cli
+
+    def unreachable(*args, **kwargs):
+        raise ConnectionError("GWOSC unreachable")
+
+    monkeypatch.setattr(timeseries.TimeSeries, "fetch_open_data", unreachable)
+    monkeypatch.setattr(fetch_noise, "OUTPUT_DIR", str(tmp_path / "noise"))
+
+    assert cli.main(["data", "fetch-noise"]) != 0
+    assert "GWOSC unreachable" in capsys.readouterr().err
+    assert not (tmp_path / "noise").exists()
