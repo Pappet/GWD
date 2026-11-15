@@ -35,6 +35,7 @@ from gwd.config import (
     ensure_dirs,
 )
 from gwd.data.preprocessing import normalize
+from gwd.registry import MODEL_EXTENSION, TIMESTAMP_FORMAT, metadata_path
 from gwd.training.model import ARCHITECTURE, build_model
 
 
@@ -65,13 +66,14 @@ class Run:
 
 def new_run(models_dir, now=None):
     """Name a run after the current time, as gwd.registry expects: gwd_model_YYYYMMDD-HHMMSS."""
-    timestamp = (now or datetime.datetime.now()).strftime("%Y%m%d-%H%M%S")
+    timestamp = (now or datetime.datetime.now()).strftime(TIMESTAMP_FORMAT)
     name = f"gwd_model_{timestamp}"
+    model_path = os.path.join(models_dir, name + MODEL_EXTENSION)
     return Run(
         timestamp=timestamp,
         name=name,
-        model_path=os.path.join(models_dir, f"{name}.keras"),
-        config_path=os.path.join(models_dir, f"{name}.json"),
+        model_path=model_path,
+        config_path=metadata_path(model_path),
     )
 
 
