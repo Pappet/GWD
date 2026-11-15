@@ -1,266 +1,140 @@
-# ROC-Analyse und formale Metriken
+# Evaluation
 
-> **Note:** The commands in this document are outdated; `evaluate_classic_fixed.py` never existed; the Matched Filter baseline is currently not available.
+This document describes how GWD evaluates a trained CNN today: the commands, the test sets, the metrics, the plots, the threshold strategies, and the leaderboard. The scenarios and the SNR definition are in [architecture.md](architecture.md#scenarios-and-snr-definition-current-state-v1).
 
-## Übersicht
+> **Status:** The simulated test sets come from `EVAL_V1`, which differs from the training data in noise, masses, and SNR range (see "Known limitations" below). The numbers these commands print describe that test set, not the detector performance on real data. No measured results are listed here.
 
-Dieses Projekt nutzt jetzt professionelle Signalverarbeitungs-Metriken:
+## Commands
 
-- **ROC-Kurven** (Receiver Operating Characteristic)
-- **AUC** (Area Under Curve) - Threshold-unabhängiges Qualitätsmaß
-- **Precision-Recall Kurven** - Für unbalancierte Datensätze
-- **Score Distributions** - Visualisierung der Modell-Konfidenz
+| Command | What it does | Writes |
+|---|---|---|
+| `gwd eval run` | ROC analysis of one model on simulated data, then the field test on real data (network) | one plot with six panels, one leaderboard row |
+| `gwd eval thresholds` | Six threshold strategies from the ROC curve of one model | one plot, `results/optimal_thresholds.json` |
+| `gwd eval compare` | ROC curves of several models on the same simulated test set | two plots |
+| `gwd eval leaderboard` | Prints the leaderboard, best ROC AUC first | nothing |
 
-## 🎯 Warum ROC-Kurven?
-
-### Problem mit festen Thresholds:
-```python
-# Alter Ansatz: Ein fester Threshold (z.B. 0.75)
-prediction = model.predict(data) > 0.75
-```
-
-**Nachteile:**
-- Ergebnis hängt stark von Threshold-Wahl ab
-- Unfairer Vergleich zwischen Modellen
-- Keine Aussage über optimalen Arbeitspunkt
-
-### Lösung: ROC-Kurve
-Die ROC-Kurve zeigt **alle möglichen Thresholds gleichzeitig**:
-
-```
-TPR (True Positive Rate)  = Wie viele Signale finden wir?
-    ^
-    |     /----  Perfektes Modell (AUC=1.0)
-1.0 |    /
-    |   /
-    |  /  <- Unser Modell (AUC=0.85)
-0.5 |/
-    |  /  <- Zufall (AUC=0.5)
-    |/_________________>
-    0                 1.0  FPR (False Positive Rate)
-                           Wie oft liegen wir falsch?
-```
-
-**ROC AUC Interpretation:**
-- `AUC = 1.0`: Perfekt! Findet alle Signale ohne Fehler
-- `AUC = 0.9`: Exzellent (LIGO-Niveau)
-- `AUC = 0.8`: Gut
-- `AUC = 0.5`: Nicht besser als Zufall
-
-## 📊 Neue Scripts
-
-### 1. `evaluate_model_with_roc.py` - Erweiterte Einzelmodell-Analyse
-
-**Was es macht:**
-- Erstellt ROC-Kurve für ein Modell
-- Berechnet AUC und Average Precision
-- Zeigt Operating Point (gewählter Threshold)
-- 6 verschiedene Visualisierungen
-
-**Usage:**
-```bash
-python evaluate_model_with_roc.py
-```
-
-**Output:**
-```
-🤖 COMPREHENSIVE EVALUATION: gwd_model_20250123-143022.keras
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📊 FINAL SUMMARY:
-  ROC AUC:              0.9234
-  Average Precision:    0.9156
-  Accuracy:             87.3%
-  TPR (Sensitivity):    91.2%
-  FPR:                  16.5%
-  SNR90:                1.45
-  Real Events Found:    4/5
-```
-
-**6 Plots:**
-1. **ROC-Kurve** - Threshold-unabhängige Performance
-2. **Precision-Recall** - Alternative Darstellung
-3. **Confusion Matrix** - Bei gewähltem Threshold
-4. **Sensitivity Curve** - SNR vs Detection Rate
-5. **Score Distribution** - Wie trennt das Modell Signal/Noise?
-6. **Metriken-Tabelle** - Alle Zahlen auf einen Blick
-
-### 2. `compare_models_roc.py` - Modell-Vergleich
-
-**Was es macht:**
-- Vergleicht ALLE Modelle in einer ROC-Kurve
-- Ranking nach AUC
-- Zoom auf relevante Region (FPR < 0.1)
-
-**Usage:**
-```bash
-python compare_models_roc.py
-```
-
-**Output:**
-```
-🏆 ROC CURVE COMPARISON TOOL
-
-✓ Geladen: gwd_model_20250120-120000
-✓ Geladen: gwd_model_20250121-140000
-✓ Geladen: gwd_model_20250123-160000
-
-📊 FINAL RANKING:
-  1. gwd_model_20250123-160000  | AUC: 0.9456
-  2. gwd_model_20250121-140000  | AUC: 0.9123
-  3. gwd_model_20250120-120000  | AUC: 0.8845
-```
-
-## 🔬 Wissenschaftliche Metriken erklärt
-
-### ROC AUC (Area Under Curve)
-```python
-# Interpretation:
-AUC = P(score(signal) > score(noise))
-```
-**Bedeutung:** Wahrscheinlichkeit, dass ein zufälliges Signal einen höheren Score bekommt als zufälliges Rauschen.
-
-### Average Precision (AP)
-```python
-# Wichtig bei unbalancierten Daten
-AP = Durchschnitt aller Precision-Werte über alle Recall-Level
-```
-**Vorteil:** Bestraft False Positives härter als ROC AUC
-
-### TPR (True Positive Rate) = Recall = Sensitivity
-```python
-TPR = TP / (TP + FN)
-```
-**Bedeutung:** Von allen echten Signalen - wie viele finden wir?
-
-### FPR (False Positive Rate)
-```python
-FPR = FP / (FP + TN)
-```
-**Bedeutung:** Von allen Rausch-Segmenten - wie oft schlagen wir Fehlalarm?
-
-## 🎮 Praktische Anwendung
-
-### Beispiel 1: Threshold-Optimierung
-
-Du siehst in der ROC-Kurve:
-- Bei `Threshold = 0.5`: TPR=95%, FPR=30% → Viele Fehlalarme
-- Bei `Threshold = 0.75`: TPR=85%, FPR=10% → Ausgewogen
-- Bei `Threshold = 0.9`: TPR=60%, FPR=2% → Konservativ
-
-**Wahl hängt ab von:**
-- Wissenschaftliche Analyse → Niedriger FPR wichtiger (Threshold hoch)
-- Trigger für Folge-Analysen → Hoher TPR wichtiger (Threshold niedrig)
-
-### Beispiel 2: Modell-Vergleich
-
-```
-Modell A: AUC = 0.92, SNR90 = 1.8
-Modell B: AUC = 0.88, SNR90 = 1.5
-
-→ Modell A ist threshold-unabhängig besser (höherer AUC)
-→ ABER: Modell B ist sensitiver bei niedrigem SNR!
-```
-
-**Lesson:** AUC allein reicht nicht, schaue auch auf Sensitivity!
-
-## 📈 Verbesserungen im Leaderboard
-
-Die CSV enthält jetzt zusätzlich:
-
-| Column | Bedeutung |
-|--------|-----------|
-| `ROC_AUC` | Threshold-unabhängiges Qualitätsmaß |
-| `Avg_Precision` | Präzision über alle Recall-Level |
-| `TPR` | True Positive Rate bei gewähltem Threshold |
-| `FPR` | False Positive Rate bei gewähltem Threshold |
-
-**Alter Leaderboard:**
-```csv
-Model,Sim_Accuracy,Sim_SNR90
-model_1,85%,1.8
-model_2,87%,1.5
-```
-
-**Neuer Leaderboard:**
-```csv
-Model,ROC_AUC,Avg_Precision,TPR,FPR,Sim_SNR90,Physik_Gap
-model_1,0.9234,0.9156,91%,16%,1.8,+0.30
-model_2,0.8945,0.8823,88%,12%,1.5,+0.00
-```
-
-## 🔧 Integration in Workflow
-
-### Kompletter Evaluations-Workflow:
+`run`, `thresholds`, and `compare` take `--model` with `latest` (the newest timestamp in the name), a model name in `models_registry/`, or a path to a `.keras` file; `compare` takes it more than once and compares all models without it. `--seed` seeds Python's `random` and the global numpy RNG, so the same seed gives the same test set; without it every run draws a new one. `gwd eval run --no-real` skips the field test, and `gwd eval thresholds --no-save` does not write the JSON file. An unknown model ends the command with exit code 1.
 
 ```bash
-# 1. Modell trainieren
-python dataset/train_cnn.py
-
-# 2. Physik-Baseline berechnen (einmalig)
-python evaluate_classic.py
-
-# 3. Modell evaluieren (mit ROC)
-python evaluate_model_with_roc.py
-
-# 4. Alle Modelle vergleichen
-python compare_models_roc.py
-
-# 5. Leaderboard anschauen
-python show_leaderboard.py
+gwd eval run --model latest --seed 1
+gwd eval run --no-real
+gwd eval thresholds --seed 1
+gwd eval compare --model gwd_model_20251203-220536 --model latest --seed 1
+gwd eval leaderboard
 ```
 
-## 📚 Weiterführende Literatur
+The plots go to `plots/evaluation_models/`, with the start time of the command in the file name.
 
-**ROC-Kurven in GW-Physik:**
-- LIGO Scientific Collaboration Papers verwenden immer ROC/AUC
-- Standard bei Machine Learning für GW-Detection
-- Vergleichbar mit "Efficiency Curves" in Particle Physics
+## Test sets
 
-**Typische Werte in der Literatur:**
-- LIGO Matched Filter: AUC ≈ 0.95-0.98 (Physik-Limit)
-- Deep Learning Modelle: AUC ≈ 0.90-0.95
-- Naive Methoden: AUC ≈ 0.70-0.80
+All simulated test sets are drawn from `EVAL_V1` with `make_test_set` in `gwd.data.injection`: each sample gets a signal with probability 1/2, white noise, a 30/30 M☉ chirp with its merger between 2.0 and 3.5 s, and a peak SNR between 0.5 and 2.5. Every sample is z-score normalized. The test sets are generated anew for every command and are never the training files.
 
-## ⚠️ Häufige Fehler
+| Command | Simulated samples |
+|---|---|
+| `gwd eval run` | 1000 for the ROC curve, plus 50 signal samples at each of 15 SNR levels from 0.0 to 2.5 for the sensitivity curve |
+| `gwd eval thresholds` | 500 |
+| `gwd eval compare` | 1000, the same for all models |
 
-### ❌ Fehler 1: AUC auf Trainings-Daten
-```python
-# FALSCH:
-y_pred = model.predict(X_train)
-auc = roc_auc_score(y_train, y_pred)  # Zu optimistisch!
-```
+## Metrics
 
-**Fix:** Immer separate Test-Daten verwenden!
+All metrics come from the model's score, a number between 0 and 1 for each sample.
 
-### ❌ Fehler 2: Unbalancierte Daten ignorieren
-```python
-# Bei 90% Rauschen, 10% Signale:
-# Accuracy = 90% klingt gut, aber Modell findet kein Signal!
-```
+- **ROC curve:** the true positive rate (TPR) against the false positive rate (FPR) for every threshold. It does not depend on the choice of one threshold, so two models can be compared without choosing one.
+- **ROC AUC:** the area under the ROC curve. It is the probability that a random signal sample scores higher than a random noise sample: 1.0 separates both perfectly, 0.5 is chance.
+- **Average precision (AP):** the precision averaged over all recall levels (`average_precision_score` in scikit-learn). It summarizes the precision-recall curve and, unlike ROC AUC, depends on the share of signal samples in the test set.
+- **TPR** (recall, sensitivity) = TP / (TP + FN): the share of signal samples that are detected.
+- **FPR** = FP / (FP + TN): the share of noise samples that raise a false alarm.
+- **Accuracy** = (TP + TN) / all samples, at the operating point.
+- **Operating point:** TPR, FPR, accuracy, and the confusion matrix at the fixed threshold `THRESHOLD = 0.15` in `gwd.evaluation.evaluate`. A sample counts as detected if its score is ≥ the threshold (`predict_labels` in `gwd.evaluation.metrics`), as in scikit-learn's `roc_curve`.
+- **SNR50 and SNR90:** the first of the 15 SNR levels of the sensitivity curve at which at least 50% or 90% of the signal samples are detected at the operating point. If no level reaches the rate, the value is `N/A` in the output and `-` in the leaderboard. The SNR is the peak amplitude ratio described in [architecture.md](architecture.md#scenarios-and-snr-definition-current-state-v1), not a matched filter SNR.
 
-**Fix:** Schaue auch auf Precision-Recall Kurve!
+Look at ROC AUC and the sensitivity together: a model with a higher AUC can still need a higher SNR to reach 90% detection. Accuracy alone can mislead on unbalanced data; the test sets here are balanced 50/50 on average.
 
-### ❌ Fehler 3: Threshold nach ROC festlegen
-```python
-# ROC zeigt nur was MÖGLICH ist
-# Den Threshold musst du basierend auf deiner Anwendung wählen!
-```
+### Field test on real data
 
-## 🎯 Zusammenfassung
+Without `--no-real`, `gwd eval run` downloads data from GWOSC (network):
 
-**Was du jetzt hast:**
-✅ Professionelle ROC-Analyse wie in Papers
-✅ Threshold-unabhängiger Modell-Vergleich
-✅ Mehrere komplementäre Metriken
-✅ Visualisierung der Trennschärfe
-✅ Wissenschaftlich fundierte Evaluation
+- **Events:** a 4 s window of H1 strain around each of GW150914, GW170817, GW190521, GW170104, and GW151226, conditioned with notches at 60, 120, 180, and 240 Hz and a 20–300 Hz band-pass, then normalized. An event counts as found if its score is > 0.15. A rejected or failed download is reported and counted as not found. GW170817 (a neutron star merger) lies outside the training mass range.
+- **False alarm rate:** 200 s of H1 noise from GPS 1253326755, conditioned the same way and cut into 4 s segments. The rate is the number of segments with a score > 0.15, divided by the analysed time and given per year. Without any false alarm it is the bound `< 157788.0/y`, which is one year divided by 200 s.
 
-**Nächste Schritte:**
-1. Trainiere mehrere Modelle mit verschiedenen Architekturen
-2. Vergleiche sie mit `compare_models_roc.py`
-3. Wähle das beste Modell basierend auf AUC UND deiner Anwendung
-4. Optimiere den Threshold basierend auf ROC-Kurve
+## Plots
 
-**Pro-Tipp für Paper/Präsentation:**
-Zeige immer die ROC-Kurve! Sie ist der Standard in der Community und zeigt, dass du weißt, was du tust. 🚀
+`gwd eval run` writes `plot_evaluate_model_with_roc_<timestamp>.png` with six panels:
+
+1. ROC curve with the AUC, the chance diagonal, and the operating point.
+2. Precision-recall curve with the AP.
+3. Confusion matrix at the operating point.
+4. Sensitivity curve: detection rate against the injected SNR, with SNR50 and SNR90.
+5. Score distributions of the signal and noise samples, with the threshold.
+6. A table of ROC AUC, AP, accuracy, TPR, FPR, SNR50, and SNR90.
+
+`gwd eval thresholds` writes `plot_optimize_threshold_<timestamp>.png`: the ROC curve with the point of every strategy, TPR, FPR, and Youden's J against the threshold, and a table of the strategies.
+
+`gwd eval compare` writes `plot_compare_roc_<timestamp>.png` with the ROC curves of all models and a bar chart of their AUCs, and `plot_compare_roc_<timestamp>_zoom.png` with the region FPR ≤ 0.1. Each model has the same color in both plots.
+
+## Threshold strategies
+
+`find_optimal_thresholds` in `gwd.evaluation.metrics` proposes one threshold per strategy. None of them uses the infinite first threshold of `roc_curve`.
+
+| Name | Rule |
+|---|---|
+| `youden` | Maximizes Youden's J = TPR − FPR, the vertical distance to the chance diagonal. |
+| `f1` | Maximizes F1 = 2 · precision · recall / (precision + recall) over the thresholds of the precision-recall curve. |
+| `fixed_fpr_5` | The highest TPR with FPR ≤ 5%; ties go to the lower FPR. |
+| `fixed_fpr_1` | The highest TPR with FPR ≤ 1%; ties go to the lower FPR. |
+| `cost_based` | Minimizes 5 · (1 − TPR) + 1 · FPR, so a missed signal costs five times a false alarm. |
+| `fixed_tpr_90` | The lowest FPR with TPR ≥ 90%; ties go to the higher TPR. |
+
+If no point of the ROC curve meets an FPR limit, the proposal lies just above the highest score, so it detects nothing and has TPR and FPR 0.
+
+`gwd eval thresholds` also prints which strategy suits which use: `fixed_fpr_1` for a scientific analysis, `youden` for a trigger of follow-up analyses and for teaching, `f1` for statistical studies, and `fixed_tpr_90` for a real-time alert.
+
+### Threshold workflow
+
+1. Train a model (`gwd train`) and evaluate it (`gwd eval run`).
+2. Run `gwd eval thresholds` for the same model. It overwrites `results/optimal_thresholds.json`:
+
+   ```json
+   {
+     "model": "gwd_model_YYYYMMDD-HHMMSS.keras",
+     "optimal_thresholds": {
+       "youden": {"threshold": 0.0, "tpr": 0.0, "fpr": 0.0, "j_stat": 0.0, "description": "..."},
+       "f1": {"threshold": 0.0, "tpr": 0.0, "fpr": 0.0, "f1_score": 0.0, "description": "..."}
+     }
+   }
+   ```
+
+   Every strategy has `threshold`, `tpr`, `fpr`, and `description`; `youden` adds `j_stat`, `f1` adds `f1_score`, and `cost_based` adds `cost`. The file holds one model at a time.
+3. Choose the strategy that fits the use. Nothing reads the file yet: `gwd eval run` keeps 0.15, and the Glitch Hunter starts its threshold slider at 0.46.
+
+## Leaderboard
+
+Every `gwd eval run` appends one row to `results/model_leaderboard.csv`; old rows are kept, so a model evaluated twice has two rows. `gwd eval leaderboard` prints all rows sorted by `ROC_AUC`, best first, with rows without a numeric AUC at the end.
+
+| Column | Content | Format |
+|---|---|---|
+| `Model` | File name of the model | `gwd_model_YYYYMMDD-HHMMSS.keras` |
+| `Date` | Time of the evaluation | `YYYY-MM-DD HH:MM` |
+| `ROC_AUC` | ROC AUC | 4 decimals |
+| `Avg_Precision` | Average precision | 4 decimals |
+| `Sim_Accuracy` | Accuracy at the operating point | percent, 1 decimal |
+| `TPR` | TPR at the operating point | percent, 2 decimals |
+| `FPR` | FPR at the operating point | percent, 2 decimals |
+| `Sim_SNR50` | SNR50 | 2 decimals, or `-` |
+| `Sim_SNR90` | SNR90 | 2 decimals, or `-` |
+| `Physik_Gap` | Always `-`, see below | `-` |
+| `Real_Events_Found` | Events found in the field test | `found/total`; `0/0` with `--no-real` |
+| `Real_Noise_FAR` | False alarm rate of the field test | for example `< 157788.0/y`; `N/A` if the noise download failed, `n/a` with `--no-real` |
+
+If `results/model_leaderboard.csv` does not exist yet and `analysis/model_leaderboard.csv` does, the file is copied there once; the original stays. An old `./model_leaderboard.csv` in the project root is not copied, because it may use another schema.
+
+## Matched Filter baseline (D5)
+
+There is no valid Matched Filter baseline. The script that computed it was deleted, and its results were invalid (`EVAL-6`). The files `models_registry/physics_baseline*.json` are not read. `Physik_Gap` is written as `-`, and `gwd eval leaderboard` also shows `-` for older rows that have a value. Writing a row warns `Physics baseline currently invalid`. Decision D5 in [architecture.md](architecture.md#decisions) (default B) drops the column; until then it stays in the schema.
+
+## Known limitations
+
+- `EVAL_V1` uses white noise, fixed 30/30 M☉ masses, and a peak SNR of 0.5–2.5, while the training data has up to 80% real noise, random masses, and a peak SNR of 1–12 (`DATA-1`, `EVAL-1`, `EVAL-2`, `EVAL-3`). The full list is under "Known skews" in [architecture.md](architecture.md#scenarios-and-snr-definition-current-state-v1).
+- The operating point and the field test use the fixed threshold 0.15, not a threshold chosen per model.
+- The field test counts with score > 0.15, the simulated metrics with score ≥ 0.15.
+- The test sets change with every run unless `--seed` is given.
