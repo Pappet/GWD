@@ -1,7 +1,9 @@
 """Training of the CNN: train(cfg) loads a dataset, trains, and saves the model (P3.7).
 
-The timestamp, the model name, and the paths come into being when train() runs, not on
-import. The hyperparameter defaults are in gwd.config, and gwd train overrides them.
+Importing this module changes nothing: the timestamp, the model name, the paths, and
+the precision policy come into being when train() runs. The plot uses a matplotlib
+Figure without pyplot, so no backend is chosen. The hyperparameter defaults are in
+gwd.config, and gwd train overrides them.
 """
 
 import datetime
@@ -10,12 +12,8 @@ import os
 import sys
 from dataclasses import dataclass
 
-import matplotlib
 import numpy as np
 import pandas as pd
-
-matplotlib.use("Agg")  # Non-interactive backend
-import matplotlib.pyplot as plt
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
 from tensorflow.keras import callbacks, models
@@ -204,38 +202,39 @@ def plot_history(history, plot_path):
     best_epoch = np.argmin(val_loss)
     epochs_range = range(len(acc))
 
-    plt.figure(figsize=(12, 5))
+    # A Figure without pyplot: no backend is chosen or changed, no window can open.
+    from matplotlib.figure import Figure
+
+    fig = Figure(figsize=(12, 5))
+    ax_acc, ax_loss = fig.subplots(1, 2)
 
     # Accuracy Plot
-    plt.subplot(1, 2, 1)
-    plt.plot(epochs_range, acc, label="Training Accuracy", linewidth=2)
-    plt.plot(epochs_range, val_acc, label="Validation Accuracy", linewidth=2)
-    plt.axvline(
+    ax_acc.plot(epochs_range, acc, label="Training Accuracy", linewidth=2)
+    ax_acc.plot(epochs_range, val_acc, label="Validation Accuracy", linewidth=2)
+    ax_acc.axvline(
         best_epoch, color="green", linestyle="--", label="Best Model", alpha=0.7
     )
-    plt.legend(loc="lower right")
-    plt.xlabel("Epoch")
-    plt.ylabel("Accuracy")
-    plt.title("Genauigkeit")
-    plt.grid(True, alpha=0.3)
+    ax_acc.legend(loc="lower right")
+    ax_acc.set_xlabel("Epoch")
+    ax_acc.set_ylabel("Accuracy")
+    ax_acc.set_title("Genauigkeit")
+    ax_acc.grid(True, alpha=0.3)
 
     # Loss Plot
-    plt.subplot(1, 2, 2)
-    plt.plot(epochs_range, loss, label="Training Loss", linewidth=2)
-    plt.plot(epochs_range, val_loss, label="Validation Loss", linewidth=2)
-    plt.axvline(
+    ax_loss.plot(epochs_range, loss, label="Training Loss", linewidth=2)
+    ax_loss.plot(epochs_range, val_loss, label="Validation Loss", linewidth=2)
+    ax_loss.axvline(
         best_epoch, color="green", linestyle="--", label="Best Model", alpha=0.7
     )
-    plt.legend(loc="upper right")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.title("Loss")
-    plt.grid(True, alpha=0.3)
+    ax_loss.legend(loc="upper right")
+    ax_loss.set_xlabel("Epoch")
+    ax_loss.set_ylabel("Loss")
+    ax_loss.set_title("Loss")
+    ax_loss.grid(True, alpha=0.3)
 
-    plt.tight_layout()
+    fig.tight_layout()
     ensure_dirs(os.path.dirname(plot_path))
-    plt.savefig(plot_path, dpi=150)
-    plt.close()
+    fig.savefig(plot_path, dpi=150)
     print(f"📊 Training-Plot gespeichert: {plot_path}")
 
 
