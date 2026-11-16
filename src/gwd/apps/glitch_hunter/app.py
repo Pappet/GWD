@@ -35,6 +35,7 @@ from gwd.apps.glitch_hunter.sources import (
     gwpy_available,
 )
 from gwd.config import DURATION, N_SAMPLES, SAMPLE_RATE, WAVEFORM_BACKEND
+from gwd.core.timebase import time_axis
 from gwd.core.waveforms import WaveformBackendError, check_backend
 from gwd.data.preprocessing import normalize
 from gwd.data.provenance import UNKNOWN_V1
@@ -145,7 +146,7 @@ class GlitchHunterApp:
         self.real = real
         self.player = player or Player()
 
-        self.time = np.linspace(0, DURATION, N_SAMPLES)
+        self.time = time_axis(SAMPLE_RATE, DURATION)
         self.threshold = DEFAULT_THRESHOLD
         self.sample = None
         self.prediction = None

@@ -103,7 +103,8 @@ def generate_chirp(
     Generate the chirp of a binary black hole merger on time_array.
 
     Args:
-        time_array: Time axis of the simulation (e.g. np.linspace(0, 4, 16384))
+        time_array: Time axis of the simulation, equally spaced, for example
+                    gwd.core.timebase.time_axis(4096, 4.0).
         t_merger: Merger time in seconds. If None, 90% of the time span.
         backend: 'pycbc' or 'newton', required. The pipeline passes
                  gwd.config.WAVEFORM_BACKEND.

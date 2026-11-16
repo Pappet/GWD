@@ -33,7 +33,14 @@ from typing import Optional
 
 import numpy as np
 
-from gwd.config import DATA_DIR_NOISE, DURATION, N_SAMPLES, WAVEFORM_BACKEND
+from gwd.config import (
+    DATA_DIR_NOISE,
+    DURATION,
+    N_SAMPLES,
+    SAMPLE_RATE,
+    WAVEFORM_BACKEND,
+)
+from gwd.core.timebase import time_axis
 from gwd.core.waveforms import generate_chirp
 from gwd.data.preprocessing import normalize
 
@@ -218,7 +225,7 @@ def make_sample(
     if scenario.condition_signal:
         raise NotImplementedError("Conditioning the signal comes with V2 (P6.2)")
     rng = _rng(rng)
-    time = np.linspace(0, DURATION, N_SAMPLES)
+    time = time_axis(SAMPLE_RATE, DURATION)
 
     if has_signal is None:
         has_signal = bool(rng.rand() > 0.5)

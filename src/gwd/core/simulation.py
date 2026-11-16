@@ -5,6 +5,7 @@ import numpy as np
 from . import waveforms
 from .constants import LASER_WAVELENGTH
 from .noise import generate_colored_noise
+from .timebase import time_axis
 
 
 class TimeDomainSimulator:
@@ -22,7 +23,7 @@ class TimeDomainSimulator:
 
         self.duration = duration
         self.sample_rate = sample_rate
-        self.t = np.linspace(0, duration, int(duration * sample_rate))
+        self.t = time_axis(sample_rate, duration)
 
     def generate_chirp(self, mass1, mass2, distance_mpc):
         """

@@ -66,6 +66,7 @@ def test_the_manifest_describes_the_dataset(tmp_path, noise_dir):
     assert manifest["scenario"] == "TRAIN_V1"
     assert manifest["scenario_hash"] == TRAIN_V1.hash()
     assert (manifest["seed"], manifest["n"]) == (7, 20)
+    assert manifest["time_axis"] == "arange(n)/fs"
     assert manifest["waveform_backend"] == waveforms.backend_label("pycbc")
     assert sum(manifest["signal_backends"].values()) == 10
     assert manifest["real_noise_samples"] == real
