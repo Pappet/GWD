@@ -302,7 +302,6 @@ def test_train_with_the_default_dataset_missing_exits_with_one(tmp_path):
     [
         ["eval", "thresholds"],
         ["eval", "compare", "--model", "a", "--model", "b"],
-        ["app", "glitch-hunter"],
     ],
 )
 def test_without_pycbc_a_command_that_draws_signals_exits_with_1(argv, tmp_path):

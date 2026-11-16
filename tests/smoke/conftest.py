@@ -49,7 +49,7 @@ def pipeline_home(tmp_path_factory):
 
 @pytest.fixture(scope="session")
 def app_home(tmp_path_factory):
-    """Temporary project root with a dummy model, because Glitch Hunter exits with rc 1 without one."""
+    """Temporary project root with a dummy model, so the Glitch Hunter has one to load."""
     home = tmp_path_factory.mktemp("apps")
     (home / "models_registry").mkdir()
     model_path = home / "models_registry" / "dummy.keras"
