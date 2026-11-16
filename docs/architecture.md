@@ -228,6 +228,20 @@ The skews below describe V1, the default until P6.5; `test_known_skew` stays a s
 - Real noise chunks reach the CNN at a much smaller scale than white noise. `generate` normalizes the raw chunks (std near 1e-21) with the default eps, which dominates, so their std is about 1e-11 instead of 1. `train` normalizes again with the same eps. For the 1024 local chunks, the noise-only inputs end up with a std of 0.07–0.21, against 1.0 for white noise. Measured in P3.2 and kept as V1. V2 normalizes the conditioned sum with eps 0, so every sample has std 1.
 - The noise source is a switch in the environment (`hygiene:HYG-M1`): missing chunks still mean white noise. Since P4.1 it is printed and recorded (see Provenance above). The waveform backend no longer is a switch since P5.2: without PyCBC the pipeline stops.
 
+## Deliberately left out
+
+The cleanup plan left these out on purpose. They are possible follow-up projects, not open steps:
+
+- A new CNN architecture and a hyperparameter search: most of the parameters sit in one dense layer (`DATA-26`), but changing that is ML research, not cleanup. `tests/training/test_model.py` pins the parameter count (P3.7), so a change is a deliberate one.
+- A Matched Filter baseline (P6.4 is dropped, D5 = B); [evaluation.md](evaluation.md#matched-filter-baseline-d5) says where the old script is and why it is wrong.
+- Native Windows support for PyCBC and lalsuite: they have no Windows wheels, so the way is WSL (D1).
+- Research-level statistics: confidence intervals, KS tests, and fits for SNR50 and SNR90. Range checks, n next to every rate, stored test set parameters, and two or three seeds when retraining (P6.5) are enough.
+- A reliable false alarm rate with time slides and several detectors, segments chosen by data quality flags, and a full O3 timeline for 'LIGO random' (`EVAL-21`, `DATA-25`, `APP-19`).
+- Network SNR, antenna patterns (`CORE-14`), spins, inclination, precession, and higher modes in the datasets: a later scenario version. V1 and V2 draw spinless, face-on chirps.
+- A calibrated interferometer noise model (D6, option B).
+- Experiment tracking, Docker, pre-commit, mypy, coverage thresholds, and HDF5 or `tf.data` pipelines.
+- A history rewrite for the tool state that P1.1 removed from the index.
+
 ## Starting point
 
 ### Facts
