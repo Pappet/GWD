@@ -1,13 +1,11 @@
 """Gravitational waveforms of binary black hole mergers.
 
-Two backends draw the chirps, and the caller always names one (P5.2):
-
-- 'pycbc': PyCBC's get_td_waveform. The pipeline uses only this backend
-  (gwd.config.WAVEFORM_BACKEND). PyCBC is imported only when a chirp is drawn, and a
-  missing PyCBC or a PyCBC error raises WaveformBackendError; nothing falls back.
-- 'newton': a Newtonian approximation of the inspiral with known errors (CORE-2,
-  CORE-3, CORE-8). Only the demo apps choose it, and only when PyCBC is missing; they
-  say so in their window. P6.1 deletes or corrects it (D1).
+The chirps come from PyCBC's get_td_waveform, the one backend 'pycbc'. The caller still
+names it (P5.2), and the pipeline passes gwd.config.WAVEFORM_BACKEND, so the backend is
+recorded with every dataset. PyCBC is imported only when a chirp is drawn, and a
+missing PyCBC or a PyCBC error raises WaveformBackendError; nothing falls back. Until
+P6.1 a second, numpy-only backend drew a leading-order inspiral approximation with
+known errors (CORE-2, CORE-3, CORE-8); D1 = A deleted it, and the Git history keeps it.
 
 gwd.core does not read gwd.config, so there is no default backend here. Importing
 this module imports no PyCBC and prints nothing.
@@ -17,17 +15,15 @@ import importlib.metadata
 
 import numpy as np
 
-from .constants import M_SUN, MPC, C, G
-
-BACKENDS = ("pycbc", "newton")
+BACKENDS = ("pycbc",)
 
 # Where the time axis cuts a PyCBC waveform, the cut edge is faded with the cosine half
 # of a Tukey window of this duration, so the cut does not click (CORE-14).
 TAPER_SECONDS = 0.05
 
 PYCBC_INSTALL_HINT = (
-    "Install PyCBC on Linux or in WSL with the physics extra:\n"
-    "    pip install -e '.[physics]'\n"
+    "PyCBC is a dependency of gwd except on Windows; install gwd with it:\n"
+    "    pip install -e .\n"
     "PyCBC is not available on native Windows; use WSL there (see README.md)."
 )
 
@@ -62,12 +58,11 @@ def check_backend(backend):
         raise ValueError(
             f"Unknown waveform backend {backend!r}; choose one of {', '.join(BACKENDS)}"
         )
-    if backend == "pycbc":
-        _get_td_waveform()
+    _get_td_waveform()
 
 
 def pycbc_available():
-    """True if PyCBC can be imported. The demo apps use it to choose their backend."""
+    """True if PyCBC can be imported; gwd env reports it."""
     try:
         check_backend("pycbc")
     except WaveformBackendError:
@@ -76,11 +71,9 @@ def pycbc_available():
 
 
 def backend_label(backend):
-    """The backend with its version, as recorded: 'pycbc <version>' or 'newton'."""
+    """The backend with its version, as recorded: 'pycbc <version>'."""
     if backend not in BACKENDS:
         raise ValueError(f"Unknown waveform backend {backend!r}")
-    if backend == "newton":
-        return "newton"
     try:
         version = importlib.metadata.version("pycbc")
     except importlib.metadata.PackageNotFoundError:
@@ -112,35 +105,34 @@ def generate_chirp(
         t_merger: Merger time in seconds, on the scale of time_array; it must lie
                   in [time_array[0], time_array[-1]]. If None, 90% of the span
                   after time_array[0].
-        backend: 'pycbc' or 'newton', required. The pipeline passes
-                 gwd.config.WAVEFORM_BACKEND.
+        backend: 'pycbc', required. The pipeline passes gwd.config.WAVEFORM_BACKEND.
         mass1, mass2: Black hole masses in solar masses.
         distance_mpc: Distance in megaparsec (sets the physical amplitude).
         f_lower: Lower frequency limit of the waveform (Hz).
         normalize: If True (for ML), the peak amplitude is scaled to 1.0.
                    If False (for the physics simulator), the strain is returned.
-        spin1z, spin2z: Spins along the line of sight (-1 to +1). PyCBC only.
-        inclination: Inclination (0 = face-on, π/2 = edge-on). PyCBC only.
-        approximant: Waveform approximant. PyCBC only.
+        spin1z, spin2z: Spins along the line of sight (-1 to +1).
+        inclination: Inclination (0 = face-on, π/2 = edge-on).
+        approximant: Waveform approximant.
 
     Returns:
         tuple: (strain, frequency)
             - strain: np.array with the gravitational wave amplitude, 0 where the
               chirp has no signal
             - frequency: np.array with the instantaneous frequency in Hz, NaN where
-              the chirp has no signal (before P5.3: 0, CORE-14). On 'pycbc' it is
-              taken from the phase of h_plus - i h_cross, so it is only meaningful
+              the chirp has no signal (before P5.3: 0, CORE-14). It is taken from
+              the phase of h_plus - i h_cross, so it is only meaningful
               where h_cross is not zero, that is not for an edge-on inclination of
               pi/2. The pipeline draws face-on chirps (inclination 0).
 
-    On 'pycbc', the waveform is shifted so its peak lies at t_merger. Where time_array
+    The waveform is shifted so its peak lies at t_merger. Where time_array
     cuts it off, at the start or the end, the cut edge is faded over TAPER_SECONDS; a
     merger within TAPER_SECONDS of such an edge is damped by it.
 
     Raises:
-        ValueError: backend is not 'pycbc' or 'newton', or t_merger lies outside
+        ValueError: backend is not 'pycbc', or t_merger lies outside
             time_array. Before P5.3 it was moved to the edge silently (CORE-15).
-        WaveformBackendError: 'pycbc' and PyCBC is missing or fails for these
+        WaveformBackendError: PyCBC is missing or fails for these
             parameters (for example an unknown approximant).
     """
     check_backend(backend)
@@ -153,27 +145,18 @@ def generate_chirp(
             f"t_merger={t_merger} s lies outside the time axis [{t0}, {t_end}] s"
         )
 
-    if backend == "pycbc":
-        return _pycbc_chirp(
-            time_array,
-            t_merger,
-            mass1=mass1,
-            mass2=mass2,
-            distance_mpc=distance_mpc,
-            f_lower=f_lower,
-            normalize=normalize,
-            spin1z=spin1z,
-            spin2z=spin2z,
-            inclination=inclination,
-            approximant=approximant,
-        )
-    return _newton_chirp(
+    return _pycbc_chirp(
         time_array,
         t_merger,
         mass1=mass1,
         mass2=mass2,
         distance_mpc=distance_mpc,
+        f_lower=f_lower,
         normalize=normalize,
+        spin1z=spin1z,
+        spin2z=spin2z,
+        inclination=inclination,
+        approximant=approximant,
     )
 
 
@@ -271,49 +254,3 @@ def _tukey_ramp(n):
     if n <= 0:
         return np.ones(0)
     return 0.5 * (1 - np.cos(np.pi * np.arange(n) / n))
-
-
-def _newton_chirp(time_array, t_merger, mass1, mass2, distance_mpc, normalize):
-    # Newtonian approximation: formulas for the inspiral (before the merger)
-
-    # Chirp mass in kg, distance in m
-    ch_mass = (mass1 * mass2) ** 0.6 / (mass1 + mass2) ** 0.2 * M_SUN
-    dist_m = distance_mpc * MPC
-
-    # Time to merger (tau)
-    tau = np.clip(t_merger - time_array, 0.0001, None)
-
-    # Frequency evolution (0th post-Newtonian order); CORE-2: too high by π^(5/8)
-    # f(tau) ~ tau^(-3/8)
-    freq_newton = (
-        (5 / (256 * np.pi)) ** (3 / 8)
-        * (G * ch_mass / C**3) ** (-5 / 8)
-        * tau ** (-3 / 8)
-    )
-
-    # Amplitude (strain); CORE-3: 4 times too large
-    # h(tau) ~ 1/D * tau^(-1/4)
-    amp_prefactor = (
-        (4 / dist_m) * (G * ch_mass / C**2) ** (5 / 4) * (5 / (C * tau)) ** (1 / 4)
-    )
-
-    # Phase
-    # phi(tau) ~ tau^(5/8)
-    phase = -2 * (5 * G * ch_mass / C**3) ** (-5 / 8) * tau ** (5 / 8)
-
-    strain_out = amp_prefactor * np.cos(phase)
-
-    # Cut everything after the merger (the approximation has no ringdown)
-    mask_post_merger = time_array > t_merger
-    strain_out[mask_post_merger] = 0
-    freq_newton[mask_post_merger] = np.nan
-
-    # Fade-in taper to avoid an abrupt start
-    strain_out *= 1 - np.exp(-10 * (time_array - time_array[0]))
-
-    if normalize:
-        m = np.max(np.abs(strain_out))
-        if m > 0:
-            strain_out /= m
-
-    return strain_out, freq_newton

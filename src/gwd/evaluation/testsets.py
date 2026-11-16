@@ -432,7 +432,7 @@ def build(
     changed set raises InvalidTestsetError instead of being replaced). Otherwise, or
     with rebuild=True, it is drawn, written, and returned with cache_hit False. The
     folders default to TESTSET_DIR, TESTSET_MANIFEST_DIR, and DATA_DIR_NOISE.
-    backend is checked before drawing; only tests pass 'newton'.
+    backend is checked before drawing.
     """
     spec = get(name)
     _check_arguments(n, seed)

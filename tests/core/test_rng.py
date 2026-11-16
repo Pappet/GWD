@@ -18,7 +18,7 @@ from gwd.core.simulation import TimeDomainSimulator
 CORE = Path(__file__).resolve().parents[2] / "src" / "gwd" / "core"
 
 
-def draw_everything(rng, backend="newton"):
+def draw_everything(rng, backend="pycbc"):
     sim = TimeDomainSimulator(backend=backend, rng=rng, noise_psd=pink_psd)
     signal, _ = sim.generate_chirp(30, 30, 400)
     return [
@@ -70,4 +70,4 @@ def test_the_rng_is_required():
     with pytest.raises(TypeError, match="rng"):
         white_noise(10)
     with pytest.raises(TypeError, match="rng"):
-        TimeDomainSimulator(backend="newton", noise_psd=pink_psd)
+        TimeDomainSimulator(backend="pycbc", noise_psd=pink_psd)

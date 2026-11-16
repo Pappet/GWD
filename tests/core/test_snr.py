@@ -14,7 +14,7 @@ DURATION = 4.0
 BAND = (20.0, 300.0)  # gwd.config.BANDPASS; gwd.core reads no config
 
 
-def chirp(backend="newton", t_merger=3.0, mass1=30.0, mass2=30.0):
+def chirp(backend="pycbc", t_merger=3.0, mass1=30.0, mass2=30.0):
     h, _ = generate_chirp(
         time_axis(FS, DURATION),
         backend=backend,

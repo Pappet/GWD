@@ -127,7 +127,7 @@ def test_the_reference_is_zero_below_the_cutoff_and_at_zero_hz(needs_pycbc):
 def test_without_pycbc_the_reference_raises(monkeypatch):
     monkeypatch.setitem(sys.modules, "pycbc", None)
     assert not reference_available()
-    with pytest.raises(ReferencePSDError, match="physics"):
+    with pytest.raises(ReferencePSDError, match="pip install -e ."):
         reference_asd(100.0)
 
 

@@ -1,10 +1,9 @@
-"""Physics checks for gwd.core.waveforms on both backends, and the backend itself.
+"""Physics checks for gwd.core.waveforms, and the backend itself.
 
 Only physical quantities are checked, never the length of the raw waveform, because that
-depends on the pycbc version. Known bugs are strict xfails with their finding ID (the
-findings list docs/aufraeumen/BEFUNDE.md, removed in P7.4, is in the Git history): once
-a fix makes one pass, strict forces removing the mark.
-Every call names its backend (P5.2); none falls back to another.
+depends on the pycbc version. Every call names its backend (P5.2); none falls back to
+another. Until P6.1 the tests also ran on a numpy-only backend, with strict xfails for
+its known bugs (CORE-2, CORE-3, CORE-8); D1 = A deleted it and its tests.
 """
 
 import subprocess
@@ -14,7 +13,6 @@ import numpy as np
 import pytest
 
 from gwd.core import timebase, waveforms
-from gwd.core.constants import M_SUN, C, G
 from gwd.core.waveforms import WaveformBackendError, generate_chirp
 
 FS = 4096
@@ -79,21 +77,6 @@ def test_strain_scales_with_inverse_distance(backend):
     np.testing.assert_allclose(far, near / 2, rtol=1e-6, atol=0)
 
 
-@pytest.mark.parametrize(
-    "backend",
-    [
-        "pycbc",
-        pytest.param(
-            "newton",
-            marks=pytest.mark.xfail(
-                strict=True,
-                raises=AssertionError,
-                reason="CORE-2: Newton frequency is pi^(5/8) ~ 2.045 times too high",
-            ),
-        ),
-    ],
-    indirect=True,
-)
 @pytest.mark.parametrize("tau", [1.0, 0.5, 0.3, 0.2])
 def test_frequency_matches_the_zero_crossings(backend, tau):
     t = time_axis()
@@ -103,48 +86,6 @@ def test_frequency_matches_the_zero_crossings(backend, tau):
     t_eval = T_MERGER - tau
     expected = zero_crossing_frequency(t, strain, t_eval)
     assert np.interp(t_eval, t, freq) == pytest.approx(expected, rel=0.05)
-
-
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="CORE-3: Newton strain amplitude is 4 times too large",
-)
-def test_newton_amplitude_matches_pycbc(needs_pycbc):
-    t = time_axis()
-    tau = 0.3
-    near_tau = np.abs(t - (T_MERGER - tau)) <= 0.02  # about one cycle at ~30 Hz
-
-    envelope = {}
-    for name in ["pycbc", "newton"]:
-        strain, _ = generate_chirp(
-            t, t_merger=T_MERGER, backend=name, inclination=0, normalize=False
-        )
-        envelope[name] = np.max(np.abs(strain[near_tau]))
-
-    assert 0.8 <= envelope["newton"] / envelope["pycbc"] <= 1.2
-
-
-@pytest.mark.parametrize("backend", ["newton"], indirect=True)
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="CORE-8: the Newton inspiral has no ISCO cut and runs to ~1 kHz",
-)
-def test_newton_inspiral_stops_at_isco(backend):
-    t = time_axis()
-    mass1 = mass2 = 30
-    strain, freq = generate_chirp(
-        t,
-        t_merger=T_MERGER,
-        backend=backend,
-        mass1=mass1,
-        mass2=mass2,
-        normalize=False,
-    )
-    total_mass = (mass1 + mass2) * M_SUN
-    f_isco = C**3 / (6**1.5 * np.pi * G * total_mass)  # GW frequency, ~73 Hz here
-    assert np.max(freq[strain != 0]) <= 1.05 * f_isco
 
 
 @pytest.mark.parametrize("t_merger", [10.0, DURATION, -0.1])
@@ -172,8 +113,8 @@ def test_the_default_merger_time_counts_from_the_start_of_the_axis(backend):
 def test_the_frequency_is_nan_outside_the_signal(backend):
     """CORE-14: before P5.3 the frequency was 0 where the chirp had no signal."""
     t = time_axis()
-    # 100 + 90 Msun from 25 Hz: about 3 s before the peak, so on 'pycbc' the waveform
-    # starts inside the window; 'newton' has no signal after the merger.
+    # 100 + 90 Msun from 25 Hz: about 3 s before the peak, so the waveform starts
+    # inside the window.
     strain, freq = generate_chirp(
         t, t_merger=T_MERGER, backend=backend, mass1=100, mass2=90, normalize=False
     )
@@ -224,12 +165,18 @@ def test_the_backend_is_required():
 
 
 def test_an_unknown_backend_is_refused():
-    with pytest.raises(ValueError, match="newton"):
+    with pytest.raises(ValueError, match="pycbc"):
         generate_chirp(time_axis(), t_merger=T_MERGER, backend="lal")
 
 
+def test_the_deleted_backend_is_refused():
+    """P6.1 (D1 = A): the numpy-only backend is gone, not silently mapped to PyCBC."""
+    with pytest.raises(ValueError, match="Unknown waveform backend"):
+        generate_chirp(time_axis(), t_merger=T_MERGER, backend="newton")
+
+
 def test_an_unknown_approximant_raises_instead_of_falling_back(needs_pycbc):
-    """CORE-4: before P5.2 any PyCBC error gave a Newton chirp with a warning."""
+    """CORE-4: before P5.2 any PyCBC error gave a fallback chirp with a warning."""
     with pytest.raises(WaveformBackendError, match="NoSuchApproximant") as raised:
         generate_chirp(
             time_axis(),
@@ -254,19 +201,9 @@ def test_without_pycbc_the_pycbc_backend_raises_with_the_install_hint(monkeypatc
     with pytest.raises(WaveformBackendError) as raised:
         generate_chirp(time_axis(), t_merger=T_MERGER, backend="pycbc")
     message = str(raised.value)
-    assert "pip install -e '.[physics]'" in message
-    assert "Linux or in WSL" in message
+    assert "pip install -e ." in message
+    assert "use WSL" in message
     assert not waveforms.pycbc_available()
-
-
-def test_without_pycbc_newton_still_works(monkeypatch):
-    monkeypatch.setitem(sys.modules, "pycbc", None)
-    strain, _ = generate_chirp(time_axis(), t_merger=T_MERGER, backend="newton")
-    assert np.isclose(np.max(np.abs(strain)), 1.0)
-
-
-def test_the_backend_label_names_newton():
-    assert waveforms.backend_label("newton") == "newton"
 
 
 def test_the_backend_label_names_the_pycbc_version(needs_pycbc):

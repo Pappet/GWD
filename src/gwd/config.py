@@ -81,7 +81,7 @@ SAMPLE_DTYPE = "float32"
 
 # The waveform backend of the pipeline (datasets, test sets, evaluation). gwd.core reads
 # no config, so the callers pass it on. Without PyCBC the pipeline stops with
-# gwd.core.waveforms.WaveformBackendError instead of falling back to Newton (P5.2, D1).
+# gwd.core.waveforms.WaveformBackendError (P5.2); since P6.1 it is the only backend (D1).
 WAVEFORM_BACKEND = "pycbc"
 
 # Real-data conditioning: notch the power line and its harmonics, then band-pass.

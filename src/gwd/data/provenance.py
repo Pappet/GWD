@@ -4,8 +4,8 @@ Two things decide what the data contains (hygiene:HYG-M1): the waveform backend,
 whether real noise chunks exist (otherwise every sample gets Gaussian noise). Since
 P5.2 the backend is no longer a switch in the environment: the pipeline always uses
 gwd.config.WAVEFORM_BACKEND ('pycbc') and stops without PyCBC. generate and evaluate
-print both in one line when they start, with a loud warning on stderr if a caller
-chose Newton on purpose (only tests and the golden values do). generate also writes
+print both in one line when they start. Until P6.1 a loud warning on stderr followed
+if a caller chose the numpy-only backend, which D1 = A deleted. generate also writes
 them to <out>/manifest.json, and training copies them into the model's metadata.
 """
 
@@ -26,13 +26,6 @@ MANIFEST_FORMAT = 1
 TIME_AXIS = "arange(n)/fs"
 # What training records for a dataset without a manifest (written before P4.1).
 UNKNOWN_V1 = "unknown (v1)"
-
-NEWTON_WARNING = (
-    "!!! WARNING: the waveform backend is the Newtonian approximation, not PyCBC.\n"
-    "!!! Its chirps have no merger and ringdown and known errors in frequency and\n"
-    "!!! amplitude (CORE-2, CORE-3, CORE-8). Install PyCBC with the physics extra:\n"
-    "!!!     pip install -e '.[physics]'"
-)
 
 
 def package_version(distribution):
@@ -148,7 +141,7 @@ def announce(noise, notes=(), backend=WAVEFORM_BACKEND):
     """Print source_line(noise, backend), framed, and the notes as warnings on stderr.
 
     The backend is checked first, so a missing PyCBC raises WaveformBackendError
-    before anything is printed. The Newton warning is added for backend 'newton'.
+    before anything is printed.
     """
     check_backend(backend)
     print("=" * 70)
@@ -156,9 +149,6 @@ def announce(noise, notes=(), backend=WAVEFORM_BACKEND):
     print("=" * 70)
     # Flush first, so the warnings follow the line when both streams share a terminal.
     sys.stdout.flush()
-    messages = list(notes)
-    if backend == "newton":
-        messages.insert(0, NEWTON_WARNING)
-    for message in messages:
+    for message in notes:
         print(message, file=sys.stderr)
     sys.stderr.flush()

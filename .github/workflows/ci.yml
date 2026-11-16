@@ -46,7 +46,7 @@ jobs:
       # Versions come from the lockfile. No TensorFlow, but PyCBC, so the production
       # PyCBC path is tested.
       - name: Install
-        run: uv pip install -c "$LOCKFILE" -e '.[physics,gwdata,dev]'
+        run: uv pip install -c "$LOCKFILE" -e '.[gwdata,dev]'
       - name: Ruff
         run: ruff format --check . && ruff check .
       - name: Pytest

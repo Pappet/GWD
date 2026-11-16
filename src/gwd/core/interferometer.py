@@ -31,8 +31,8 @@ SIGNAL_RECYCLING_WIDTH = 50.0  # ... and of this width in Hz
 REFERENCE_PSD_NAME = "aLIGOZeroDetHighPower"
 
 REFERENCE_INSTALL_HINT = (
-    "The aLIGO reference curve needs PyCBC. Install it on Linux or in WSL with the "
-    "physics extra: pip install -e '.[physics]'"
+    "The aLIGO reference curve needs PyCBC, a dependency of gwd except on Windows: "
+    "pip install -e . (on Windows, use WSL)"
 )
 
 

@@ -174,15 +174,13 @@ def write_legacy(home):
 EVALUATE_IN_HOME = """
 import numpy as np
 from gwd import registry
-from gwd.evaluation import evaluate, testsets
+from gwd.evaluation import evaluate
 
 class PeakModel:
     def predict(self, X, verbose=0):
         peak = np.abs(np.asarray(X)).max(axis=(1, 2))
         return (1 - np.exp(-peak / 5)).reshape(-1, 1)
 
-build = testsets.build
-evaluate.testsets.build = lambda name, n, seed: build(name, n, seed, backend="newton")
 evaluate.resolve = lambda model: "gwd_model_20260101-000000.keras"
 evaluate.load_model = lambda path: PeakModel()
 registry.get_threshold = lambda path: 0.123
