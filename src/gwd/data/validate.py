@@ -8,8 +8,11 @@ Usage:
     gwd data validate [--data FOLDER] [--plots FOLDER] [--no-plots]
 """
 
+import glob
 import os
 import sys
+from dataclasses import dataclass
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -24,6 +27,8 @@ from gwd.config import (
     VALIDATION_DATASET_PLOTS_DIR,
     ensure_dirs,
 )
+from gwd.data.provenance import read_manifest, sha256_file
+from gwd.data.scenarios import SCENARIOS
 
 
 def load_dataset_info(data_folder):
@@ -140,52 +145,204 @@ def print_statistics(df):
         print(f"   {'Durchschnitt:':<30} {signal_samples['merger_time'].mean():>10.2f}")
 
 
-def validate_samples(df, data_folder, num_check=10):
-    """Überprüft zufällige Samples auf Korrektheit."""
-    print("\n4. SAMPLE VALIDIERUNG:")
-    print(f"   Überprüfe {num_check} zufällige Samples...")
+# --- integrity: every listed file, no orphans, consistent with the manifest ---
 
-    issues = []
+# The seven columns every labels.csv has had; P4.1 added three after them.
+REQUIRED_COLUMNS = (
+    "filename",
+    "has_signal",
+    "merger_time",
+    "snr",
+    "mass1",
+    "mass2",
+    "distance",
+)
+NUMERIC_COLUMNS = REQUIRED_COLUMNS[1:]
+# The files gwd.data.generate writes; any other one in the folder is not checked.
+SAMPLE_PATTERN = "sample_*.npy"
+# float64 as written today; float32 is accepted for P5.6.
+SAMPLE_DTYPES = (np.dtype(np.float32), np.dtype(np.float64))
 
-    # Zufällige Samples auswählen
-    check_samples = df.sample(min(num_check, len(df)))
 
-    for idx, row in check_samples.iterrows():
-        filepath = os.path.join(data_folder, row["filename"])
+@dataclass(frozen=True)
+class Finding:
+    """One problem of a dataset. file is the sample it concerns, None for the dataset."""
 
-        try:
-            data = np.load(filepath)
+    check: str
+    message: str
+    file: Optional[str] = None
 
-            # Check 1: Korrekte Länge?
-            expected_length = N_SAMPLES
-            if len(data) != expected_length:
-                issues.append(
-                    f"   ⚠️  {row['filename']}: Falsche Länge ({len(data)} statt {expected_length})"
-                )
+    def __str__(self):
+        return f"{self.file}: {self.message}" if self.file else self.message
 
-            # Check 2: NaN oder Inf Werte?
-            if np.any(np.isnan(data)) or np.any(np.isinf(data)):
-                issues.append(f"   ❌ {row['filename']}: Enthält NaN oder Inf Werte!")
 
-            # Check 3: Amplitude vernünftig?
-            if np.max(np.abs(data)) > 1000:
-                issues.append(
-                    f"   ⚠️  {row['filename']}: Sehr hohe Amplitude ({np.max(np.abs(data)):.1f})"
-                )
+class InvalidDatasetError(ValueError):
+    """A dataset with integrity findings; findings holds them all."""
 
-            # Check 4: Ist es komplett Null?
-            if np.all(data == 0):
-                issues.append(f"   ❌ {row['filename']}: Komplett Null!")
+    def __init__(self, folder, findings):
+        self.folder = folder
+        self.findings = list(findings)
+        super().__init__(
+            f"The dataset in '{folder}' has {len(self.findings)} integrity "
+            f"finding(s):\n{format_findings(self.findings)}\n"
+            f"Run 'gwd data validate --data {folder}' for the full report."
+        )
 
-        except Exception as e:
-            issues.append(f"   ❌ {row['filename']}: Fehler beim Laden - {e}")
 
-    if issues:
-        print("\n   Gefundene Probleme:")
-        for issue in issues:
-            print(issue)
-    else:
-        print("   ✅ Alle überprüften Samples sind OK!")
+def format_findings(findings, limit=20):
+    """The findings as indented lines, at most limit per check, with the rest counted."""
+    lines = []
+    by_check = {}
+    for finding in findings:
+        by_check.setdefault(finding.check, []).append(finding)
+    for check, group in by_check.items():
+        lines.append(f"  [{check}] {len(group)} finding(s)")
+        lines.extend(f"    - {finding}" for finding in group[:limit])
+        if len(group) > limit:
+            lines.append(f"    ... and {len(group) - limit} more")
+    return "\n".join(lines)
+
+
+def read_labels(folder):
+    """labels.csv of a dataset. Empty cells stay '' (no backend, no chunk)."""
+    return pd.read_csv(os.path.join(folder, LABELS_FILE), keep_default_na=False)
+
+
+def check_labels(labels):
+    """Findings in labels.csv itself: columns, values, duplicate file names."""
+    missing = [column for column in REQUIRED_COLUMNS if column not in labels.columns]
+    if missing:
+        return [Finding("labels", f"{LABELS_FILE} lacks the column(s) {missing}")]
+    if labels.empty:
+        return [Finding("labels", f"{LABELS_FILE} lists no samples")]
+
+    findings = []
+    for column in NUMERIC_COLUMNS:
+        values = pd.to_numeric(labels[column], errors="coerce")
+        bad = int((~np.isfinite(values)).sum())
+        if bad:
+            findings.append(
+                Finding("labels", f"column {column} has {bad} non-numeric value(s)")
+            )
+    has_signal = pd.to_numeric(labels["has_signal"], errors="coerce")
+    bad = int((has_signal.notna() & ~has_signal.isin([0, 1])).sum())
+    if bad:
+        findings.append(
+            Finding("labels", f"column has_signal has {bad} value(s) other than 0 or 1")
+        )
+    duplicates = labels["filename"][labels["filename"].duplicated()]
+    for name in sorted(set(duplicates)):
+        findings.append(Finding("labels", "listed more than once", name))
+    return findings
+
+
+def check_sample(path):
+    """(data, findings) of one sample file; data is None if a finding was made.
+
+    A sample must exist, load without pickle, have the shape (N_SAMPLES,), a float
+    dtype, only finite values, and not be all zeros.
+    """
+    name = os.path.basename(path)
+    if not os.path.isfile(path):
+        return None, [Finding("missing", "listed in labels.csv, but missing", name)]
+    try:
+        data = np.load(path, allow_pickle=False)
+    except (OSError, ValueError, EOFError) as error:
+        return None, [Finding("unreadable", f"cannot be loaded ({error})", name)]
+    if data.shape != (N_SAMPLES,):
+        message = f"shape {data.shape} instead of ({N_SAMPLES},)"
+        return None, [Finding("shape", message, name)]
+    if data.dtype not in SAMPLE_DTYPES:
+        return None, [Finding("dtype", f"dtype {data.dtype} is not a float", name)]
+    if not np.isfinite(data).all():
+        return None, [Finding("nan", "contains NaN or Inf", name)]
+    if not data.any():
+        return None, [Finding("zero", "is all zeros", name)]
+    return data, []
+
+
+def find_orphans(folder, labels):
+    """Findings for sample_*.npy files in folder that labels.csv does not list."""
+    listed = set(labels["filename"])
+    present = {
+        os.path.basename(path)
+        for path in glob.glob(os.path.join(folder, SAMPLE_PATTERN))
+    }
+    return [
+        Finding("orphan", "not listed in labels.csv", name)
+        for name in sorted(present - listed)
+    ]
+
+
+def check_manifest(folder, labels):
+    """Findings where manifest.json does not match labels.csv or its scenario.
+
+    A dataset without a manifest (written before P4.1) has none.
+    """
+    manifest, _ = read_manifest(folder)
+    if manifest is None:
+        return []
+    findings = []
+    if manifest.get("n") != len(labels):
+        findings.append(
+            Finding(
+                "manifest",
+                f"manifest.json says n={manifest.get('n')}, "
+                f"labels.csv lists {len(labels)} samples",
+            )
+        )
+    digest = sha256_file(os.path.join(folder, LABELS_FILE))
+    if manifest.get("labels_sha256") != digest:
+        findings.append(
+            Finding(
+                "manifest", "labels.csv has changed since manifest.json was written"
+            )
+        )
+    name = manifest.get("scenario")
+    scenario = SCENARIOS.get(name)
+    if scenario is None:
+        findings.append(
+            Finding("manifest", f"manifest.json names an unknown scenario {name!r}")
+        )
+    elif manifest.get("scenario_hash") != scenario.hash():
+        findings.append(
+            Finding(
+                "manifest",
+                f"the scenario hash {manifest.get('scenario_hash')!r} in manifest.json "
+                f"is not that of {name} today ({scenario.hash()!r}); the scenario was "
+                "changed after the data was written",
+            )
+        )
+    return findings
+
+
+def check_integrity(folder, on_sample=None):
+    """Check a dataset folder and return a list of Finding; empty means it is intact.
+
+    Checked: labels.csv (columns, values, duplicates); every file it lists (exists,
+    loads, shape, dtype, NaN/Inf, not all zeros); sample_*.npy files it does not list
+    (orphans); and manifest.json against labels.csv and its scenario, if there is one.
+    on_sample(position, data) is called for every sample without a finding, with its
+    row position in labels.csv, so a caller can load the data in the same pass.
+    """
+    if not os.path.isfile(os.path.join(folder, LABELS_FILE)):
+        return [Finding("labels", f"{LABELS_FILE} is missing in '{folder}'")]
+    try:
+        labels = read_labels(folder)
+    except (pd.errors.ParserError, pd.errors.EmptyDataError, UnicodeDecodeError) as e:
+        return [Finding("labels", f"{LABELS_FILE} cannot be read ({e})")]
+
+    findings = check_labels(labels)
+    if "filename" not in labels.columns or labels.empty:
+        return findings
+    for position, name in enumerate(labels["filename"]):
+        data, sample_findings = check_sample(os.path.join(folder, str(name)))
+        findings.extend(sample_findings)
+        if data is not None and on_sample is not None:
+            on_sample(position, data)
+    findings.extend(find_orphans(folder, labels))
+    findings.extend(check_manifest(folder, labels))
+    return findings
 
 
 def create_visualizations(df, data_folder, output_folder=VALIDATION_DATASET_PLOTS_DIR):
@@ -546,11 +703,19 @@ def run(
         # Statistiken ausgeben
         print_statistics(df)
 
-        # Samples validieren
-        validate_samples(df, data_folder)
+        # Every listed sample, orphans, and the manifest
+        print("\n4. INTEGRITY:")
+        integrity = check_integrity(data_folder)
+        if integrity:
+            print(f"   {len(integrity)} finding(s):")
+            print(format_findings(integrity))
+        else:
+            print(f"   ✅ All {len(df)} samples are intact, no orphans.")
 
         # Visualisierungen erstellen
-        if plots:
+        if plots and integrity:
+            print("\n   Plots skipped: they need intact samples.")
+        elif plots:
             create_visualizations(df, data_folder, output_folder)
 
         # Finale Bewertung
@@ -560,7 +725,11 @@ def run(
         print("📋 FINALE BEWERTUNG")
         print("=" * 80)
 
-        issues = []
+        issues = (
+            [f"❌ {len(integrity)} integrity finding(s), see above"]
+            if integrity
+            else []
+        )
         warnings_list = []
 
         # Check 1: SNR
