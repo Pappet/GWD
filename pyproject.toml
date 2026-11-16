@@ -18,18 +18,19 @@ dependencies = [
     "matplotlib>=3.9",
     "scikit-learn>=1.7",
     "tabulate>=0.9",
+    # The only waveform backend since P6.1 (D1 = A). pycbc 2.4.0 has no wheels for any
+    # current Python version, and there is no PyCBC on Windows: use WSL there.
+    'pycbc>=2.5; platform_system != "Windows"',
 ]
 
 [project.scripts]
 gwd = "gwd.cli:main"
 
 [project.optional-dependencies]
-# pycbc 2.4.0 has no wheels for any current Python version, and there is no PyCBC on Windows.
-physics = ['pycbc>=2.5; platform_system != "Windows"']
 gwdata = ["gwpy>=3.0"]
 ml = ["tensorflow>=2.20"]
 dev = ["pytest>=8.3", "ruff"]
-all = ["gwd[physics,gwdata,ml]"]
+all = ["gwd[gwdata,ml]"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -199,7 +199,7 @@ class GlitchHunterApp:
             self.generate_new_sample(None)
         else:
             self.show_message(
-                "The simulation needs PyCBC (pip install -e '.[physics]').\n"
+                "The simulation needs PyCBC (pip install -e . on Linux or WSL).\n"
                 "Press 'LIGO random' for real data."
             )
 

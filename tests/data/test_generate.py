@@ -172,7 +172,7 @@ def test_without_pycbc_nothing_is_written_or_removed(tmp_path, noise_dir, monkey
     out, _, _ = generate(tmp_path, noise_dir, n=4)
     before = {p.name: p.read_bytes() for p in out.iterdir()}
     monkeypatch.setitem(sys.modules, "pycbc", None)
-    with pytest.raises(waveforms.WaveformBackendError, match="physics"):
+    with pytest.raises(waveforms.WaveformBackendError, match="pip install -e ."):
         generate_dataset(4, str(out), noise_dir=str(noise_dir), overwrite=True)
     assert {p.name: p.read_bytes() for p in out.iterdir()} == before
 
@@ -194,7 +194,7 @@ def test_gwd_data_generate_without_pycbc_exits_with_1_and_the_hint(tmp_path):
         text=True,
     )
     assert result.returncode == 1, result.stderr
-    assert "pip install -e '.[physics]'" in result.stderr
+    assert "pip install -e ." in result.stderr
     assert "WSL" in result.stderr
     assert "Traceback" not in result.stderr
     assert not (tmp_path / "d").exists()

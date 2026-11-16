@@ -156,7 +156,7 @@ def test_without_pycbc_the_evaluation_stops_before_loading_the_model(
     monkeypatch.setattr(
         evaluate, "load_model", lambda path: pytest.fail("model loaded")
     )
-    with pytest.raises(waveforms.WaveformBackendError, match="physics"):
+    with pytest.raises(waveforms.WaveformBackendError, match="pip install -e ."):
         evaluate.run(real=False)
 
 

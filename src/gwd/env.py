@@ -21,10 +21,11 @@ BASE = (
     ("sklearn", "scikit-learn"),
     ("tabulate", "tabulate"),
 )
+# PyCBC is a base dependency too since P6.1 (D1 = A), but not on Windows, so it is
+# reported with the waveform backend instead of counting as missing.
 
 # The extras in pyproject.toml and what each one installs
 EXTRAS = {
-    "physics": (("pycbc", "pycbc"),),
     "gwdata": (("gwpy", "gwpy"),),
     "ml": (("tensorflow", "tensorflow"),),
     "dev": (("pytest", "pytest"), ("ruff", "ruff")),
@@ -108,8 +109,7 @@ def main():
         _line(
             "Pipeline",
             f"{WAVEFORM_BACKEND} MISSING: gwd data generate and gwd eval run, "
-            "thresholds, and compare stop (pip install -e '.[physics]' on Linux "
-            "or WSL)",
+            "thresholds, and compare stop (pip install -e . on Linux or WSL)",
         )
         _line("Demo apps", "newton (Newtonian approximation, physically inaccurate)")
 

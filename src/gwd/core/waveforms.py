@@ -26,8 +26,8 @@ BACKENDS = ("pycbc", "newton")
 TAPER_SECONDS = 0.05
 
 PYCBC_INSTALL_HINT = (
-    "Install PyCBC on Linux or in WSL with the physics extra:\n"
-    "    pip install -e '.[physics]'\n"
+    "PyCBC is a dependency of gwd except on Windows; install gwd with it:\n"
+    "    pip install -e .\n"
     "PyCBC is not available on native Windows; use WSL there (see README.md)."
 )
 

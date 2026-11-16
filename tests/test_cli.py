@@ -359,7 +359,7 @@ def test_train_with_the_default_dataset_missing_exits_with_one(tmp_path):
     ],
 )
 def test_without_pycbc_a_command_that_draws_signals_exits_with_1(argv, tmp_path):
-    """P5.2: no Newton fallback, no traceback; the hint names the install command."""
+    """P5.2: no fallback, no traceback; the hint names the install command."""
     for name in ("a", "b"):
         (tmp_path / "models_registry").mkdir(exist_ok=True)
         (tmp_path / "models_registry" / f"{name}.keras").touch()
@@ -374,7 +374,7 @@ def test_without_pycbc_a_command_that_draws_signals_exits_with_1(argv, tmp_path)
     )
     result = run_python(code, tmp_path)
     assert result.stdout.splitlines()[-1] == "1 False"
-    assert "pip install -e '.[physics]'" in result.stderr
+    assert "pip install -e ." in result.stderr
     assert "Traceback" not in result.stderr
 
 
@@ -398,14 +398,14 @@ def test_without_pycbc_the_glitch_hunter_starts_with_the_simulation_off(tmp_path
     result = run_glitch_hunter([], tmp_path, blocked=["pycbc"])
     assert result.stdout.splitlines()[-1] == "0 False"
     assert "the simulation is off" in result.stderr
-    assert "pip install -e '.[physics]'" in result.stderr
+    assert "pip install -e ." in result.stderr
     assert "Traceback" not in result.stderr
 
 
 def test_without_pycbc_and_gwpy_the_glitch_hunter_exits_with_1(tmp_path):
     result = run_glitch_hunter([], tmp_path, blocked=["pycbc", "gwpy"])
     assert result.stdout.splitlines()[-1] == "1 False"
-    assert "pip install -e '.[physics]'" in result.stderr
+    assert "pip install -e ." in result.stderr
     assert "pip install -e '.[gwdata]'" in result.stderr
     assert "Traceback" not in result.stderr
 

@@ -254,8 +254,8 @@ def test_without_pycbc_the_pycbc_backend_raises_with_the_install_hint(monkeypatc
     with pytest.raises(WaveformBackendError) as raised:
         generate_chirp(time_axis(), t_merger=T_MERGER, backend="pycbc")
     message = str(raised.value)
-    assert "pip install -e '.[physics]'" in message
-    assert "Linux or in WSL" in message
+    assert "pip install -e ." in message
+    assert "use WSL" in message
     assert not waveforms.pycbc_available()
 
 
