@@ -91,7 +91,7 @@ gwd eval run
 # Detection thresholds of the latest model, saved to results/optimal_thresholds.json (--no-save to skip)
 gwd eval thresholds
 
-# Compare all models in models_registry/ in one ROC plot
+# Compare all models in models_registry/ in one ROC plot and a zoom on low FPR
 gwd eval compare
 
 # Show the leaderboard, sorted by ROC AUC
