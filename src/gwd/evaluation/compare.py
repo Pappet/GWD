@@ -4,7 +4,7 @@ ROC comparison: several models on one test set, independent of a threshold.
 
 Run it with ``gwd eval compare``; it writes the comparison plot and a zoom on low FPR.
 Since P5.7 every model is scored on the part 'test' of one fixed, hashed test set
-(gwd.evaluation.testsets; --testset, --seed, --n, default stress_v1). Since P5.8 each
+(gwd.evaluation.testsets; --testset, --seed, --n; default: see below). Since P5.8 each
 model's curve also marks its operating point at its own threshold
 (gwd.registry.get_threshold), and the ranking, by ROC AUC, lists the TPR there with the
 FPR it reached.
@@ -13,6 +13,16 @@ Since V3 every model sees data with its own preprocessing
 (gwd.evaluation.testsets.set_for_model): with --testset indist_v2, a whitening model is
 scored on indist_v3, which holds the same events and noise, whitened; the labels are
 the same, so all curves still describe the same physical samples.
+
+Models with preprocessings that no pair of counterpart sets covers cannot share one
+set. With --testset, a model that the set (or its counterpart) cannot give the
+preprocessing it was trained with (a whitening model on a V1 set) is left out, with the
+reason. Without --testset, each model gets its default set
+(gwd.evaluation.testsets.default_for_model: indist_v2 for V2, indist_v3 for V3,
+stress_v1 for V1 and for models that do not name their scenario), and the models are
+compared in groups, one per family of sets with the same draws (indist_v2 and indist_v3
+are one); each group gets its own plots, named with its set, and its own ranking. A
+group with one model has nothing to compare and is only listed.
 """
 
 import datetime
@@ -24,7 +34,6 @@ import matplotlib
 import numpy as np
 
 from gwd.config import (
-    DEFAULT_TESTSET,
     EVALUATION_MODELS_PLOTS_DIR,
     TESTSET_SEED,
     TESTSET_SIZE,
@@ -36,6 +45,7 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import auc, roc_curve
 
 from gwd import registry
+from gwd.data.scenarios import DEFAULT_PREPROCESSING, counterpart_set
 from gwd.evaluation import testsets
 from gwd.evaluation.metrics import calculate_operating_point
 from gwd.registry import list_models, load_model, model_name, resolve
@@ -126,8 +136,18 @@ def mark_operating_point(ax, curve, color):
     )
 
 
-def compare_models_roc(curves, colors, title="ROC Curve Comparison"):
-    """Plot all ROC curves and the AUC ranking. Returns the ranking, best first."""
+def plot_name(testset, zoom=False):
+    """plot_compare_roc_<timestamp>_<testset>.png, or ..._zoom.png for the zoom."""
+    return (
+        f"plot_compare_roc_{TIMESTAMP}_{testset}" + ("_zoom" if zoom else "") + ".png"
+    )
+
+
+def compare_models_roc(curves, colors, title="ROC Curve Comparison", testset="roc"):
+    """Plot all ROC curves and the AUC ranking. Returns the ranking, best first.
+
+    testset names the plot file (plot_name).
+    """
 
     print("\n🧠 Plotting the ROC curves of all models...")
 
@@ -187,15 +207,16 @@ def compare_models_roc(curves, colors, title="ROC Curve Comparison"):
         )
 
     fig.tight_layout()
-    save_plot(fig, f"plot_compare_roc_{TIMESTAMP}.png")
+    save_plot(fig, plot_name(testset))
 
     return auc_scores_sorted
 
 
-def zoom_to_relevant_region(curves, colors):
+def zoom_to_relevant_region(curves, colors, testset="roc"):
     """
     Zoomed ROC plot: gravitational wave searches care mostly about very low FPR,
-    and a zoom on FPR <= 0.1 shows the differences there better.
+    and a zoom on FPR <= 0.1 shows the differences there better. testset names the
+    plot file (plot_name).
     """
     print("\n🔍 Zooming in on the relevant region (FPR <= 0.1)...")
 
@@ -229,14 +250,137 @@ def zoom_to_relevant_region(curves, colors):
     ax.set_ylim(0, 1)
 
     fig.tight_layout()
-    save_plot(fig, f"plot_compare_roc_{TIMESTAMP}_zoom.png")
+    save_plot(fig, plot_name(testset, zoom=True))
 
 
-def run(models=None, testset=DEFAULT_TESTSET, seed=TESTSET_SEED, n=TESTSET_SIZE):
-    """Compare the given models (default: all in models_registry/) on one test set.
+def family(name):
+    """The set that names a family of sets with the same draws: the bandpass one.
 
-    testset, seed, and n name the set (gwd.evaluation.testsets.build). Returns the
-    exit code.
+    indist_v3 belongs to indist_v2, stress_v3 to stress_v2; every other set is its own.
+    """
+    spec = testsets.get(name)
+    return (counterpart_set(spec, DEFAULT_PREPROCESSING) or spec).name
+
+
+def group_models(paths, testset=None):
+    """{family set name: [(path, set name, preprocessing, note)]}, in the order of paths.
+
+    With testset, one group: each model gets testset or its counterpart with the
+    model's preprocessing (testsets.set_for_model); a model for which neither has its
+    preprocessing is left out, with the reason. Without, each model gets its default
+    set (testsets.default_for_model), and models whose sets share their draws form one
+    group. Prints what it chose for each model.
+    """
+    groups = {}
+    for path in paths:
+        name = model_name(path)
+        asked = testset
+        if asked is None:
+            asked, reason = testsets.default_for_model(path)
+            print(f"{name}: {testsets.describe_default(asked, reason)}")
+        chosen, preprocessing, note = testsets.set_for_model(asked, path)
+        if testsets.get(chosen).preprocessing != preprocessing:
+            print(f"{name}: left out. {note}")
+            continue
+        if note:
+            print(f"{name}: {note}")
+        key = testset if testset is not None else family(chosen)
+        groups.setdefault(key, []).append((path, chosen, preprocessing, note))
+    return groups
+
+
+def compare_group(testset, entries, seed, n):
+    """Compare the models of one group on testset and its counterparts. Exit code.
+
+    entries are (path, set name, preprocessing, note) from group_models. The reference
+    set is testset if a model uses it, else the set of the first model; the other
+    models get the counterpart they need, which must have the same labels.
+    """
+    if len(entries) < 2:
+        names = ", ".join(model_name(path) for path, *_ in entries) or "none"
+        print(f"\n⚠️ Only one model on {testset} ({names}): nothing to compare it with.")
+        return 0
+
+    paths = [path for path, *_ in entries]
+    sets = [chosen for _, chosen, _, _ in entries]
+    reference = testset if testset in sets else sets[0]
+
+    # The test sets, before any model loads (drawing them needs PyCBC).
+    try:
+        built = testsets.build(reference, n, seed)
+        others = {
+            name: testsets.build(name, n, seed)
+            for name in dict.fromkeys(sets)
+            if name != reference
+        }
+    except testsets.InvalidTestsetError as error:
+        print(f"❌ {error}", file=sys.stderr)
+        return 1
+    print("\n".join(testsets.describe(built)))
+    for other in others.values():
+        print("\n".join(testsets.describe(other)))
+    X_test, y_true = built.X, built.y
+    inputs = {}
+    for path, name in zip(paths, sets):
+        if name != reference:
+            if not np.array_equal(others[name].y, y_true):
+                raise ValueError(f"{name} does not have the labels of {reference}")
+            inputs[path] = others[name].X
+
+    # Load each model in turn and score it once
+    curves = score_models(paths, X_test, y_true, inputs)
+
+    if len(curves) == 0:
+        print("\n❌ No models to compare.")
+        return 1
+
+    if len(curves) == 1:
+        print("\n⚠️ Only one model found. Train more models to compare them.")
+        return 0
+
+    print(f"\n✅ {len(curves)} models loaded.")
+    colors = model_colors([curve.name for curve in curves])
+
+    # Compare
+    title = f"ROC curves on {built.label()}, SHA-256 {built.short_hash()}"
+    for other in others.values():
+        title += (
+            f"\nmodels with {other.spec.preprocessing} on {other.spec.name}, "
+            f"SHA-256 {other.short_hash()}"
+        )
+    rankings = compare_models_roc(curves, colors, title, testset)
+
+    # Print the ranking
+    print("\n" + "=" * 70)
+    print(f"📊 FINAL RANKING on {built.label()}:")
+    print("=" * 70)
+    by_name = {curve.name: curve for curve in curves}
+    n_signal, n_noise = int((y_true == 1).sum()), int((y_true == 0).sum())
+    print(
+        f"  Ranked by ROC AUC. TPR at each model's threshold (★ in the plots), on n "
+        f"{n_signal} signal, at the FPR it reached on n {n_noise} noise samples."
+    )
+    for i, (name, auc_val) in enumerate(rankings, 1):
+        curve = by_name[name]
+        print(
+            f"  {i}. {name[:40]:<40s} | AUC: {auc_val:.4f} | TPR {curve.op_tpr:6.1%} "
+            f"at FPR {curve.op_fpr:6.2%} | threshold {curve.threshold:.4g}"
+        )
+    print("=" * 70)
+
+    # Bonus: Zoom
+    print("\n💡 Creating the zoom plot for low FPR...")
+    zoom_to_relevant_region(curves, colors, testset)
+    return 0
+
+
+def run(models=None, testset=None, seed=TESTSET_SEED, n=TESTSET_SIZE):
+    """Compare the given models (default: all in models_registry/). Returns the exit code.
+
+    testset, seed, and n name the set (gwd.evaluation.testsets.build). testset None
+    gives each model its default set and compares the models in groups of sets with
+    the same draws (group_models); a model that a named set cannot give its
+    preprocessing is left out.
     """
     print("=" * 70)
     print("🏆 ROC CURVE COMPARISON TOOL")
@@ -257,77 +401,26 @@ def run(models=None, testset=DEFAULT_TESTSET, seed=TESTSET_SEED, n=TESTSET_SIZE)
         print("\n⚠️ Only one model found. Train more models to compare them.")
         return 0
 
-    # 2. The test sets, before any model loads (drawing them needs PyCBC): the named
-    # one, and its counterpart for models with another preprocessing (V3).
-    chosen = {path: testsets.set_for_model(testset, path) for path in paths}
-    try:
-        built = testsets.build(testset, n, seed)
-        others = {
-            name: testsets.build(name, n, seed)
-            for name, _, _ in chosen.values()
-            if name != testset
-        }
-    except testsets.InvalidTestsetError as error:
-        print(f"❌ {error}", file=sys.stderr)
-        return 1
-    print("\n".join(testsets.describe(built)))
-    for other in others.values():
-        print("\n".join(testsets.describe(other)))
-    X_test, y_true = built.X, built.y
-    inputs = {}
-    for path, (name, preprocessing, note) in chosen.items():
-        if note:
-            print(f"{model_name(path)}: {note}")
-        if name != testset:
-            if not np.array_equal(others[name].y, y_true):
-                raise ValueError(f"{name} does not have the labels of {testset}")
-            inputs[path] = others[name].X
-
-    # 3. Load each model in turn and score it once
-    curves = score_models(paths, X_test, y_true, inputs)
-
-    if len(curves) == 0:
+    # 2. Which set each model is scored on, and the groups that can share one
+    groups = group_models(paths, testset)
+    if not groups:
         print("\n❌ No models to compare.")
         return 1
-
-    if len(curves) == 1:
-        print("\n⚠️ Only one model found. Train more models to compare them.")
-        return 0
-
-    print(f"\n✅ {len(curves)} models loaded.")
-    colors = model_colors([curve.name for curve in curves])
-
-    # 4. Compare
-    title = f"ROC curves on {built.label()}, SHA-256 {built.short_hash()}"
-    for other in others.values():
-        title += (
-            f"\nmodels with {other.spec.preprocessing} on {other.spec.name}, "
-            f"SHA-256 {other.short_hash()}"
-        )
-    rankings = compare_models_roc(curves, colors, title)
-
-    # 5. Print the ranking
-    print("\n" + "=" * 70)
-    print("📊 FINAL RANKING:")
-    print("=" * 70)
-    by_name = {curve.name: curve for curve in curves}
-    n_signal, n_noise = int((y_true == 1).sum()), int((y_true == 0).sum())
-    print(
-        f"  Ranked by ROC AUC. TPR at each model's threshold (★ in the plots), on n "
-        f"{n_signal} signal, at the FPR it reached on n {n_noise} noise samples."
-    )
-    for i, (name, auc_val) in enumerate(rankings, 1):
-        curve = by_name[name]
+    if len(groups) > 1:
         print(
-            f"  {i}. {name[:40]:<40s} | AUC: {auc_val:.4f} | TPR {curve.op_tpr:6.1%} "
-            f"at FPR {curve.op_fpr:6.2%} | threshold {curve.threshold:.4g}"
+            f"\nThe models were trained on scenarios whose test sets do not share "
+            f"their samples, so they are compared in {len(groups)} groups: "
+            + ", ".join(f"{name} ({len(group)})" for name, group in groups.items())
         )
-    print("=" * 70)
 
-    # 6. Bonus: Zoom
-    print("\n💡 Creating the zoom plot for low FPR...")
-    zoom_to_relevant_region(curves, colors)
-    return 0
+    # 3. Each group on its own set
+    status = 0
+    for name, entries in groups.items():
+        if len(groups) > 1:
+            print("\n" + "=" * 70)
+            print(f"Group {name}: {', '.join(model_name(p) for p, *_ in entries)}")
+        status = max(status, compare_group(name, entries, seed, n))
+    return status
 
 
 if __name__ == "__main__":
