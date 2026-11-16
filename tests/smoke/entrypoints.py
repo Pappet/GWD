@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Optional
 
 SRC = Path(__file__).resolve().parents[2] / "src"
-DATASET = SRC / "dataset"
 
 SEED = 1  # Chosen so the old validator does not report 'KRITISCH' by chance.
 NUM_SAMPLES = 64
@@ -25,8 +24,15 @@ def _script(path, stdin=None):
     return Stage((str(path),), stdin)
 
 
+def _module(name, stdin=None):
+    return Stage(("-m", name), stdin)
+
+
 def _driver(folder, module, body, tf_seed=True, stdin=None):
-    """Import a script as a module, set the seeds, then run body with it as 'module'."""
+    """Import a script as a module, set the seeds, then run body with it as 'module'.
+
+    folder is put on sys.path first; it is None for modules in the gwd package.
+    """
     seed = (
         f"tf.keras.utils.set_random_seed({SEED})"
         if tf_seed
@@ -35,10 +41,12 @@ def _driver(folder, module, body, tf_seed=True, stdin=None):
     imports = "import random, numpy as np" + (
         "; import tensorflow as tf" if tf_seed else ""
     )
+    path_setup = (
+        ["import sys", f"sys.path.insert(0, {str(folder)!r})"] if folder else []
+    )
     code = "\n".join(
         [
-            "import sys",
-            f"sys.path.insert(0, {str(folder)!r})",
+            *path_setup,
             imports,
             f"import {module} as module",
             seed,
@@ -50,13 +58,13 @@ def _driver(folder, module, body, tf_seed=True, stdin=None):
 
 PIPELINE = {
     "generate": _driver(
-        DATASET,
-        "generate_chirp_dataset",
+        None,
+        "gwd.data.generate",
         f"module.generate_dataset({NUM_SAMPLES}, module.DATA_DIR_TRAIN)",
         tf_seed=False,
     ),
-    "validate": _script(DATASET / "validate_dataset.py"),
-    "train": _driver(DATASET, "train_cnn", "module.EPOCHS = 1\nmodule.main()"),
+    "validate": _module("gwd.data.validate"),
+    "train": _driver(None, "gwd.training.train", "module.EPOCHS = 1\nmodule.main()"),
     "evaluate": _driver(
         SRC,
         "evaluate_model_with_roc",

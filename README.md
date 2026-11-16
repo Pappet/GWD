@@ -68,10 +68,10 @@ The first lock was compiled with an extra `-c constraints-pc.txt` (the `pip free
 ### 2. Generate Data & Train
 ```bash
 # 1. Generate Training Data
-python src/dataset/generate_chirp_dataset.py
+python -m gwd.data.generate
 
 # 2. Train the CNN model
-python src/dataset/train_cnn.py
+python -m gwd.training.train
 ```
 
 ### 3. Evaluate Results
@@ -82,6 +82,9 @@ python src/evaluate_model_with_roc.py
 # Optimize inference threshold
 python src/optimize_threshold.py
 ```
+
+### 4. Menu
+`python main.py` opens a menu with the data, training, and evaluation steps and two of the apps. It works from any folder: each entry runs in the project folder with the same Python, and the menu shows the exit code when a step fails.
 
 ## 🤝 Contribution
 Contributions are welcome! Please ensure that any structural or behavioral changes are strictly tied to synchronized documentation updates. All new code should be placed in the `src/` folder, and dependencies are declared in `pyproject.toml`.

@@ -8,20 +8,19 @@ import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "src")
-DATASET = os.path.join(SRC, "dataset")
 
 # Modules without TensorFlow, so the fast CI job can import them.
 LIGHT_MODULES = [
     "config",
     "gwd.config",
-    "generate_chirp_dataset",
-    "validate_dataset",
-    "fetch_real_noise",
+    "gwd.data.generate",
+    "gwd.data.validate",
+    "gwd.data.fetch_noise",
     "utils.evaluation",
     "show_leaderboard",
 ]
 TF_MODULES = [
-    "train_cnn",
+    "gwd.training.train",
     "evaluate_model_with_roc",
     "optimize_threshold",
     "compare_models_roc",
@@ -33,7 +32,7 @@ def import_in_empty_home(home, modules):
     code = "\n".join(
         [
             "import sys",
-            f"sys.path[:0] = [{ROOT!r}, {SRC!r}, {DATASET!r}]",
+            f"sys.path[:0] = [{ROOT!r}, {SRC!r}]",
             *(f"import {module}" for module in modules),
         ]
     )
@@ -66,7 +65,7 @@ def test_ensure_dirs_creates_nested_folders_and_is_idempotent(tmp_path):
 
 
 def test_importing_light_modules_creates_nothing(tmp_path):
-    pytest.importorskip("gwpy")  # fetch_real_noise imports it at module level.
+    pytest.importorskip("gwpy")  # gwd.data.fetch_noise imports it at module level.
     assert import_in_empty_home(tmp_path, LIGHT_MODULES) == []
 
 

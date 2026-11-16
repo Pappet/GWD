@@ -163,10 +163,9 @@ def _measure(output):
     if not home or Path(home).resolve() == REPO_ROOT:
         sys.exit("Refusing to measure: GWD_HOME must point to a temp dir.")
 
-    sys.path.insert(0, str(REPO_ROOT / "src" / "dataset"))
-    import generate_chirp_dataset as dataset  # Also puts src/ and the project root on sys.path.
     import numpy as np
 
+    import gwd.data.generate as dataset
     from gwd.core import interferometer, noise, waveforms
 
     if glob.glob(os.path.join(dataset.REAL_NOISE_DIR, "*.npy")):

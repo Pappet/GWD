@@ -1,14 +1,9 @@
 import os
-import sys
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # src/
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-)  # project root
 import numpy as np
 from gwpy.timeseries import TimeSeries
 
-from config import DATA_DIR_NOISE, ensure_dirs
+from gwd.config import DATA_DIR_NOISE, ensure_dirs
 
 # Output Ordner für das echte Rauschen
 OUTPUT_DIR = DATA_DIR_NOISE

@@ -5,17 +5,11 @@ Dieses Script überprüft die Qualität des generierten Datensatzes und erstellt
 umfassende Visualisierungen zur Analyse.
 
 Usage:
-    python validate_dataset.py [--data-folder gw_training_data]
+    python -m gwd.data.validate [--data-folder gw_training_data]
 """
 
-import os
-import sys
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))  # src/
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-)  # project root
 import argparse
+import os
 
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
@@ -23,7 +17,7 @@ import numpy as np
 import pandas as pd
 from scipy import signal
 
-from config import DATA_DIR_TRAIN, VALIDATION_DATASET_PLOTS_DIR, ensure_dirs
+from gwd.config import DATA_DIR_TRAIN, VALIDATION_DATASET_PLOTS_DIR, ensure_dirs
 
 
 def load_dataset_info(data_folder):
