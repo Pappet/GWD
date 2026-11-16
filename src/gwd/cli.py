@@ -160,14 +160,15 @@ APPS = {
 
 def _app(args):
     if args.app == "glitch-hunter":
-        # Its simulation mode draws signals through gwd.data.injection, so it needs
-        # PyCBC like the pipeline; check before the model loads (P5.2).
-        from gwd.config import WAVEFORM_BACKEND
-        from gwd.core.waveforms import check_backend
+        # It takes --model; without PyCBC it starts with the simulation off (P4.4).
+        from gwd.apps.glitch_hunter.app import main
 
-        check_backend(WAVEFORM_BACKEND)
+        return main(model=args.model or "latest")
+    if args.model is not None:
+        print("❌ --model is an option of glitch-hunter only.", file=sys.stderr)
+        return 2
 
-    # The apps start in their __main__ block; run it as python -m would.
+    # The other apps start in their __main__ block; run it as python -m would.
     import runpy
 
     runpy.run_module(APPS[args.app], run_name="__main__", alter_sys=True)
@@ -381,6 +382,11 @@ def build_parser():
         choices=list(APPS),
         help="waveform: waveform explorer; interferometer: interferometer designer; "
         "glitch-hunter: the CNN rates simulated or real data.",
+    )
+    app.add_argument(
+        "--model",
+        help=f"glitch-hunter only: the model for 'Ask AI', {MODEL_HELP}. "
+        "Default: latest; without any model, 'Ask AI' is off.",
     )
     app.set_defaults(handler=_app)
 
