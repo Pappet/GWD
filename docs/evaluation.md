@@ -2,7 +2,7 @@
 
 This document describes how GWD evaluates a trained CNN today: the commands, the test sets, the metrics, the plots, the threshold calibration, and the leaderboard. The scenarios and the SNR definition are in [architecture.md](architecture.md#scenarios-and-snr-definition-current-state-v1).
 
-> **Status:** Since P5.7 the simulated data is a fixed, hashed test set. The default, `stress_v1`, is `EVAL_V1`, which differs from the training data in noise, masses, and SNR range; `indist_v1` follows the training distribution (see "Test sets" and "Known limitations" below). The numbers these commands print describe that test set, not the detector performance on real data. No measured results are listed here.
+> **Status:** Since P5.7 the simulated data is a fixed, hashed test set. Without `--testset`, the set follows the model's training scenario (see "Default test set" below): `stress_v1` for V1 models, which is `EVAL_V1` and differs from the training data in noise, masses, and SNR range (`indist_v1` follows the V1 training distribution), and the in-distribution sets `indist_v2` and `indist_v3` for V2 and V3 models (see "Test sets" and "Known limitations" below). The numbers these commands print describe that test set, not the detector performance on real data. No measured results are listed here.
 
 ## Commands
 
@@ -11,10 +11,10 @@ This document describes how GWD evaluates a trained CNN today: the commands, the
 | `gwd eval build-testset` | Draws a fixed test set once, or loads and checks it if it exists | `data/eval/<set>_<seed>_<n>.npz`, `results/testsets/<set>_<seed>_<n>.json` |
 | `gwd eval thresholds` | Calibrates one model's threshold at FPR 1% on the part `calib_bg` of a fixed test set; shows six reference strategies on `test` | the threshold in the model's `.json` in `models_registry/`; one plot; `results/thresholds/<model name>.json` |
 | `gwd eval run` | ROC analysis of one model on a fixed test set at the model's threshold, also per bin; with `--real` also the field test on real data (network) | one plot with six panels; one row in `results/leaderboard_v2.csv` |
-| `gwd eval compare` | ROC curves of several models on the same fixed test set, each with its operating point at its own threshold | two plots |
+| `gwd eval compare` | ROC curves of several models on the same fixed test set, each with its operating point at its own threshold; models that cannot share a set are compared in groups | two plots per group |
 | `gwd eval leaderboard` | Prints leaderboard v2, one table per test set, best ROC AUC first | nothing |
 
-`run`, `thresholds`, and `compare` take `--model` with `latest` (the newest timestamp in the name), a model name in `models_registry/`, or a path to a `.keras` file; `compare` takes it more than once and compares all models without it. All three and `build-testset` take `--testset` (`stress_v1`, the default, `indist_v1`, since P6.2 `indist_v2` or `stress_v2`, and since P6.6 `indist_v3` or `stress_v3`), `--seed` (default 0), and `--n` (default 1000), which name the test set; the same three values always give the same samples, and the first command that needs a set builds it. `build-testset` also accepts `--scenario` for `--testset` and takes `--rebuild` to draw a set again. `gwd eval run` runs offline; `--real` adds the field test, which downloads from GWOSC (decision D10: the field test is optional). `gwd eval thresholds --no-save` writes neither the threshold nor the JSON file. Since P6.6 the data follow the model's preprocessing (see "Preprocessing follows the model" below): `run`, `thresholds`, and `compare` score a model trained with whitening on the V3 counterpart of a V2 set, and a model without whitening on the V2 counterpart of a V3 set. An unknown model, and a cached test set that does not match its hash or is stale, end the command with exit code 1; a negative `--seed` or an `--n` below 2 with exit code 2.
+`run`, `thresholds`, and `compare` take `--model` with `latest` (the newest timestamp in the name), a model name in `models_registry/`, or a path to a `.keras` file; `compare` takes it more than once and compares all models without it. All three and `build-testset` take `--testset` (`stress_v1`, `indist_v1`, since P6.2 `indist_v2` or `stress_v2`, and since P6.6 `indist_v3` or `stress_v3`; the default of `build-testset` is `stress_v1`, that of the other three follows the model, see "Default test set" below), `--seed` (default 0), and `--n` (default 1000), which name the test set; the same three values always give the same samples, and the first command that needs a set builds it. `build-testset` also accepts `--scenario` for `--testset` and takes `--rebuild` to draw a set again. `gwd eval run` runs offline; `--real` adds the field test, which downloads from GWOSC (decision D10: the field test is optional). `gwd eval thresholds --no-save` writes neither the threshold nor the JSON file. Since P6.6 the data follow the model's preprocessing (see "Preprocessing follows the model" below): `run`, `thresholds`, and `compare` score a model trained with whitening on the V3 counterpart of a V2 set, and a model without whitening on the V2 counterpart of a V3 set. An unknown model, and a cached test set that does not match its hash or is stale, end the command with exit code 1; a negative `--seed` or an `--n` below 2 with exit code 2.
 
 ```bash
 gwd eval build-testset --testset indist_v1 --seed 7 --n 64
@@ -43,7 +43,24 @@ Since P5.7 every simulated number comes from a fixed test set of `gwd.evaluation
 | `indist_v3` | `INDIST_V3`: the samples of `indist_v2`, whitened | as `indist_v2`, whitened with the aLIGO PSD before the band-pass | random, 5–100 M☉ | optimal 4–20 | 8, of width 2 |
 | `stress_v3` | `STRESS_V3`: the samples of `stress_v2`, whitened | as `indist_v3` | random, 5–100 M☉ | optimal 2–20 | 9, of width 2; 2–4 lies below the training range |
 
-The V2 and V3 sets need gwpy and PyCBC; the scenarios are described in [architecture.md](architecture.md#scenarios-and-snr-definition-current-state-v1). The default stays `stress_v1` until P6.5.
+The V2 and V3 sets need gwpy and PyCBC; the scenarios are described in [architecture.md](architecture.md#scenarios-and-snr-definition-current-state-v1).
+
+### Default test set
+
+Without `--testset`, `gwd eval run`, `gwd eval thresholds`, and `gwd eval compare` take the set of the model's training scenario (`gwd.evaluation.testsets.default_for_model`, `DEFAULT_TESTSET_BY_VERSION` in `gwd.config`). They read the scenario from the model's `.json` through the registry (`gwd.data.scenarios.training_scenario`): the key `dataset_scenario`, which `gwd train` writes for file training (from the dataset's `manifest.json`) and for online training alike, or else `online` → `scenario`. They print the set and the reason, for example `Test set: indist_v3 (no --testset given; the model was trained on TRAIN_V3, a V3 scenario)`.
+
+| Training scenario | Default set | Why |
+|---|---|---|
+| V2 (`TRAIN_V2`) | `indist_v2` | the model's own distribution: a threshold calibrated on its `calib_bg` holds its false alarm rate on the noise the model was trained for, and `run` scores the model on the set its threshold comes from |
+| V3 (`TRAIN_V3`) | `indist_v3` | as V2, with the whitening the model was trained with |
+| V1 (`TRAIN_V1`, `EVAL_V1`, `APP_V1`) | `stress_v1` | unchanged, so the numbers and thresholds of V1 models stay comparable with all before; `indist_v1` also depends on the local noise chunks |
+| none: no `.json`, a model from before P4.1, `unknown (v1)`, or an unknown name | `stress_v1` | such a model was trained on V1 data; if it records `preprocessing: whiten_bandpass`, `indist_v3` |
+
+All three commands use the in-distribution set, not the stress set, so `run` scores a model on the set its default threshold was calibrated on; `--testset stress_v2` or `stress_v3` adds the extrapolation bin. An explicit `--testset` always wins; `gwd eval thresholds` then names the model's default set if it is another one.
+
+`gwd eval thresholds --save` (the default) refuses with exit code 1, before it builds a set or loads the model, when the set has another preprocessing than the model and no counterpart with it: a V1 set for a whitening model. A threshold from data the model was not trained for does not hold on its own data. `--no-save` still runs it, with the warning.
+
+`gwd eval compare` cannot score models with different training scenarios on one set. Without `--testset` it gives each model its default set and compares the models in groups of sets that share their samples: `indist_v2` and `indist_v3` are one group (the same events, each model with its own preprocessing), `stress_v1` is another. Each group gets its own plots and ranking; a group with one model is only listed. With `--testset`, a model that neither the set nor its counterpart can give its preprocessing is left out with the reason.
 
 A V3 set draws from the random streams of its V2 counterpart (`EvalSet.stream`): with the same seed and n, `indist_v3` holds the same labels, signal parameters, and noise realizations as `indist_v2`, and `stress_v3` as `stress_v2`; only the preprocessing differs (`tests/data/test_scenario_v3.py`). So a V2 and a V3 model can be compared per optimal SNR bin on the same physical events, each with its own preprocessing. The SHA-256 of a V3 set differs from that of its V2 counterpart, because the arrays differ; its manifest names the stream and the preprocessing.
 
@@ -102,7 +119,7 @@ Since P6.6 the real data get the model's preprocessing. For a model trained with
 Since P6.6 a model records in its `.json` what its input went through: `preprocessing` is `bandpass` (notches and band-pass: `TRAIN_V1`, `TRAIN_V2`, and datasets without a manifest) or `whiten_bandpass` (`TRAIN_V3`). `gwd.data.scenarios.preprocessing_of` reads it back through the registry; a model without the key, such as every model trained before P6.6, gets the preprocessing of its `dataset_scenario` if that is a known scenario, else `bandpass`, which is what it always got. A model trained online (`gwd train --online`, since P6.7) has no dataset, so its `dataset_hash` is null, but it records `preprocessing` and `dataset_scenario` (the scenario it drew from) like any other model, so the same rules apply. Every command that gives a model data picks it from there:
 
 - `gwd eval run` and `gwd eval thresholds` print `Preprocessing of the model: ...`. If the named set has another preprocessing and a counterpart with the same draws exists, they use the counterpart and say so: `--testset indist_v2` scores a whitening model on `indist_v3`, and `--testset indist_v3` scores a model without whitening on `indist_v2`. The leaderboard row and the threshold record name the set that was used. A V1 set has no whitened counterpart; a whitening model scored on it gets a warning.
-- `gwd eval compare` builds the named set and, if a model needs it, its counterpart, checks that both have the same labels, and scores each model on the one with its preprocessing; the plot title names both sets.
+- `gwd eval compare` builds the set and, if a model needs it, its counterpart, checks that both have the same labels, and scores each model on the one with its preprocessing; the plot title names both sets. A model that the set cannot give its preprocessing is left out (see "Default test set" above).
 - The field test (`--real`) whitens the real data for a whitening model, as described above.
 - The Glitch Hunter whitens its real data for a whitening model, and its simulation starts in the scenario version the model was trained on.
 
@@ -119,7 +136,7 @@ The plots go to `plots/evaluation_models/`, and every command prints the path of
 
 `gwd eval thresholds` writes `plot_optimize_threshold_<model name>_<timestamp>.png`, titled with the model: the ROC curve on `test` with a star at the calibrated threshold and the point of every reference strategy, TPR, FPR, and Youden's J against the threshold, and a table of the calibrated threshold and the strategies.
 
-`gwd eval compare` writes `plot_compare_roc_<timestamp>.png` with the ROC curves of all models, titled with the test set, each with a star at its operating point at its own threshold, and a bar chart of their AUCs, and `plot_compare_roc_<timestamp>_zoom.png` with the region FPR ≤ 0.1. Each model has the same color in both plots. The printed ranking, by ROC AUC, lists the TPR of each model at its threshold with the FPR it reached.
+`gwd eval compare` writes, per group of models, `plot_compare_roc_<timestamp>_<set>.png` with the ROC curves of its models, titled with the test set, each with a star at its operating point at its own threshold, and a bar chart of their AUCs, and `plot_compare_roc_<timestamp>_<set>_zoom.png` with the region FPR ≤ 0.1; `<set>` is the set the group was compared on. Each model has the same color in both plots. The printed ranking, by ROC AUC, lists the TPR of each model at its threshold with the FPR it reached.
 
 ## Threshold calibration
 
@@ -199,7 +216,7 @@ There is no valid Matched Filter baseline. The script that computed it was delet
 
 ## Known limitations
 
-- `stress_v1` (`EVAL_V1`, the default) uses white noise, fixed 30/30 M☉ masses, and a peak SNR of 0.5–2.5, while the training data has up to 80% real noise, random masses, and a peak SNR of 1–12 (`DATA-1`, `EVAL-1`, `EVAL-2`, `EVAL-3`). Since P5.7 `indist_v1` evaluates on the training distribution, and the metrics per bin mark the extrapolation. The full list is under "Known skews" in [architecture.md](architecture.md#scenarios-and-snr-definition-current-state-v1).
+- `stress_v1` (`EVAL_V1`, the default for V1 models) uses white noise, fixed 30/30 M☉ masses, and a peak SNR of 0.5–2.5, while the training data has up to 80% real noise, random masses, and a peak SNR of 1–12 (`DATA-1`, `EVAL-1`, `EVAL-2`, `EVAL-3`). Since P5.7 `indist_v1` evaluates on the training distribution, and the metrics per bin mark the extrapolation. The full list is under "Known skews" in [architecture.md](architecture.md#scenarios-and-snr-definition-current-state-v1).
 - The threshold is calibrated on the noise of one test set. On a set with other noise (for example `indist_v1`, mostly real noise, with a threshold from `stress_v1`, white noise) its FPR can be far from 1%; `fpr_achieved` shows the rate it reached.
 - With 1000 `calib_bg` samples, the reached FPR has a statistical uncertainty of about ±0.3 percentage points; the false alarm rate at very low FPR (below 1 in 1000) cannot be calibrated with this set.
 - Rows of the old leaderboard written before P4.3 have field test values from unpadded windows, counted with score > 0.15, with failed downloads counted as missed (`0/5`), and a false alarm rate per year (`< 157788.0/y`). They cannot be compared with newer rows.
