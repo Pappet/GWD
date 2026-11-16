@@ -289,7 +289,7 @@ Each step PR ticks its own step, so a tick takes effect when that PR is merged.
 | [x] | P5.2 | Explicit waveform backend, no silent fallback in the pipeline | #38 |
 | [x] | P5.3 | Core details: `time_axis`, `rng`, `t_merger` check, constants, dead code | #40 |
 | [x] | P5.4 | Correct noise normalization; interferometer as an honest learning model | #42 |
-| [ ] | P5.5 | Name and measure SNR honestly: `peak_snr` and `optimal_snr` | |
+| [x] | P5.5 | Name and measure SNR honestly: `peak_snr` and `optimal_snr` | #43 |
 | [x] | P5.6 | Training: grouped three-way split, seeds, float32, full metadata | #41 |
 | [ ] | P5.7 | Fixed, hashed test sets; metrics per SNR bin, mass bin, and noise type | |
 | [ ] | P5.8 | Per-model threshold at fixed FPR; leaderboard v2 with raw numbers | |
