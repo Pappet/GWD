@@ -420,16 +420,19 @@ def build_parser():
 
     thresholds = eval_commands.add_parser(
         "thresholds",
-        help="Find detection thresholds for one model.",
-        description="Find detection thresholds for one model from its ROC curve on a "
-        "fixed test set and save them in results/optimal_thresholds.json.",
+        help="Calibrate one model's detection threshold at FPR 1%%.",
+        description="Calibrate one model's detection threshold on the noise-only part "
+        "calib_bg of a fixed test set, at a false alarm rate of 1%, and save it in the "
+        "model's metadata in models_registry/, where gwd eval run, gwd eval compare, "
+        "and the Glitch Hunter read it. Also writes results/optimal_thresholds.json.",
     )
     _add_model(thresholds)
     thresholds.add_argument(
         "--save",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Save the thresholds. Default: --save.",
+        help="Save the threshold in the model's metadata and the report. "
+        "Default: --save.",
     )
     _add_testset(thresholds)
     thresholds.set_defaults(handler=_eval_thresholds)
