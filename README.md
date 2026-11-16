@@ -1,38 +1,64 @@
 # Gravitational Wave Detection (GWD)
 
-## 📌 High Level Project Overview
-The **Gravitational Wave Detection (GWD)** project is an advanced, machine-learning-based signal processing pipeline designed to detect gravitational waves in simulated noisy streams. With recent additions, the project offers professional-grade signal processing metrics (ROC analysis) and baseline physics comparisons (Matched Filter, currently not available) aiming for scientifically comparable evaluations found in modern astrophysics papers.
+GWD trains a convolutional neural network (CNN) to detect gravitational wave chirps from binary black hole mergers in 4 s of detector noise, and evaluates it with ROC metrics on simulated data and on a few real events from GWOSC. It also has three interactive apps for learning: a waveform explorer, an interferometer designer, and the Glitch Hunter, in which the CNN rates simulated or real data.
 
-> **Status:** Simulation metrics are currently of limited significance (train/eval skew, peak SNR, no seeds). The cleanup plan is in [docs/aufraeumen/PLAN.md](docs/aufraeumen/PLAN.md) (in German).
+> **Status:** The project is being cleaned up. The simulated metrics are of limited significance: training and evaluation draw from different distributions, the SNR is a peak amplitude ratio, and there is no Matched Filter baseline. [docs/architecture.md](docs/architecture.md) describes the target structure, the open decisions, and the progress; the detailed plan is in [docs/aufraeumen/PLAN.md](docs/aufraeumen/PLAN.md) (in German).
 
-## ✨ Features
-- **Machine Learning Detection:** Train Convolutional Neural Networks (CNNs) to classify gravitational wave chirps within noisy data streams.
-- **Physics Baseline Comparison (currently not available):** There is currently no valid Matched Filtering baseline, so `Physik_Gap` in the leaderboard is always `-`.
-- **Advanced Evaluation (ROC):** Comprehensive Area Under the ROC Curve (ROC AUC) analysis, threshold-independent scoring, Operating Point analyses, and Precision-Recall evaluation.
-- **Threshold Optimization:** Automated tools to find the optimal detection threshold based on cost, fixed FPR/TPR, or F1-Score.
-- **Multi-Model Comparison:** Visually and quantitatively compare multiple trained models.
-- **Scientific Visualizations:** Export publication-ready figures representing SNR distribution, sensitivity curves, and more.
+## Components
 
-## 🚀 Quickstart Guide
+Everything is in one package, `gwd`, in `src/gwd/`. The pipeline runs from left to right:
 
-### 1. Installation
+```text
+core  ->  data  ->  training  ->  evaluation
+              \        |            /
+               '--- registry ------'
+apps: use core, data, and registry      cli: the gwd command      main.py: menu
+```
+
+| Component | Folder | What it does |
+|---|---|---|
+| core | `src/gwd/core/` | Physics: waveforms (PyCBC, or a Newtonian approximation without it), noise, the interferometer learning model, a time domain simulator. No file or network access. |
+| data | `src/gwd/data/` | Scenarios, signal injection, conditioning and normalization, GWOSC access, dataset generation with a manifest, validation, the noise download. |
+| training | `src/gwd/training/` | The CNN and its training. |
+| evaluation | `src/gwd/evaluation/` | ROC evaluation, threshold strategies, model comparison, the leaderboard. |
+| registry | `src/gwd/registry.py` | Finds, selects, and loads models in `models_registry/`, and reads and writes their metadata. |
+| apps | `src/gwd/apps/` | The three apps; they only draw and interact. |
+| cli | `src/gwd/cli.py`, `src/gwd/env.py` | The `gwd` command and `gwd env`. |
+| menu | `main.py` | A text menu that runs `gwd` commands. |
+
+[docs/architecture.md](docs/architecture.md) has the import rules between the components, which `tests/test_architecture.py` enforces.
+
+## Installation
+
 GWD needs Python 3.11 or newer. Use Linux or WSL: PyCBC, the waveform backend, is not available on Windows.
 
 ```bash
-# Provide a fresh virtual environment
+# A fresh virtual environment
 python -m venv .venv
 source .venv/bin/activate
 
-# Install the package with all extras and the development tools
+# The package with all extras and the development tools
 pip install -e '.[all,dev]'
 
-# Check the environment, the active waveform backend, and the resolved paths
+# Check the environment, the waveform backend, the paths, and the GUI backend
 gwd env
 ```
 
-The extras are `physics` (pycbc), `gwdata` (gwpy), `ml` (tensorflow), `dev` (pytest, ruff), and `all` (physics, gwdata, ml). For an NVIDIA GPU, TensorFlow also offers `pip install 'tensorflow[and-cuda]'`; this project does not install it for you.
+The base install has numpy, scipy, pandas, matplotlib, scikit-learn, and tabulate. The extras add what single commands need:
 
-#### Reproducible environment (lockfile)
+| Extra | Installs | Needed for |
+|---|---|---|
+| `physics` | pycbc (not on Windows) | PyCBC waveforms. Without it, `gwd.core` uses a Newtonian approximation, and `gwd data generate` and `gwd eval run` warn about it. |
+| `gwdata` | gwpy | `gwd data fetch-noise`, the field test of `gwd eval run`, and real data in the Glitch Hunter |
+| `ml` | tensorflow | `gwd train`, `gwd eval run`, `gwd eval thresholds`, `gwd eval compare`, and the Glitch Hunter |
+| `dev` | pytest, ruff | Tests and linting |
+| `all` | `physics`, `gwdata`, and `ml` | |
+
+For an NVIDIA GPU, TensorFlow offers `pip install 'tensorflow[and-cuda]'`; this project does not install it for you. Without a GPU, training runs on the CPU, by default in float32.
+
+**GUI backend.** The apps open matplotlib windows and need an interactive backend such as TkAgg. Tk is a system package: `sudo apt install python3-tk` on Debian and Ubuntu, `sudo dnf install python3-tkinter` on Fedora. On WSL, windows need WSLg (`wsl --update`). `gwd env` shows the backend in use. Without an interactive backend, for example with `MPLBACKEND=Agg`, an app exits with code 2 and says what to install.
+
+### Reproducible environment (lockfile)
 
 `requirements-linux-py312.lock` pins every package, including TensorFlow and PyCBC, to the versions the models were trained and the golden test values were recorded with. It is valid for Linux and Python 3.12 only. Install from it in a fresh virtual environment:
 
@@ -43,7 +69,7 @@ pip install -e . --no-deps
 
 CI installs from the same file: the fast job with `-c requirements-linux-py312.lock` (everything except TensorFlow), the slow job with `-r` as above. CI also fails if `pyproject.toml` and the lock disagree.
 
-#### Updating the lockfile
+### Updating the lockfile
 
 The lock is compiled with [uv](https://docs.astral.sh/uv/), on Linux, from `pyproject.toml` with all extras. Update it in the same commit as the change to `pyproject.toml`:
 
@@ -61,29 +87,41 @@ uv pip compile pyproject.toml --all-extras --python-version 3.12 \
 diff <(grep -E '^[^ #]' requirements-linux-py312.lock) /tmp/lock-check.txt
 ```
 
-Avoid `--upgrade` for everything: newer numpy, pandas, TensorFlow, or PyCBC versions can change the golden values and the behavior of the trained models. After any update, install the new lock in a fresh virtual environment and run all tests with `GWD_REQUIRE_PYCBC=1 python -m pytest`. If golden values change, update them only in a separate `golden:` commit that states the reason (see `AGENTS.md`).
+Avoid `--upgrade` for everything: newer numpy, pandas, TensorFlow, or PyCBC versions can change the golden values and the behavior of the trained models. After any update, install the new lock in a fresh virtual environment and run all tests with `GWD_REQUIRE_PYCBC=1 python -m pytest`. If golden values change, update them only in a separate `golden:` commit that states the reason (see [AGENTS.md](AGENTS.md)).
 
 The first lock was compiled with an extra `-c constraints-pc.txt` (the `pip freeze` of the PC training environment without the `nvidia-*` packages, not in the repository), so its versions match that environment. The commands above keep those versions without the file. The first update rewrites the header and drops the `-c constraints-pc.txt` notes from the file; that is expected.
 
-Every step below is a `gwd` command; `gwd --help` and `gwd <command> --help` list the options. `python main.py` opens a menu that runs the same commands.
+## Usage
 
-### 2. Generate Data & Train
+Every step is a `gwd` command; `gwd --help` and `gwd <command> --help` list the options. Exit codes: 0 on success, 1 when a command fails (for example an unknown model or a missing dataset), 2 for invalid arguments and for an app without a window, 130 on Ctrl+C.
+
+### 1. Data
+
 ```bash
-# 1. Generate training data (--seed makes it reproducible, --n sets the number of samples)
+# Optional: download real H1 noise from GWOSC and cut it into chunks (network).
+# Overwrites chunks of the same name in data/noise_background/.
+gwd data fetch-noise
+
+# Generate training data (--seed makes it reproducible, --n sets the number of samples)
 gwd data generate --seed 1
 
-# 2. Check the dataset
+# Check the dataset and plot its distributions
 gwd data validate
-
-# 3. Train the CNN model
-gwd train
 ```
 
-`gwd data generate` and `gwd eval run` start with a line `Backend: ... | Noise: ...` that names the waveform backend (`pycbc <version>` or `newton`) and the noise. Without PyCBC, or without real noise chunks in `data/noise_background/` (download them with `gwd data fetch-noise`), they print a warning on stderr. The dataset folder gets a `manifest.json` with the scenario, seed, backend, package versions, Git commit, and the share of real noise; `labels.csv` names the backend, the noise source (`real` or `gaussian`), and the noise chunk of every sample.
+`gwd data generate` and `gwd eval run` start with a line `Backend: ... | Noise: ...` that names the waveform backend (`pycbc <version>` or `newton`) and the noise. Without PyCBC, or without real noise chunks in `data/noise_background/`, they print a warning on stderr. The dataset folder gets a `manifest.json` with the scenario, seed, backend, package versions, Git commit, and the share of real noise; `labels.csv` names the backend, the noise source (`real` or `gaussian`), and the noise chunk of every sample. `gwd data validate` exits with code 1 if the dataset is not fit for training.
 
-`gwd train` takes the defaults `EPOCHS`, `BATCH_SIZE`, `LEARNING_RATE`, and `EARLY_STOPPING_PATIENCE` from `src/gwd/config.py`; `--epochs`, `--batch-size`, `--lr`, and `--patience` override them for one run. It trains with mixed precision (`mixed_float16`) only if TensorFlow finds a GPU, otherwise in float32; `--mixed-precision` forces it. It prints the precision it chose in a `Precision:` line. The model's `.json` records the epochs it really trained, the seed, and the SHA-256, backend, and real noise share of the dataset's `manifest.json`; a dataset without a manifest (generated before this change) is recorded as `unknown (v1)`. Without a dataset, `gwd train` exits with code 1 and tells you to run `gwd data generate` first.
+### 2. Training
 
-### 3. Evaluate Results
+```bash
+gwd train
+gwd train --epochs 10 --seed 1
+```
+
+`gwd train` takes the defaults `EPOCHS`, `BATCH_SIZE`, `LEARNING_RATE`, and `EARLY_STOPPING_PATIENCE` from `src/gwd/config.py`; `--epochs`, `--batch-size`, `--lr`, and `--patience` override them for one run. It trains with mixed precision (`mixed_float16`) only if TensorFlow finds a GPU, otherwise in float32; `--mixed-precision` forces it. It prints the precision it chose in a `Precision:` line. The model goes to `models_registry/gwd_model_YYYYMMDD-HHMMSS.keras`, with a `.json` next to it that records the epochs it really trained, the seed, and the SHA-256, backend, and real noise share of the dataset's `manifest.json`; a dataset without a manifest is recorded as `unknown (v1)`. Without a dataset, `gwd train` exits with code 1 and tells you to run `gwd data generate` first.
+
+### 3. Evaluation
+
 ```bash
 # ROC evaluation of the latest model; --no-real skips the real data field test (network)
 gwd eval run
@@ -98,14 +136,17 @@ gwd eval compare
 gwd eval leaderboard
 ```
 
-The latest model is the one with the newest timestamp in its name, `gwd_model_YYYYMMDD-HHMMSS.keras`; other `.keras` files are ordered by their modification time, with a warning. `gwd eval run`, `gwd eval thresholds`, and `gwd eval compare` take `--model` with `latest`, a model name, or a path to a `.keras` file; `compare` takes it more than once:
+The latest model is the one with the newest timestamp in its name, `gwd_model_YYYYMMDD-HHMMSS.keras`; other `.keras` files are ordered by their modification time, with a warning. `gwd eval run`, `gwd eval thresholds`, and `gwd eval compare` take `--model` with `latest`, a model name, or a path to a `.keras` file; `compare` takes it more than once. `--seed` makes the simulated test set reproducible:
+
 ```bash
-gwd eval run --model gwd_model_20251205-232013
+gwd eval run --model gwd_model_20251205-232013 --seed 1
 gwd eval compare --model gwd_model_20251203-220536 --model latest
 ```
 
+[docs/evaluation.md](docs/evaluation.md) describes the test sets, the metrics, the plots, the threshold strategies, and the leaderboard columns.
+
 ### 4. Apps
-The apps open matplotlib windows. They need an interactive matplotlib backend such as TkAgg; `gwd env` shows the backend in use. Without one (for example with `MPLBACKEND=Agg`, or on WSL without WSLg), an app exits with code 2 and says what to install.
+
 ```bash
 # Glitch Hunter: the latest model in models_registry/ rates simulated data or real GWOSC data
 gwd app glitch-hunter
@@ -117,14 +158,59 @@ gwd app waveform
 gwd app interferometer
 ```
 
+The interferometer designer is a learning model, not a calibrated detector model. The Glitch Hunter needs a trained model and exits with code 1 without one.
+
 ### 5. Menu
+
 `python main.py` opens a menu with the data, training, and evaluation steps, the leaderboard, the three apps, and `gwd env`. Each entry runs the `gwd` command with its defaults. It works from any folder: each entry runs in the project folder with the same Python, and the menu shows the exit code when a step fails.
 
-## 🤝 Contribution
-Contributions are welcome! Please ensure that any structural or behavioral changes are strictly tied to synchronized documentation updates. All new code should be placed in the `gwd` package in `src/gwd/`, and dependencies are declared in `pyproject.toml`.
-Remember: **Never push directly to the `main` branch.** All changes must go through a Pull Request.
+## Data and paths
 
-## 📄 License
+All paths are below the project root, the folder with `pyproject.toml`. `gwd env` prints them.
+
+| Path | Content |
+|---|---|
+| `data/training/` | The training dataset: `sample_NNNNN.npy`, `labels.csv`, `manifest.json` |
+| `data/noise_background/` | Real noise chunks from `gwd data fetch-noise`, `real_noise_NNNN.npy` |
+| `models_registry/` | Trained models (`.keras`) and their metadata (`.json`) |
+| `results/` | `model_leaderboard.csv` and `optimal_thresholds.json` |
+| `plots/` | `validation_dataset/`, `training/`, and `evaluation_models/` |
+
+Git ignores all of these folders; they exist only on the machine that made them. The legacy paths `gw_noise_background/`, `gw_training_data/`, `./model_leaderboard.csv`, and `analysis/model_leaderboard.csv` come from before the cleanup. The code uses none of them, with one exception: if `results/model_leaderboard.csv` does not exist, `analysis/model_leaderboard.csv` is copied there once. Keep the legacy paths; ignored files cannot be restored from Git.
+
+`GWD_HOME` sets another project root, for example for tests or a second set of data: `GWD_HOME=/path/to/folder gwd env`. `gwd` then warns once on stderr that it uses `GWD_HOME`. Without it, the root is the nearest folder above `src/gwd/config.py` that contains a `pyproject.toml`.
+
+## Scenarios and SNR
+
+Training, evaluation, and the Glitch Hunter draw their samples from three named scenarios, `TRAIN_V1`, `EVAL_V1`, and `APP_V1`, which differ in noise, masses, and SNR range. The `snr` in `labels.csv` is the peak amplitude of the signal divided by the noise standard deviation, not a matched filter SNR. Both are described, with the known skews between them, in [docs/architecture.md](docs/architecture.md#scenarios-and-snr-definition-current-state-v1).
+
+## Tests
+
+```bash
+# Fast tests, before every commit
+python -m pytest -m 'not slow and not network'
+
+# All tests, before a pull request; needs network access for the network test
+python -m pytest
+```
+
+| Marker | Tests |
+|---|---|
+| `slow` | The full pipeline as `gwd` commands, and a few TensorFlow tests; minutes on a CPU |
+| `apps` | The apps under the Agg backend, without a window |
+| `golden` | Stored golden values of the waveforms (Newton and PyCBC), the noise, the SNR scaling, a small dataset, and the interferometer |
+| `network` | A real download from GWOSC |
+
+The smoke and golden tests run in a temporary `GWD_HOME`. Tests that need TensorFlow or gwpy are skipped without them. `GWD_REQUIRE_PYCBC=1` makes a missing PyCBC fail the PyCBC tests instead of skipping them. `tests/test_docs_commands.py` checks that every `gwd` command in this README and in `docs/` parses, and that every relative link works.
+
+CI (`.github/workflows/ci.yml`) runs on every push and pull request: the lockfile check, `ruff format --check . && ruff check .`, and `pytest -m 'not slow and not network and not apps'` with PyCBC but without TensorFlow. The slow, app, and golden tests run in a second job that is started by hand.
+
+## Contributing
+
+Put new code in the `gwd` package in `src/gwd/` and declare dependencies in `pyproject.toml`. Change the documentation in the same pull request as the behavior it describes. Work on a branch: CI must be green before a change is merged into `main`. [AGENTS.md](AGENTS.md) has the rules for commits, tests, data folders, and language.
+
+## License
+
 Copyright (C) 2025–2026 Peter Paprotny
 
 This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version (SPDX: `GPL-3.0-or-later`).
