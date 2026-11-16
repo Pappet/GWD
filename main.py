@@ -25,7 +25,7 @@ MENU = [
         "[EVAL]   Evaluate model + real data field test (network)",
         ["eval", "run", "--real"],
     ),
-    ("[EVAL]   Optimize threshold", ["eval", "thresholds"]),
+    ("[EVAL]   Calibrate threshold (FPR 1%, saved per model)", ["eval", "thresholds"]),
     ("[EVAL]   Compare models", ["eval", "compare"]),
     ("[EVAL]   Show leaderboard", ["eval", "leaderboard"]),
     ("[APP]    Glitch Hunter (interactive)", ["app", "glitch-hunter"]),

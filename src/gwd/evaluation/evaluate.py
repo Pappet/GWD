@@ -183,7 +183,7 @@ def bin_table(title, rows, value_format=".2f"):
 
 def print_binned_metrics(report, threshold):
     print(
-        f"\n   📋 Per bin (TPR at threshold {threshold}; the AUC of an SNR or mass "
+        f"\n   📋 Per bin (TPR at threshold {threshold:.4g}; the AUC of an SNR or mass "
         "bin is its signal samples against all noise samples):"
     )
     print(bin_table("Peak SNR", report["peak_snr"]))
