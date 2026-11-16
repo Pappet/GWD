@@ -145,10 +145,16 @@ def test_confusion_counts_with_one_predicted_class():
 def test_snr_at_rate():
     levels = np.linspace(0.0, 2.5, 6)
     assert metrics.snr_at_rate(levels, [0.1, 0.4, 0.5, 0.95, 1, 1], 0.5) == 1.0
-    assert metrics.snr_at_rate(levels, [0.1, 0.4, 0.5, 0.95, 1, 1], 0.9) == 1.5
+    # P5.8: linear interpolation between the levels around the crossing.
+    assert metrics.snr_at_rate(levels, [0.1, 0.4, 0.5, 0.95, 1, 1], 0.9) == (
+        pytest.approx(1.0 + 0.5 * 0.4 / 0.45)
+    )
     # 0.0 is a valid result, and None means that no level reaches the rate.
     assert metrics.snr_at_rate(levels, [0.6] * 6, 0.5) == 0.0
     assert metrics.snr_at_rate(levels, [0.1] * 6, 0.5) is None
+    # An empty bin (NaN) is skipped, not read as a rate of 0.
+    nan = float("nan")
+    assert metrics.snr_at_rate(levels, [0.0, nan, 1.0, 1, 1, 1], 0.5) == 0.5
 
 
 def test_format_snr():
