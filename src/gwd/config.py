@@ -57,8 +57,12 @@ TRAINING_PLOTS_DIR = os.path.join(ROOT_DIR, "plots/training")
 EVALUATION_MODELS_PLOTS_DIR = os.path.join(ROOT_DIR, "plots/evaluation_models")
 
 # File names
-LEADERBOARD_FILE = os.path.join(RESULTS_DIR, "model_leaderboard.csv")
+# Leaderboard v2 (P5.8): raw numbers, one row per gwd eval run, with the test set hash.
+LEADERBOARD_FILE = os.path.join(RESULTS_DIR, "leaderboard_v2.csv")
+# The 12-column leaderboards from before P5.8. Nothing writes them any more; they stay
+# as archives and can still be read (gwd.evaluation.leaderboard.read_legacy).
 LEGACY_LEADERBOARD_FILES = (
+    os.path.join(RESULTS_DIR, "model_leaderboard.csv"),
     os.path.join(ROOT_DIR, "analysis/model_leaderboard.csv"),
     os.path.join(ROOT_DIR, "model_leaderboard.csv"),
 )
@@ -93,6 +97,14 @@ NOISE_FETCH_SECONDS = 4096
 DEFAULT_TESTSET = "stress_v1"  # = EVAL_V1, comparable with the numbers before P5.7
 TESTSET_SEED = 0
 TESTSET_SIZE = 1000  # samples of the balanced part 'test'; calib_bg has as many
+
+# --- DETECTION THRESHOLD (P5.8, D10 = A) ---
+# gwd eval thresholds calibrates one threshold per model on the noise-only part calib_bg
+# of a test set, at this false alarm rate, and stores it in the model's metadata
+# (gwd.registry.set_threshold). evaluate, compare, and the Glitch Hunter read it with
+# gwd.registry.get_threshold; a model without one gets THRESHOLD_FALLBACK, with a warning.
+THRESHOLD_TARGET_FPR = 0.01
+THRESHOLD_FALLBACK = 0.5
 
 # --- TRAINING DEFAULTS ---
 # gwd train overrides them with --epochs, --batch-size, --lr, and --patience.

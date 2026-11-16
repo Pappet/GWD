@@ -34,13 +34,27 @@ def confusion_counts(y_true, y_scores, threshold):
 
 
 def snr_at_rate(snr_levels, rates, level):
-    """The first SNR whose detection rate reaches level, or None if none does.
+    """The SNR at which the detection rate reaches level, or None if no level does.
 
-    0.0 is a valid answer (a model that fires on pure noise), so test the result with
-    'is None', not for truth.
+    Linear interpolation between the last level below the rate and the first level that
+    reaches it (P5.8); if the first level with a rate already reaches it, that level.
+    Levels whose rate is NaN (an empty bin) are skipped. 0.0 is a valid answer (a model
+    that fires on pure noise), so test the result with 'is None', not for truth.
     """
-    reached = np.flatnonzero(np.asarray(rates) >= level)
-    return float(snr_levels[reached[0]]) if len(reached) else None
+    snr_levels = np.asarray(snr_levels, dtype=float)
+    rates = np.asarray(rates, dtype=float)
+    known = ~np.isnan(rates) & ~np.isnan(snr_levels)
+    snr_levels, rates = snr_levels[known], rates[known]
+    reached = np.flatnonzero(rates >= level)
+    if not len(reached):
+        return None
+    i = reached[0]
+    if i == 0:
+        return float(snr_levels[0])
+    low_snr, high_snr = snr_levels[i - 1], snr_levels[i]
+    low_rate, high_rate = rates[i - 1], rates[i]
+    share = (level - low_rate) / (high_rate - low_rate)
+    return float(low_snr + share * (high_snr - low_snr))
 
 
 def format_snr(snr):
@@ -146,6 +160,46 @@ def calculate_operating_point(y_true, y_scores, threshold):
     fpr = fp / (fp + tn) if (fp + tn) > 0 else 0
 
     return tpr, fpr
+
+
+def threshold_at_fpr(background_scores, target_fpr):
+    """The lowest threshold whose false alarm rate on noise-only scores is <= target_fpr.
+
+    background_scores are the scores of noise-only samples (the part calib_bg of a test
+    set); a score >= threshold is an alarm (predict_labels). The threshold is one of the
+    scores, so it is as low as the target allows and the TPR as high as it can be. If
+    even the highest score would exceed the target (target_fpr * n < 1, or ties at the
+    top), the threshold lies just above the highest score and nothing is detected.
+
+    Returns {"threshold", "fpr" (the rate actually reached on these scores), "n"}.
+    """
+    scores = np.asarray(background_scores, dtype=float).ravel()
+    n = len(scores)
+    if n == 0:
+        raise ValueError("No background scores to calibrate a threshold on.")
+    if not 0 <= target_fpr <= 1:
+        raise ValueError(f"target_fpr must lie in [0, 1], not {target_fpr}.")
+    allowed = int(np.floor(target_fpr * n + 1e-9))
+    candidates = np.unique(scores)  # ascending
+    # Alarms at each candidate: the scores >= it.
+    alarms = n - np.searchsorted(np.sort(scores), candidates, side="left")
+    ok = np.flatnonzero(alarms <= allowed)
+    if len(ok):
+        threshold = float(candidates[ok[0]])
+    else:
+        threshold = float(np.nextafter(scores.max(), np.inf))
+    fpr = detection_rate(scores, threshold)
+    return {"threshold": threshold, "fpr": fpr, "n": n}
+
+
+def rate_at(scores, threshold):
+    """(rate, n): the share of scores that reach threshold and how many there are.
+
+    The rate is None for no scores.
+    """
+    scores = np.asarray(scores)
+    n = int(len(scores))
+    return (detection_rate(scores, threshold) if n else None), n
 
 
 def finite_roc(fpr, tpr, thresholds):

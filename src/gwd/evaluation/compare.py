@@ -4,12 +4,16 @@ ROC comparison: several models on one test set, independent of a threshold.
 
 Run it with ``gwd eval compare``; it writes the comparison plot and a zoom on low FPR.
 Since P5.7 every model is scored on the part 'test' of one fixed, hashed test set
-(gwd.evaluation.testsets; --testset, --seed, --n, default stress_v1).
+(gwd.evaluation.testsets; --testset, --seed, --n, default stress_v1). Since P5.8 each
+model's curve also marks its operating point at its own threshold
+(gwd.registry.get_threshold), and the ranking, by ROC AUC, lists the TPR there with the
+FPR it reached.
 """
 
 import datetime
 import os
 import sys
+from typing import NamedTuple
 
 import matplotlib
 
@@ -25,17 +29,32 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from sklearn.metrics import auc, roc_curve
 
+from gwd import registry
 from gwd.evaluation import testsets
+from gwd.evaluation.metrics import calculate_operating_point
 from gwd.registry import list_models, load_model, model_name, resolve
 
 TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
+class Curve(NamedTuple):
+    """One model's ROC curve and its operating point at its own threshold."""
+
+    name: str
+    fpr: object
+    tpr: object
+    roc_auc: float
+    threshold: float
+    op_tpr: float
+    op_fpr: float
+
+
 def score_models(paths, X_test, y_true):
     """Load the models one after another and compute each ROC curve once.
 
-    Only one model is in memory at a time. Returns (name, fpr, tpr, roc_auc) per model that
-    loads, in the order of paths (oldest first when they come from list_models()).
+    Only one model is in memory at a time. Returns a Curve per model that loads, in the
+    order of paths (oldest first when they come from list_models()); its operating point
+    is at the model's threshold from gwd.registry.get_threshold.
     """
     curves = []
     for path in paths:
@@ -49,7 +68,13 @@ def score_models(paths, X_test, y_true):
         y_scores = model.predict(X_test, verbose=0).flatten()
         del model
         fpr, tpr, _ = roc_curve(y_true, y_scores)
-        curves.append((name, fpr, tpr, auc(fpr, tpr)))
+        threshold = registry.get_threshold(path)
+        op_tpr, op_fpr = calculate_operating_point(y_true, y_scores, threshold)
+        curves.append(
+            Curve(
+                name, fpr, tpr, auc(fpr, tpr), threshold, float(op_tpr), float(op_fpr)
+            )
+        )
     return curves
 
 
@@ -78,6 +103,20 @@ def save_plot(fig, filename):
     return path
 
 
+def mark_operating_point(ax, curve, color):
+    """A star at the model's operating point; not in the legend."""
+    ax.plot(
+        curve.op_fpr,
+        curve.op_tpr,
+        marker="*",
+        markersize=14,
+        color=color,
+        markeredgecolor="black",
+        linestyle="none",
+        label="_operating point",
+    )
+
+
 def compare_models_roc(curves, colors, title="ROC Curve Comparison"):
     """Plot all ROC curves and the AUC ranking. Returns the ranking, best first."""
 
@@ -85,14 +124,15 @@ def compare_models_roc(curves, colors, title="ROC Curve Comparison"):
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
 
-    for name, fpr, tpr, roc_auc in curves:
+    for curve in curves:
         ax1.plot(
-            fpr,
-            tpr,
-            color=colors[name],
+            curve.fpr,
+            curve.tpr,
+            color=colors[curve.name],
             lw=2,
-            label=f"{short_name(name)} (AUC={roc_auc:.3f})",
+            label=f"{short_name(curve.name)} (AUC={curve.roc_auc:.3f})",
         )
+        mark_operating_point(ax1, curve, colors[curve.name])
 
     # Random classifier line
     ax1.plot([0, 1], [0, 1], "k--", lw=1, alpha=0.5, label="Random Classifier")
@@ -105,7 +145,7 @@ def compare_models_roc(curves, colors, title="ROC Curve Comparison"):
 
     # --- AUC Bar Chart ---
     auc_scores_sorted = sorted(
-        ((name, roc_auc) for name, _, _, roc_auc in curves),
+        ((curve.name, curve.roc_auc) for curve in curves),
         key=lambda x: x[1],
         reverse=True,
     )
@@ -152,18 +192,20 @@ def zoom_to_relevant_region(curves, colors):
 
     fig, ax = plt.subplots(figsize=(10, 8))
 
-    for name, fpr, tpr, roc_auc in curves:
+    for curve in curves:
         # Plot only FPR <= 0.1
-        mask = fpr <= 0.1
+        mask = curve.fpr <= 0.1
         ax.plot(
-            fpr[mask],
-            tpr[mask],
-            color=colors[name],
+            curve.fpr[mask],
+            curve.tpr[mask],
+            color=colors[curve.name],
             lw=2,
             marker="o",
             markersize=3,
-            label=f"{short_name(name)} (AUC={roc_auc:.3f})",
+            label=f"{short_name(curve.name)} (AUC={curve.roc_auc:.3f})",
         )
+        if curve.op_fpr <= 0.1:
+            mark_operating_point(ax, curve, colors[curve.name])
 
     ax.set_xlabel("False Positive Rate", fontsize=12, fontweight="bold")
     ax.set_ylabel("True Positive Rate", fontsize=12, fontweight="bold")
@@ -227,7 +269,7 @@ def run(models=None, testset=DEFAULT_TESTSET, seed=TESTSET_SEED, n=TESTSET_SIZE)
         return 0
 
     print(f"\n✅ {len(curves)} models loaded.")
-    colors = model_colors([name for name, *_ in curves])
+    colors = model_colors([curve.name for curve in curves])
 
     # 4. Compare
     rankings = compare_models_roc(
@@ -238,8 +280,18 @@ def run(models=None, testset=DEFAULT_TESTSET, seed=TESTSET_SEED, n=TESTSET_SIZE)
     print("\n" + "=" * 70)
     print("📊 FINAL RANKING:")
     print("=" * 70)
+    by_name = {curve.name: curve for curve in curves}
+    n_signal, n_noise = int((y_true == 1).sum()), int((y_true == 0).sum())
+    print(
+        f"  Ranked by ROC AUC. TPR at each model's threshold (★ in the plots), on n "
+        f"{n_signal} signal, at the FPR it reached on n {n_noise} noise samples."
+    )
     for i, (name, auc_val) in enumerate(rankings, 1):
-        print(f"  {i}. {name[:50]:<50s} | AUC: {auc_val:.4f}")
+        curve = by_name[name]
+        print(
+            f"  {i}. {name[:40]:<40s} | AUC: {auc_val:.4f} | TPR {curve.op_tpr:6.1%} "
+            f"at FPR {curve.op_fpr:6.2%} | threshold {curve.threshold:.4g}"
+        )
     print("=" * 70)
 
     # 6. Bonus: Zoom

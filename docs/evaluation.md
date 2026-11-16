@@ -1,6 +1,6 @@
 # Evaluation
 
-This document describes how GWD evaluates a trained CNN today: the commands, the test sets, the metrics, the plots, the threshold strategies, and the leaderboard. The scenarios and the SNR definition are in [architecture.md](architecture.md#scenarios-and-snr-definition-current-state-v1).
+This document describes how GWD evaluates a trained CNN today: the commands, the test sets, the metrics, the plots, the threshold calibration, and the leaderboard. The scenarios and the SNR definition are in [architecture.md](architecture.md#scenarios-and-snr-definition-current-state-v1).
 
 > **Status:** Since P5.7 the simulated data is a fixed, hashed test set. The default, `stress_v1`, is `EVAL_V1`, which differs from the training data in noise, masses, and SNR range; `indist_v1` follows the training distribution (see "Test sets" and "Known limitations" below). The numbers these commands print describe that test set, not the detector performance on real data. No measured results are listed here.
 
@@ -9,19 +9,19 @@ This document describes how GWD evaluates a trained CNN today: the commands, the
 | Command | What it does | Writes |
 |---|---|---|
 | `gwd eval build-testset` | Draws a fixed test set once, or loads and checks it if it exists | `data/eval/<set>_<seed>_<n>.npz`, `results/testsets/<set>_<seed>_<n>.json` |
-| `gwd eval run` | ROC analysis of one model on a fixed test set, also per bin; with `--real` also the field test on real data (network) | one plot with six panels; one leaderboard row for `stress_v1` |
-| `gwd eval thresholds` | Six threshold strategies from the ROC curve of one model | one plot, `results/optimal_thresholds.json` |
-| `gwd eval compare` | ROC curves of several models on the same fixed test set | two plots |
-| `gwd eval leaderboard` | Prints the leaderboard, best ROC AUC first | nothing |
+| `gwd eval thresholds` | Calibrates one model's threshold at FPR 1% on the part `calib_bg` of a fixed test set; shows six reference strategies on `test` | the threshold in the model's `.json` in `models_registry/`; one plot; `results/optimal_thresholds.json` |
+| `gwd eval run` | ROC analysis of one model on a fixed test set at the model's threshold, also per bin; with `--real` also the field test on real data (network) | one plot with six panels; one row in `results/leaderboard_v2.csv` |
+| `gwd eval compare` | ROC curves of several models on the same fixed test set, each with its operating point at its own threshold | two plots |
+| `gwd eval leaderboard` | Prints leaderboard v2, one table per test set, best ROC AUC first | nothing |
 
-`run`, `thresholds`, and `compare` take `--model` with `latest` (the newest timestamp in the name), a model name in `models_registry/`, or a path to a `.keras` file; `compare` takes it more than once and compares all models without it. All three and `build-testset` take `--testset` (`stress_v1`, the default, or `indist_v1`), `--seed` (default 0), and `--n` (default 1000), which name the test set; the same three values always give the same samples, and the first command that needs a set builds it. `build-testset` also accepts `--scenario` for `--testset` and takes `--rebuild` to draw a set again. `gwd eval run` runs offline; `--real` adds the field test, which downloads from GWOSC (decision D10: the field test is optional). `gwd eval thresholds --no-save` does not write the JSON file. An unknown model, and a cached test set that does not match its hash or is stale, end the command with exit code 1; a negative `--seed` or an `--n` below 2 with exit code 2.
+`run`, `thresholds`, and `compare` take `--model` with `latest` (the newest timestamp in the name), a model name in `models_registry/`, or a path to a `.keras` file; `compare` takes it more than once and compares all models without it. All three and `build-testset` take `--testset` (`stress_v1`, the default, or `indist_v1`), `--seed` (default 0), and `--n` (default 1000), which name the test set; the same three values always give the same samples, and the first command that needs a set builds it. `build-testset` also accepts `--scenario` for `--testset` and takes `--rebuild` to draw a set again. `gwd eval run` runs offline; `--real` adds the field test, which downloads from GWOSC (decision D10: the field test is optional). `gwd eval thresholds --no-save` writes neither the threshold nor the JSON file. An unknown model, and a cached test set that does not match its hash or is stale, end the command with exit code 1; a negative `--seed` or an `--n` below 2 with exit code 2.
 
 ```bash
 gwd eval build-testset --testset indist_v1 --seed 7 --n 64
+gwd eval thresholds --model latest
 gwd eval run --model latest --seed 1
 gwd eval run --testset indist_v1
 gwd eval run --real
-gwd eval thresholds --seed 1
 gwd eval compare --model gwd_model_20251203-220536 --model latest --seed 1
 gwd eval leaderboard
 ```
@@ -47,7 +47,7 @@ Every later command with the same set, seed, and n loads the file instead (a cac
 Each set has two parts, each drawn from its own random stream:
 
 - `test`: n samples, balanced, the even ones with a signal and the odd ones noise only. The k-th signal sample draws its peak SNR uniform within peak SNR bin k mod (number of bins), so the peak SNR stays uniform over the range and every bin is filled once there are as many signal samples as bins. `run` takes the ROC curve, the operating point, the efficiency curve, and the metrics per bin from it; `thresholds` and `compare` score it too.
-- `calib_bg`: n noise-only samples, only for the threshold calibration that P5.8 adds. Nothing reads it yet.
+- `calib_bg`: n noise-only samples, only for the threshold calibration of `gwd eval thresholds` (since P5.8, see "Threshold calibration" below). No metric is computed on it.
 
 The SHA-256 covers the format, set, scenario and its hash, seed, and n, and every array with its name, dtype, and shape, not the bytes of the npz file. Loading a set computes it again: if it differs from the manifest, an array was changed after the build, and the command stops with exit code 1 (`ValueError` in Python). A set is stale if its manifest has another format, or if the scenario's fields or, for `indist_v1`, the noise chunks changed since the build; the command stops too. Neither case replaces the set on its own; `gwd eval build-testset --rebuild` (with the same `--testset`, `--seed`, and `--n`) draws it again. A missing manifest or npz means the set is drawn again.
 
@@ -69,9 +69,9 @@ All metrics come from the model's score, a number between 0 and 1 for each sampl
 - **TPR** (recall, sensitivity) = TP / (TP + FN): the share of signal samples that are detected.
 - **FPR** = FP / (FP + TN): the share of noise samples that raise a false alarm.
 - **Accuracy** = (TP + TN) / all samples, at the operating point.
-- **Operating point:** TPR, FPR, accuracy, and the confusion matrix at the fixed threshold `THRESHOLD = 0.15` in `gwd.evaluation.evaluate`. A sample counts as detected if its score is ≥ the threshold (`predict_labels` in `gwd.evaluation.metrics`), as in scikit-learn's `roc_curve`.
+- **Operating point:** TPR, FPR, accuracy, and the confusion matrix at the model's own threshold, which `gwd eval thresholds` calibrated on `calib_bg` (see "Threshold calibration" below); a model without one is evaluated at 0.5, with a warning, and the output and the leaderboard mark it as a fallback. Until P5.8 every model was evaluated at the fixed threshold 0.15. A sample counts as detected if its score is ≥ the threshold (`predict_labels` in `gwd.evaluation.metrics`), as in scikit-learn's `roc_curve`. The TPR is always given with the FPR that the threshold reached on the noise samples of `test` and the number of samples of each class, for example `TPR 63.20% (n 500) at FPR 0.80% (n 500)`.
 - **Efficiency curve:** the detection rate at the operating point of the signal samples of `test` in each peak SNR bin, plotted at the bin centers. Before P5.7 it came from 50 extra signal samples at each of 15 SNR levels from 0.0 to 2.5.
-- **SNR50 and SNR90:** the center of the first peak SNR bin at which at least 50% or 90% of its signal samples are detected at the operating point. If no bin reaches the rate, the value is `N/A` in the output and `-` in the leaderboard. The bins are peak SNRs, the peak amplitude ratio described in [architecture.md](architecture.md#scenarios-and-snr-definition-current-state-v1), not a matched filter SNR. Since P5.5 `gwd eval run` also reports SNR50 and SNR90 as optimal (matched filter) SNR: "Peak SNR50/90" is the bin center, "Optimal SNR50/90" the mean optimal SNR of that bin's samples. The run prints the optimal SNR per peak SNR of the set's signal samples; for the 30/30 M☉ chirps of `stress_v1` in white noise it is about 13.5. The summary at the end shows the peak and the optimal SNR90; the leaderboard stores the peak values only. Because the levels became bins, SNR50 and SNR90 since P5.7 cannot be compared with older leaderboard rows.
+- **SNR50 and SNR90:** the peak SNR at which 50% or 90% of the signal samples are detected at the operating point, interpolated linearly between the centers of the last bin below the rate and the first bin that reaches it (since P5.8; before, the center of the first bin that reached it). If the first bin already reaches the rate, it is that bin's center; if no bin reaches it, the value is `N/A` in the output and an empty cell in the leaderboard. They are always printed with the FPR of the threshold, because a threshold with more false alarms reaches every rate at a lower SNR (`evaluation:MISS-1`). The bins are peak SNRs, the peak amplitude ratio described in [architecture.md](architecture.md#scenarios-and-snr-definition-current-state-v1), not a matched filter SNR. Since P5.5 `gwd eval run` also reports SNR50 and SNR90 as optimal (matched filter) SNR: "Peak SNR50/90" is the bin center, "Optimal SNR50/90" the same interpolation over the mean optimal SNR of the bins' samples. The run prints the optimal SNR per peak SNR of the set's signal samples; for the 30/30 M☉ chirps of `stress_v1` in white noise it is about 13.5. The summary at the end shows the peak SNR50 and SNR90 and the optimal SNR90; the leaderboard stores both. Because the levels became bins (P5.7), the threshold became the model's own, and the values are interpolated (P5.8), SNR50 and SNR90 cannot be compared with the old leaderboard.
 - **Metrics per bin (since P5.7):** `gwd eval run` prints tables per peak SNR bin, per optimal SNR bin (5 bins with about equal counts), per total mass bin (4 such bins; a fixed mass is one bin), and per noise source (`real`, `gaussian`). An SNR or mass bin shows its signal samples n, their TPR at the operating point, and the AUC of these samples against all noise samples of `test`; a noise source shows its signal and noise samples, TPR, FPR, and the AUC within that source. A bin whose signal samples all lie outside the training ranges of `TRAIN_V1` (peak SNR 1–12, masses 5–100 M☉ with mass2 ≤ mass1, merger time 2.0–3.6 s) is marked `Extrapolation`, one with some of them `partly extrapolation (x%)`. In `stress_v1` the peak SNR bins below 1.0 are `Extrapolation`.
 
 Look at ROC AUC and the sensitivity together: a model with a higher AUC can still need a higher SNR to reach 90% detection. Accuracy alone can mislead on unbalanced data; the part `test` of every set is balanced, n/2 signal samples (rounded down) and the rest noise only.
@@ -80,29 +80,60 @@ Look at ROC AUC and the sensitivity together: a model with a higher AUC can stil
 
 With `--real`, `gwd eval run` downloads data from GWOSC (network), in `gwd.evaluation.real_data`. Each stretch of H1 data is downloaded with 16 s more on each side, conditioned as a whole (notches at 60, 120, 180, and 240 Hz, then a 20–300 Hz band-pass), and only then cut back to the requested span. The filters ring at the ends of the data they get; the extra 16 s keep that ringing out of the scored windows, as for the training noise, which is conditioned in one piece and then cut. gwpy keeps a local copy of every downloaded file, so a second run reads them from disk.
 
-- **Events:** the 4 s window around each of GW150914, GW170817, GW190521, GW170104, and GW151226, normalized and scored. An event counts as found if its score is ≥ 0.15, the same rule as for the simulated metrics. The events inside the training mass range and those outside it (GW170817, a neutron star merger) are counted separately. An event whose download fails or is too short is skipped and reported, not counted as missed; then its group reads `n/a (k of n loaded)`.
-- **False alarms:** 200 s of H1 noise from GPS 1253326755, conditioned the same way and cut into 50 windows of 4 s. The result is the number of windows with a score ≥ 0.15 and the analysed time, for example `3 false alarms in 0.0556 h`. It is not scaled to a rate per year: 50 windows are too few for that. If the noise download fails, it reads `n/a (noise not loaded)`.
+- **Events:** the 4 s window around each of GW150914, GW170817, GW190521, GW170104, and GW151226, normalized and scored. An event counts as found if its score is ≥ the model's threshold, the same rule as for the simulated metrics. The events inside the training mass range and those outside it (GW170817, a neutron star merger) are counted separately. An event whose download fails or is too short is skipped and reported, not counted as missed; then its group reads `n/a (k of n loaded)`.
+- **False alarms:** 200 s of H1 noise from GPS 1253326755, conditioned the same way and cut into 50 windows of 4 s. The result is the number of windows with a score ≥ the model's threshold and the analysed time, for example `3 false alarms in 0.0556 h`. It is not scaled to a rate per year: 50 windows are too few for that. If the noise download fails, it reads `n/a (noise not loaded)`.
 
-Because of the padding, the `>=` rule, and the new texts, field test results since P4.3 cannot be compared with older leaderboard rows.
+Because of the padding, the `>=` rule, and the new texts, field test results since P4.3 cannot be compared with older leaderboard rows; since P5.8 they also use the model's threshold instead of 0.15.
 
 ## Plots
 
 `gwd eval run` writes `plot_evaluate_model_with_roc_<timestamp>.png` with six panels; its title names the test set and the first 12 characters of its SHA-256:
 
-1. ROC curve with the AUC, the chance diagonal, and the operating point.
+1. ROC curve with the AUC, the chance diagonal, and the operating point at the model's threshold.
 2. Precision-recall curve with the AP.
 3. Confusion matrix at the operating point.
-4. Efficiency curve: detection rate against the peak SNR bin centers, with SNR50 and SNR90; the top axis shows the optimal SNR (the factor above).
+4. Efficiency curve: detection rate against the peak SNR bin centers, with SNR50 and SNR90 and the FPR of the threshold; the top axis shows the optimal SNR (the factor above).
 5. Score distributions of the signal and noise samples, with the threshold.
-6. A table of ROC AUC, AP, accuracy, TPR, FPR, and SNR50 and SNR90 as peak and as optimal SNR.
+6. A table of ROC AUC, AP, the threshold, accuracy, TPR, FPR, and SNR50 and SNR90 as peak and as optimal SNR.
 
-`gwd eval thresholds` writes `plot_optimize_threshold_<timestamp>.png`: the ROC curve with the point of every strategy, TPR, FPR, and Youden's J against the threshold, and a table of the strategies.
+`gwd eval thresholds` writes `plot_optimize_threshold_<timestamp>.png`: the ROC curve on `test` with a star at the calibrated threshold and the point of every reference strategy, TPR, FPR, and Youden's J against the threshold, and a table of the calibrated threshold and the strategies.
 
-`gwd eval compare` writes `plot_compare_roc_<timestamp>.png` with the ROC curves of all models, titled with the test set, and a bar chart of their AUCs, and `plot_compare_roc_<timestamp>_zoom.png` with the region FPR ≤ 0.1. Each model has the same color in both plots.
+`gwd eval compare` writes `plot_compare_roc_<timestamp>.png` with the ROC curves of all models, titled with the test set, each with a star at its operating point at its own threshold, and a bar chart of their AUCs, and `plot_compare_roc_<timestamp>_zoom.png` with the region FPR ≤ 0.1. Each model has the same color in both plots. The printed ranking, by ROC AUC, lists the TPR of each model at its threshold with the FPR it reached.
 
-## Threshold strategies
+## Threshold calibration
 
-`find_optimal_thresholds` in `gwd.evaluation.metrics` proposes one threshold per strategy. None of them uses the infinite first threshold of `roc_curve`.
+Since P5.8 every model has its own detection threshold (decision D10, default A). `gwd eval thresholds` scores the part `calib_bg` of the test set, n noise-only samples, and takes the lowest threshold at which at most 1% of them raise an alarm (`THRESHOLD_TARGET_FPR` in `gwd.config`, `threshold_at_fpr` in `gwd.evaluation.metrics`). The threshold is one of their scores, so the TPR is as high as the false alarm limit allows. With 1000 samples, 10 of them may lie at or above it. If even the highest score would exceed the limit (fewer than 100 samples, or an untrained model that gives every sample the same score), the threshold lies just above the highest score and detects nothing. The part `test` is never used to choose it; the command then reports the TPR on the signal samples of `test` and the FPR on its noise samples at that threshold, each with n.
+
+With `--save`, the default, the threshold goes into the model's metadata (`gwd.registry.set_threshold`), next to the keys that training wrote:
+
+| Key | Content |
+|---|---|
+| `threshold` | The threshold |
+| `threshold_fpr` | The target false alarm rate, 0.01 |
+| `threshold_fpr_achieved` | The rate it reached on `calib_bg` |
+| `threshold_n_background` | The number of `calib_bg` samples |
+| `threshold_strategy` | `fixed_fpr on calib_bg` |
+| `threshold_testset` | The set: `name`, `seed`, `n`, `part` (`calib_bg`), and `sha256` |
+| `threshold_date` | When it was saved |
+
+`gwd eval run`, `gwd eval compare`, and the Glitch Hunter read it with `gwd.registry.get_threshold`. A model without a threshold, such as every model trained before P5.8, gets 0.5 and a warning that names the command; calibrate each old model once, for example `gwd eval thresholds --model gwd_model_20251205-232013 --save`, or all of them with the loop in the [README](../README.md#3-evaluation). A threshold calibrated on one test set can be used on another; `gwd eval run` then says that the FPR on its set can differ from the target. A model trained after its last calibration is a new file and needs its own.
+
+`gwd eval thresholds` also writes a report of the last run to `results/optimal_thresholds.json`, which nothing reads:
+
+```json
+{
+  "model": "gwd_model_YYYYMMDD-HHMMSS.keras",
+  "testset": {"name": "stress_v1", "seed": 0, "n": 1000, "part": "calib_bg and test", "sha256": "..."},
+  "calibrated": {"strategy": "fixed_fpr on calib_bg", "threshold": 0.0, "target_fpr": 0.01, "calib_fpr": 0.0, "n_background": 1000, "test_tpr": 0.0, "n_signal": 500, "test_fpr": 0.0, "n_noise": 500},
+  "reference_strategies_on_test": {
+    "youden": {"threshold": 0.0, "tpr": 0.0, "fpr": 0.0, "j_stat": 0.0, "description": "..."}
+  }
+}
+```
+
+### Reference strategies
+
+For comparison, the command still shows the six strategies of `find_optimal_thresholds` in `gwd.evaluation.metrics`. They are chosen on the part `test`, so their TPR and FPR there are optimistic, and nothing saves or uses them. None of them uses the infinite first threshold of `roc_curve`.
 
 | Name | Rule |
 |---|---|
@@ -113,58 +144,43 @@ Because of the padding, the `>=` rule, and the new texts, field test results sin
 | `cost_based` | Minimizes 5 · (1 − TPR) + 1 · FPR, so a missed signal costs five times a false alarm. |
 | `fixed_tpr_90` | The lowest FPR with TPR ≥ 90%; ties go to the higher TPR. |
 
-If no point of the ROC curve meets an FPR limit, the proposal lies just above the highest score, so it detects nothing and has TPR and FPR 0.
-
-`gwd eval thresholds` also prints which strategy suits which use: `fixed_fpr_1` for a scientific analysis, `youden` for a trigger of follow-up analyses and for teaching, `f1` for statistical studies, and `fixed_tpr_90` for a real-time alert.
-
-### Threshold workflow
-
-1. Train a model (`gwd train`) and evaluate it (`gwd eval run`).
-2. Run `gwd eval thresholds` for the same model. It overwrites `results/optimal_thresholds.json`:
-
-   ```json
-   {
-     "model": "gwd_model_YYYYMMDD-HHMMSS.keras",
-     "testset": {"name": "stress_v1", "seed": 0, "n": 1000, "part": "test", "sha256": "..."},
-     "optimal_thresholds": {
-       "youden": {"threshold": 0.0, "tpr": 0.0, "fpr": 0.0, "j_stat": 0.0, "description": "..."},
-       "f1": {"threshold": 0.0, "tpr": 0.0, "fpr": 0.0, "f1_score": 0.0, "description": "..."}
-     }
-   }
-   ```
-
-   `testset` (since P5.7) names the set whose part `test` gave the scores. Every strategy has `threshold`, `tpr`, `fpr`, and `description`; `youden` adds `j_stat`, `f1` adds `f1_score`, and `cost_based` adds `cost`. The file holds one model at a time.
-3. Choose the strategy that fits the use. Nothing reads the file yet: `gwd eval run` keeps 0.15, and the Glitch Hunter starts its threshold slider at 0.46.
+If no point of the ROC curve meets an FPR limit, the proposal lies just above the highest score, so it detects nothing and has TPR and FPR 0. The command also prints which strategy suits which use: `fixed_fpr_1` for a scientific analysis, `youden` for a trigger of follow-up analyses and for teaching, `f1` for statistical studies, and `fixed_tpr_90` for a real-time alert.
 
 ## Leaderboard
 
-Every `gwd eval run` on the test set `stress_v1` appends one row to `results/model_leaderboard.csv`; old rows are kept as written, so a model evaluated twice has two rows. All older rows come from `EVAL_V1`, the distribution of `stress_v1`, and the file has no column for the test set, so a run on `indist_v1` adds no row and says so; leaderboard v2 (P5.8) records the set and its hash. The row does not show the seed and n of the set either; the run prints them with the SHA-256. `gwd eval leaderboard` prints all rows sorted by `ROC_AUC`, best first, with rows without a numeric AUC at the end.
+Since P5.8 every `gwd eval run` appends one row to `results/leaderboard_v2.csv`, on any test set; old rows are never rewritten, so a model evaluated twice has two rows. The file holds raw numbers: floats, integers, and empty cells for missing values, so `pandas.read_csv` reads the metrics as numbers (`gwd.evaluation.leaderboard.read_leaderboard` also reads the hashes as text and every float exactly as written). Only `gwd eval leaderboard` formats them. It prints one table per test set (name, seed, n, and SHA-256), because rows of different sets are not comparable, and ranks each by ROC AUC, then by TPR at the threshold; rows without a numeric AUC go last. It never ranks by SNR50: a model that fires on everything reaches every SNR level (`evaluation:MISS-1`).
 
-| Column | Content | Format |
-|---|---|---|
-| `Model` | File name of the model | `gwd_model_YYYYMMDD-HHMMSS.keras` |
-| `Date` | Time of the evaluation | `YYYY-MM-DD HH:MM` |
-| `ROC_AUC` | ROC AUC | 4 decimals |
-| `Avg_Precision` | Average precision | 4 decimals |
-| `Sim_Accuracy` | Accuracy at the operating point | percent, 1 decimal |
-| `TPR` | TPR at the operating point | percent, 2 decimals |
-| `FPR` | FPR at the operating point | percent, 2 decimals |
-| `Sim_SNR50` | Peak SNR50 (the optimal SNRs are not stored) | 2 decimals, or `-` |
-| `Sim_SNR90` | Peak SNR90 | 2 decimals, or `-` |
-| `Physik_Gap` | Always `-`, see below | `-` |
-| `Real_Events_Found` | Events found in the field test, inside the training range, then outside (OOD) | for example `4/4; OOD 0/1`; a group with a failed download reads `n/a (k of n loaded)`; `n/a` without `--real` |
-| `Real_Noise_FAR` | False alarms of the field test in the analysed noise | for example `3 false alarms in 0.0556 h`; `n/a (noise not loaded)` if the noise download failed, `n/a` without `--real` |
+| Column | Content |
+|---|---|
+| `schema_version` | 2 |
+| `model` | File name of the model, `gwd_model_YYYYMMDD-HHMMSS.keras` |
+| `date` | Time of the evaluation, ISO 8601 |
+| `testset`, `testset_seed`, `testset_n`, `testset_hash` | The test set and its SHA-256 |
+| `eval_scenario` | Its scenario, `EVAL_V1` or `TRAIN_V1` |
+| `backend` | The waveform backend that drew it, from its manifest |
+| `noise_source` | The noise of its part `test`: `gaussian`, `real`, or `gaussian+real` |
+| `roc_auc`, `ap` | ROC AUC and average precision on `test` |
+| `threshold` | The model's threshold |
+| `threshold_fpr`, `threshold_testset_hash` | Its target FPR and the SHA-256 of the set it was calibrated on; empty for the fallback 0.5 |
+| `tpr_at_fpr`, `fpr_achieved` | TPR and FPR at the threshold on `test`, as fractions |
+| `n_signal`, `n_noise` | The signal and noise samples of `test` |
+| `snr50`, `snr90` | Peak SNR50 and SNR90 at the threshold; empty if not reached |
+| `optimal_snr50`, `optimal_snr90` | The same as optimal SNR |
+| `real_loaded`, `real_found`, `real_total` | Field test events in the training range: loaded, found, all; empty without `--real` |
+| `real_ood_loaded`, `real_ood_found`, `real_ood_total` | The same for the events outside it (OOD) |
+| `real_false_alarms`, `real_noise_seconds` | False alarms in the analysed real noise and its length in seconds; empty without `--real` or if the noise did not load |
 
-If `results/model_leaderboard.csv` does not exist yet and `analysis/model_leaderboard.csv` does, the file is copied there once; the original stays. An old `./model_leaderboard.csv` in the project root is not copied, because it may use another schema.
+The 12-column leaderboard from before P5.8, `results/model_leaderboard.csv`, is never written again and stays as an archive; so do the older copies `analysis/model_leaderboard.csv` and `./model_leaderboard.csv`, which are no longer copied anywhere. `gwd eval leaderboard` names the ones that exist and does not show their rows: they used other test sets, the fixed threshold 0.15, formatted strings such as `51.8%`, and a `Physik_Gap` column based on an invalid baseline. `read_legacy` in `gwd.evaluation.leaderboard` still reads them, as strings.
 
 ## Matched Filter baseline (D5)
 
-There is no valid Matched Filter baseline. The script that computed it was deleted, and its results were invalid (`EVAL-6`). The files `models_registry/physics_baseline*.json` are not read. `Physik_Gap` is written as `-`, and `gwd eval leaderboard` also shows `-` for older rows that have a value. Writing a row warns `Physics baseline currently invalid`. Decision D5 in [architecture.md](architecture.md#decisions) (default B) drops the column; until then it stays in the schema.
+There is no valid Matched Filter baseline. The script that computed it was deleted, and its results were invalid (`EVAL-6`). Decision D5 in [architecture.md](architecture.md#decisions) (default B) dropped it in P5.8: leaderboard v2 has no baseline column, and nothing reads the files `models_registry/physics_baseline*.json`, which stay where they are. P6.4 can add a rewritten baseline.
 
 ## Known limitations
 
 - `stress_v1` (`EVAL_V1`, the default) uses white noise, fixed 30/30 M☉ masses, and a peak SNR of 0.5–2.5, while the training data has up to 80% real noise, random masses, and a peak SNR of 1–12 (`DATA-1`, `EVAL-1`, `EVAL-2`, `EVAL-3`). Since P5.7 `indist_v1` evaluates on the training distribution, and the metrics per bin mark the extrapolation. The full list is under "Known skews" in [architecture.md](architecture.md#scenarios-and-snr-definition-current-state-v1).
-- The operating point and the field test use the fixed threshold 0.15, not a threshold chosen per model.
-- Rows written before P4.3 have field test values from unpadded windows, counted with score > 0.15, with failed downloads counted as missed (`0/5`), and a false alarm rate per year (`< 157788.0/y`). They cannot be compared with newer rows.
+- The threshold is calibrated on the noise of one test set. On a set with other noise (for example `indist_v1`, mostly real noise, with a threshold from `stress_v1`, white noise) its FPR can be far from 1%; `fpr_achieved` shows the rate it reached.
+- With 1000 `calib_bg` samples, the reached FPR has a statistical uncertainty of about ±0.3 percentage points; the false alarm rate at very low FPR (below 1 in 1000) cannot be calibrated with this set.
+- Rows of the old leaderboard written before P4.3 have field test values from unpadded windows, counted with score > 0.15, with failed downloads counted as missed (`0/5`), and a false alarm rate per year (`< 157788.0/y`). They cannot be compared with newer rows.
 - The field test uses five events and 200 s of noise; its numbers are a rough check, not a measured detector performance.
 - Real noise chunks reach the CNN at a much smaller scale than white noise (see "Known skews"), so the noise source table of `indist_v1` mixes two very different inputs.

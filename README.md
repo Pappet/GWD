@@ -20,7 +20,7 @@ apps: use core, data, and registry      cli: the gwd command      main.py: menu
 | core | `src/gwd/core/` | Physics: waveforms (PyCBC; a Newtonian approximation that only the waveform explorer uses without PyCBC), noise, the interferometer learning model, a time domain simulator. No file or network access. |
 | data | `src/gwd/data/` | Scenarios, signal injection, conditioning and normalization, GWOSC access, dataset generation with a manifest, validation, the noise download. |
 | training | `src/gwd/training/` | The CNN and its training. |
-| evaluation | `src/gwd/evaluation/` | ROC evaluation, threshold strategies, model comparison, the leaderboard. |
+| evaluation | `src/gwd/evaluation/` | ROC evaluation, threshold calibration, model comparison, the leaderboard. |
 | registry | `src/gwd/registry.py` | Finds, selects, and loads models in `models_registry/`, and reads and writes their metadata. |
 | apps | `src/gwd/apps/` | The three apps; they only draw and interact. |
 | cli | `src/gwd/cli.py`, `src/gwd/env.py` | The `gwd` command and `gwd env`. |
@@ -131,7 +131,11 @@ CUDA_VISIBLE_DEVICES='' gwd train --epochs 10 --seed 1 --deterministic
 # also build it on first use and load it afterwards
 gwd eval build-testset
 
-# ROC evaluation of the latest model on the fixed test set (offline)
+# Calibrate the latest model's detection threshold at FPR 1% on the noise-only part
+# calib_bg and save it in the model's metadata (--no-save to skip)
+gwd eval thresholds
+
+# ROC evaluation of the latest model on the fixed test set (offline), at its threshold
 gwd eval run
 
 # The same on the training distribution instead of the stress set
@@ -140,24 +144,29 @@ gwd eval run --testset indist_v1
 # The same plus the field test on real GWOSC data (network)
 gwd eval run --real
 
-# Detection thresholds of the latest model, saved to results/optimal_thresholds.json (--no-save to skip)
-gwd eval thresholds
-
 # Compare all models in models_registry/ in one ROC plot and a zoom on low FPR
 gwd eval compare
 
-# Show the leaderboard, sorted by ROC AUC
+# Show leaderboard v2: one table per test set, ranked by ROC AUC
 gwd eval leaderboard
 ```
 
-The latest model is the one with the newest timestamp in its name, `gwd_model_YYYYMMDD-HHMMSS.keras`; other `.keras` files are ordered by their modification time, with a warning. `gwd eval run`, `gwd eval thresholds`, and `gwd eval compare` take `--model` with `latest`, a model name, or a path to a `.keras` file; `compare` takes it more than once. Since P5.7 all simulated numbers come from a fixed, hashed test set: `--testset` is `stress_v1` (the default, the old evaluation distribution `EVAL_V1`) or `indist_v1` (the training distribution `TRAIN_V1`), and `--seed` (default 0) and `--n` (default 1000) pick the set. It is drawn once into `data/eval/`, with its manifest and SHA-256 in `results/testsets/`, and loaded by every later command with the same three values; a set whose arrays no longer match the hash, or that is stale, stops the command with exit code 1 until `gwd eval build-testset --rebuild` (with the same `--testset`, `--seed`, and `--n`) draws it again. `gwd eval run` prints the metrics per peak SNR, optimal SNR, total mass, and noise source and marks bins outside the training ranges as `Extrapolation`; only runs on `stress_v1` add a leaderboard row.
+The latest model is the one with the newest timestamp in its name, `gwd_model_YYYYMMDD-HHMMSS.keras`; other `.keras` files are ordered by their modification time, with a warning. `gwd eval run`, `gwd eval thresholds`, and `gwd eval compare` take `--model` with `latest`, a model name, or a path to a `.keras` file; `compare` takes it more than once. Since P5.7 all simulated numbers come from a fixed, hashed test set: `--testset` is `stress_v1` (the default, the old evaluation distribution `EVAL_V1`) or `indist_v1` (the training distribution `TRAIN_V1`), and `--seed` (default 0) and `--n` (default 1000) pick the set. It is drawn once into `data/eval/`, with its manifest and SHA-256 in `results/testsets/`, and loaded by every later command with the same three values; a set whose arrays no longer match the hash, or that is stale, stops the command with exit code 1 until `gwd eval build-testset --rebuild` (with the same `--testset`, `--seed`, and `--n`) draws it again. `gwd eval run` prints the metrics per peak SNR, optimal SNR, total mass, and noise source and marks bins outside the training ranges as `Extrapolation`.
+
+Since P5.8 every model has its own detection threshold. `gwd eval thresholds` picks the lowest threshold at which at most 1% of the noise-only samples of the set's part `calib_bg` raise an alarm, never using the part `test`, and saves it with the false alarm rate it reached, the strategy, and the test set with its SHA-256 in the model's `.json` in `models_registry/`. `gwd eval run`, `gwd eval compare`, and the Glitch Hunter read it from there; a model without one gets 0.5 and a warning. `gwd eval run` reports the TPR, SNR50, and SNR90 at that threshold, always with the FPR it reached on `test` and the number of samples, and every run adds a row with raw numbers and the test set hash to `results/leaderboard_v2.csv`. Models trained before P5.8 have no threshold; calibrate each of them once:
+
+```bash
+for m in models_registry/*.keras; do
+  gwd eval thresholds --model "$m" --save
+done
+```
 
 ```bash
 gwd eval run --model gwd_model_20251205-232013 --seed 1
 gwd eval compare --model gwd_model_20251203-220536 --model latest
 ```
 
-[docs/evaluation.md](docs/evaluation.md) describes the test sets, the metrics, the plots, the threshold strategies, and the leaderboard columns.
+[docs/evaluation.md](docs/evaluation.md) describes the test sets, the metrics, the plots, the threshold calibration, and the leaderboard columns.
 
 ### 4. Apps
 
@@ -175,7 +184,7 @@ gwd app interferometer
 
 The interferometer designer is a qualitative learning model, not a calibrated detector model: its curve shows in which direction the sliders and features move the sensitivity, and its dashed reference is PyCBC's aLIGO design curve (`aLIGOZeroDetHighPower`), about 270 times lower at 100 Hz than the default model. The waveform explorer draws its noise from the same aLIGO design curve above 10 Hz; its noise slider multiplies the noise amplitude.
 
-The Glitch Hunter has two simulation modes. 'Training', the start mode, draws from the training distribution `TRAIN_V1`; 'Challenge' draws from `APP_V1`, which is hard on purpose: peak SNR 0.5–2, partly below what the model was trained on. 'LIGO random' downloads a known event or a random stretch of O3 noise from GWOSC in the background (about 36 s of data: 4 s plus 16 s on each side for the filters); if the download fails, a simulated sample stands in and the title says why. 'Ask AI' shows the model's score against the alarm threshold, which starts at 0.46 and moves with the slider, and then the truth, judged right or wrong at the current threshold, also on real data; events outside the training masses are marked OOD. Without a model (or without TensorFlow) the Glitch Hunter starts with 'Ask AI' off; a model named with `--model` that does not exist ends with exit code 1. 'Listen' plays the sample through paplay or aplay (Linux), afplay (macOS), or winsound (Windows), from a temporary file.
+The Glitch Hunter has two simulation modes. 'Training', the start mode, draws from the training distribution `TRAIN_V1`; 'Challenge' draws from `APP_V1`, which is hard on purpose: peak SNR 0.5–2, partly below what the model was trained on. 'LIGO random' downloads a known event or a random stretch of O3 noise from GWOSC in the background (about 36 s of data: 4 s plus 16 s on each side for the filters); if the download fails, a simulated sample stands in and the title says why. 'Ask AI' shows the model's score against the alarm threshold, which starts at the model's threshold from `gwd eval thresholds` (0.5, with a warning, if it has none) and moves with the slider, and then the truth, judged right or wrong at the current threshold, also on real data; events outside the training masses are marked OOD. Without a model (or without TensorFlow) the Glitch Hunter starts with 'Ask AI' off; a model named with `--model` that does not exist ends with exit code 1. 'Listen' plays the sample through paplay or aplay (Linux), afplay (macOS), or winsound (Windows), from a temporary file.
 
 ### 5. Menu
 
@@ -191,10 +200,10 @@ All paths are below the project root, the folder with `pyproject.toml`. `gwd env
 | `data/noise_background/` | Real noise chunks from `gwd data fetch-noise`, `real_noise_NNNN.npy` |
 | `data/eval/` | The fixed test sets, `<set>_<seed>_<n>.npz` (since P5.7) |
 | `models_registry/` | Trained models (`.keras`) and their metadata (`.json`) |
-| `results/` | `model_leaderboard.csv`, `optimal_thresholds.json`, and the test set manifests in `testsets/` |
+| `results/` | `leaderboard_v2.csv`, `optimal_thresholds.json` (the report of the last `gwd eval thresholds`), the test set manifests in `testsets/`, and the old `model_leaderboard.csv` as an archive |
 | `plots/` | `validation_dataset/`, `training/`, and `evaluation_models/` |
 
-Git ignores all of these folders; they exist only on the machine that made them. The legacy paths `gw_noise_background/`, `gw_training_data/`, `./model_leaderboard.csv`, and `analysis/model_leaderboard.csv` come from before the cleanup. The code uses none of them, with one exception: if `results/model_leaderboard.csv` does not exist, `analysis/model_leaderboard.csv` is copied there once. Keep the legacy paths; ignored files cannot be restored from Git.
+Git ignores all of these folders; they exist only on the machine that made them. The legacy paths `gw_noise_background/`, `gw_training_data/`, `./model_leaderboard.csv`, and `analysis/model_leaderboard.csv` come from before the cleanup. The code writes none of them; since P5.8 it also no longer writes or copies `results/model_leaderboard.csv`, and `gwd eval leaderboard` only names the old leaderboards that exist as archives. Keep the legacy paths; ignored files cannot be restored from Git.
 
 `GWD_HOME` sets another project root, for example for tests or a second set of data: `GWD_HOME=/path/to/folder gwd env`. `gwd` then warns once on stderr that it uses `GWD_HOME`. Without it, the root is the nearest folder above `src/gwd/config.py` that contains a `pyproject.toml`.
 

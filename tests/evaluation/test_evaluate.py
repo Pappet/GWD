@@ -1,13 +1,15 @@
 """gwd eval run: the start line that names backend and noise (P4.1), the metrics box
-(P4.2), and since P5.7 the fixed test set, the efficiency curve, and the binned metrics.
-Every test set is built in a tmp folder; nothing reads or writes the real data/ or
-results/."""
+(P4.2), since P5.7 the fixed test set, the efficiency curve, and the binned metrics, and
+since P5.8 the model's threshold from the registry and the row of leaderboard v2.
+Every test set is built in a tmp folder; nothing reads or writes the real data/,
+models_registry/, or results/."""
 
 import sys
 
 import numpy as np
 import pytest
 
+from gwd import registry
 from gwd.core import waveforms
 from gwd.evaluation import evaluate, testsets
 
@@ -22,7 +24,10 @@ SIM_RESULT = {
     "avg_precision": 0.5,
     "tpr": 0.5,
     "fpr": 0.5,
+    "n_signal": 8,
+    "n_noise": 8,
 }
+THRESHOLD = 0.15
 
 
 @pytest.fixture(scope="module")
@@ -61,9 +66,10 @@ def stubbed(monkeypatch, tmp_path, small_sets):
     monkeypatch.setattr(evaluate, "resolve", lambda model: str(tmp_path / "m.keras"))
     monkeypatch.setattr(evaluate, "load_model", lambda path: object())
     monkeypatch.setattr(
-        evaluate, "evaluate_simulation_with_roc", lambda m, built: SIM_RESULT
+        evaluate, "evaluate_simulation_with_roc", lambda m, built, threshold: SIM_RESULT
     )
-    monkeypatch.setattr(evaluate, "update_leaderboard_roc", lambda *args: None)
+    monkeypatch.setattr(evaluate, "add_row", lambda *args: None)
+    monkeypatch.setattr(registry, "get_threshold", lambda path: THRESHOLD)
     monkeypatch.setattr(
         evaluate.testsets, "build", lambda name, n, seed: small_sets[name]
     )
@@ -99,28 +105,35 @@ def test_the_field_test_is_named(stubbed, capsys, monkeypatch):
     assert evaluate.run(real=True) == 0
     out = capsys.readouterr().out
     assert "(test set stress_v1 = EVAL_V1); field test on real H1 data" in out
-    assert calls == [evaluate.THRESHOLD]
+    assert calls == [THRESHOLD]
     assert "Real Events Found:    4/4; OOD 0/1" in out
     assert "Real Noise:           0 false alarms in 0.0556 h" in out
 
 
 def test_without_real_the_row_says_n_a(stubbed, capsys, monkeypatch):
     rows = []
-    monkeypatch.setattr(evaluate, "update_leaderboard_roc", lambda *a: rows.append(a))
+    monkeypatch.setattr(evaluate, "add_row", lambda *a: rows.append(a))
     assert evaluate.run() == 0
-    real_res = rows[0][2]
+    real_res = rows[0][3]
     assert (real_res["events_text"], real_res["far_text"]) == ("n/a", "n/a")
     assert "gwd eval run --real" in capsys.readouterr().out
 
 
-def test_only_stress_v1_adds_a_leaderboard_row(stubbed, capsys, monkeypatch):
+def test_every_test_set_adds_a_row_that_names_it(stubbed, small_sets, monkeypatch):
+    """P5.8: leaderboard v2 records the set and its hash, so every set gets a row."""
     rows = []
-    monkeypatch.setattr(evaluate, "update_leaderboard_roc", lambda *a: rows.append(a))
-    assert evaluate.run(testset="indist_v1") == 0
-    assert rows == []
-    assert "Leaderboard not updated" in capsys.readouterr().out
-    assert evaluate.run(testset="stress_v1") == 0
-    assert len(rows) == 1
+    monkeypatch.setattr(evaluate, "add_row", lambda *a: rows.append(a))
+    for name in ("indist_v1", "stress_v1"):
+        assert evaluate.run(testset=name) == 0
+    sets = [row[1] for row in rows]
+    assert [s["name"] for s in sets] == ["indist_v1", "stress_v1"]
+    assert [s["sha256"] for s in sets] == [
+        small_sets["indist_v1"].sha256,
+        small_sets["stress_v1"].sha256,
+    ]
+    assert [s["scenario"] for s in sets] == ["TRAIN_V1", "EVAL_V1"]
+    assert {s["noise_source"] for s in sets} == {"gaussian"}
+    assert sets[1]["backend"].startswith("newton")
 
 
 def test_a_changed_test_set_ends_with_exit_code_1(stubbed, monkeypatch, capsys):
@@ -185,7 +198,7 @@ def test_the_efficiency_curve_records_the_optimal_snr_per_bin(tmp_path):
         noise_dir=str(tmp_path / "noise"),
     )
     scores = FiringModel().predict(built.X).flatten()
-    centers, rates, optimal = evaluate.efficiency_curve(built, scores)
+    centers, rates, optimal = evaluate.efficiency_curve(built, scores, THRESHOLD)
     np.testing.assert_allclose(centers, np.arange(0.625, 2.5, 0.25))
     assert rates == [1.0] * 8
     signal = built.y == 1
@@ -198,7 +211,9 @@ def test_the_efficiency_curve_records_the_optimal_snr_per_bin(tmp_path):
 
 def test_binned_metrics_cover_snr_mass_and_noise_source(small_sets):
     built = small_sets["stress_v1"]
-    report = evaluate.binned_metrics(built, FiringModel().predict(built.X).flatten())
+    report = evaluate.binned_metrics(
+        built, FiringModel().predict(built.X).flatten(), THRESHOLD
+    )
     assert set(report) == {"peak_snr", "optimal_snr", "total_mass", "noise_source"}
     assert len(report["peak_snr"]) == 8
     assert sum(row["n"] for row in report["peak_snr"]) == 8
@@ -227,8 +242,9 @@ def test_run_twice_gives_the_same_roc_auc(tmp_set_folders, monkeypatch, capsys):
     results = []
     monkeypatch.setattr(evaluate, "resolve", lambda model: "m.keras")
     monkeypatch.setattr(evaluate, "load_model", lambda path: PeakModel())
+    monkeypatch.setattr(registry, "get_threshold", lambda path: THRESHOLD)
     monkeypatch.setattr(
-        evaluate, "update_leaderboard_roc", lambda name, sim, *a: results.append(sim)
+        evaluate, "add_row", lambda name, testset, sim, *a: results.append(sim)
     )
     for _ in range(2):
         assert evaluate.run(testset="stress_v1", real=False, seed=1, n=24) == 0
@@ -238,3 +254,93 @@ def test_run_twice_gives_the_same_roc_auc(tmp_set_folders, monkeypatch, capsys):
     assert results[0]["roc_auc"] == results[1]["roc_auc"]
     assert results[0]["bins"] == results[1]["bins"]
     assert (tmp_set_folders / "testsets" / "stress_v1_1_24.json").exists()
+
+
+def test_evaluate_uses_the_registry_threshold(small_sets, monkeypatch, tmp_path):
+    """P5.8: the operating point, the efficiency curve, the field test, and the row all
+    use exactly the value of registry.get_threshold."""
+    used, rows = [], []
+    monkeypatch.setattr(registry, "get_threshold", lambda path: 0.123)
+    monkeypatch.setattr(evaluate, "resolve", lambda model: str(tmp_path / "m.keras"))
+    monkeypatch.setattr(evaluate, "load_model", lambda path: PeakModel())
+    monkeypatch.setattr(evaluate.testsets, "build", lambda name, n, s: small_sets[name])
+    monkeypatch.setattr(evaluate, "EVALUATION_MODELS_PLOTS_DIR", str(tmp_path))
+    monkeypatch.setattr(evaluate, "add_row", lambda *a: rows.append(a))
+    for name in ("calculate_operating_point", "efficiency_curve", "binned_metrics"):
+        original = getattr(evaluate, name)
+
+        def spy(*args, _original=original, _name=name):
+            used.append((_name, args[-1]))
+            return _original(*args)
+
+        monkeypatch.setattr(evaluate, name, spy)
+
+    def field_test(model, threshold):
+        used.append(("run_field_test", threshold))
+        return evaluate.NO_FIELD_TEST
+
+    monkeypatch.setattr(evaluate, "run_field_test", field_test)
+    assert evaluate.run(real=True) == 0
+    assert {name for name, _ in used} == {
+        "calculate_operating_point",
+        "efficiency_curve",
+        "binned_metrics",
+        "run_field_test",
+    }
+    assert {value for _, value in used} == {0.123}
+    assert rows[0][4]["threshold"] == 0.123
+
+
+def test_a_model_without_a_threshold_is_evaluated_at_the_fallback(
+    small_sets, monkeypatch, tmp_path, capsys
+):
+    monkeypatch.setattr(evaluate, "resolve", lambda model: str(tmp_path / "m.keras"))
+    monkeypatch.setattr(evaluate, "load_model", lambda path: PeakModel())
+    monkeypatch.setattr(evaluate.testsets, "build", lambda name, n, s: small_sets[name])
+    monkeypatch.setattr(evaluate, "EVALUATION_MODELS_PLOTS_DIR", str(tmp_path))
+    rows = []
+    monkeypatch.setattr(evaluate, "add_row", lambda *a: rows.append(a))
+    with pytest.warns(registry.MissingThresholdWarning):
+        assert evaluate.run() == 0
+    info = rows[0][4]
+    assert info == {
+        "threshold": 0.5,
+        "fpr": None,
+        "testset_hash": None,
+        "testset": None,
+    }
+    out = capsys.readouterr().out
+    assert "Threshold: 0.5 (fallback" in out
+    assert "Threshold:            0.5 (fallback)" in out
+
+
+def test_a_threshold_from_another_set_is_named(small_sets, tmp_path):
+    model = str(tmp_path / "m.keras")
+    calibration = {"name": "stress_v1", "seed": 3, "n": 16, "part": "calib_bg"}
+    registry.set_threshold(
+        model,
+        0.7,
+        0.01,
+        0.0,
+        16,
+        "fixed_fpr on calib_bg",
+        {**calibration, "sha256": "x"},
+    )
+    info = evaluate.threshold_info(model)
+    assert info["threshold"] == 0.7 and info["fpr"] == 0.01
+    line = evaluate.describe_threshold(info, small_sets["stress_v1"])
+    assert "FPR ≤ 1% on calib_bg of stress_v1 (seed 3, n 16)" in line
+    assert "can differ from the target" in line
+    registry.set_threshold(
+        model,
+        0.7,
+        0.01,
+        0.0,
+        16,
+        "fixed_fpr on calib_bg",
+        {**calibration, "sha256": small_sets["stress_v1"].sha256},
+    )
+    line = evaluate.describe_threshold(
+        evaluate.threshold_info(model), small_sets["stress_v1"]
+    )
+    assert "can differ" not in line

@@ -405,8 +405,9 @@ def build_parser():
         help="ROC evaluation of one model on a fixed test set.",
         description="ROC evaluation on a fixed, hashed test set (built on first use), "
         "with metrics per peak SNR, optimal SNR, total mass, and noise source, and, "
-        "with --real, the field test on real events. On the test set stress_v1 it adds "
-        "a row to results/model_leaderboard.csv.",
+        "with --real, the field test on real events, at the model's threshold from "
+        "gwd eval thresholds (0.5 with a warning if it has none). Adds a row to "
+        "results/leaderboard_v2.csv.",
     )
     _add_model(run)
     run.add_argument(
@@ -420,16 +421,19 @@ def build_parser():
 
     thresholds = eval_commands.add_parser(
         "thresholds",
-        help="Find detection thresholds for one model.",
-        description="Find detection thresholds for one model from its ROC curve on a "
-        "fixed test set and save them in results/optimal_thresholds.json.",
+        help="Calibrate one model's detection threshold at FPR 1%%.",
+        description="Calibrate one model's detection threshold on the noise-only part "
+        "calib_bg of a fixed test set, at a false alarm rate of 1%, and save it in the "
+        "model's metadata in models_registry/, where gwd eval run, gwd eval compare, "
+        "and the Glitch Hunter read it. Also writes results/optimal_thresholds.json.",
     )
     _add_model(thresholds)
     thresholds.add_argument(
         "--save",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Save the thresholds. Default: --save.",
+        help="Save the threshold in the model's metadata and the report. "
+        "Default: --save.",
     )
     _add_testset(thresholds)
     thresholds.set_defaults(handler=_eval_thresholds)
@@ -448,7 +452,8 @@ def build_parser():
     compare.set_defaults(handler=_eval_compare)
 
     leaderboard = eval_commands.add_parser(
-        "leaderboard", help="Show the leaderboard, best ROC AUC first."
+        "leaderboard",
+        help="Show leaderboard v2, one table per test set, best ROC AUC first.",
     )
     leaderboard.set_defaults(handler=_eval_leaderboard)
 

@@ -96,6 +96,47 @@ def test_metadata_round_trip(two_models):
     assert registry.read_metadata(new) == {"model_name": NEW, "epochs": 40}
 
 
+TESTSET = {
+    "name": "stress_v1",
+    "seed": 0,
+    "n": 1000,
+    "part": "calib_bg",
+    "sha256": "ab",
+}
+
+
+def test_set_threshold_keeps_the_other_metadata(two_models):
+    """P5.8: the threshold, its FPR, strategy, and test set go into the model's .json."""
+    folder, old, new = two_models
+    registry.write_metadata(new, {"model_name": NEW, "epochs": 40})
+    registry.set_threshold(new, 0.73, 0.01, 0.009, 1000, "fixed_fpr_1", TESTSET)
+    metadata = registry.read_metadata(new)
+    assert metadata["model_name"] == NEW and metadata["epochs"] == 40
+    assert metadata["threshold"] == 0.73
+    assert metadata["threshold_fpr"] == 0.01
+    assert metadata["threshold_fpr_achieved"] == 0.009
+    assert metadata["threshold_n_background"] == 1000
+    assert metadata["threshold_strategy"] == "fixed_fpr_1"
+    assert metadata["threshold_testset"] == TESTSET
+    assert registry.get_threshold(new) == 0.73
+    assert registry.threshold_record(new)["threshold_testset"]["sha256"] == "ab"
+
+
+def test_set_threshold_creates_metadata_for_a_model_without_one(two_models):
+    folder, old, new = two_models
+    registry.set_threshold(old, 0.6, 0.01, 0.01, 10, "fixed_fpr_1", TESTSET)
+    assert set(registry.read_metadata(old)) == set(registry.THRESHOLD_KEYS)
+
+
+def test_without_a_threshold_the_fallback_is_used_with_a_warning(two_models):
+    folder, old, new = two_models
+    registry.write_metadata(new, {"model_name": NEW})
+    for path in (old, new):  # no metadata, and metadata from before P5.8
+        with pytest.warns(registry.MissingThresholdWarning, match="--save"):
+            assert registry.get_threshold(path) == registry.THRESHOLD_FALLBACK == 0.5
+        assert registry.threshold_record(path) is None
+
+
 def test_import_does_not_load_tensorflow():
     code = "import sys, gwd.registry; print('tensorflow' in sys.modules)"
     result = subprocess.run(

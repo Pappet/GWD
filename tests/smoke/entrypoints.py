@@ -23,9 +23,10 @@ PIPELINE = {
     "train": Stage(("train", "--epochs", "1", "--seed", SEED)),
     # P5.7: the fixed test set; evaluate, thresholds, and compare then load it.
     "build_testset": Stage(("eval", "build-testset", "--seed", SEED)),
-    "evaluate": Stage(("eval", "run", "--no-real", "--seed", SEED)),
-    # Saves by default; the empty stdin shows that it no longer asks (EVAL-17).
+    # Saves by default; the empty stdin shows that it no longer asks (EVAL-17). Since
+    # P5.8 it runs before evaluate, which then uses the calibrated threshold.
     "thresholds": Stage(("eval", "thresholds", "--seed", SEED), stdin=""),
+    "evaluate": Stage(("eval", "run", "--no-real", "--seed", SEED)),
     # compare stops without a plot when it finds one model, so it gets the same model twice.
     "compare": Stage(
         ("eval", "compare", "--model", "latest", "--model", "latest", "--seed", SEED)
