@@ -57,7 +57,8 @@ def prepare_output_folder(folder, overwrite=False, noise_dir=DATA_DIR_NOISE):
         return []
     if not overwrite:
         raise OutputFolderError(
-            f"'{folder}' is not empty ({len(entries)} entries). Pass --overwrite to "
+            f"'{folder}' is not empty: it holds {', '.join(sorted(entries)[:3])}"
+            f"{', ...' if len(entries) > 3 else ''}. Pass --overwrite to "
             f"replace its {SAMPLE_PATTERN} and {LABELS_FILE}, or choose another --out."
         )
     doomed = sorted(glob.glob(os.path.join(folder, SAMPLE_PATTERN)))
