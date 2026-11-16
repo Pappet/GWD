@@ -56,7 +56,7 @@ def training_noise_warning(metadata):
 
 class GlitchHunterApp:
     def __init__(self):
-        print(">>> Lade Gehirn (Neuronales Netz)...")
+        print(">>> Loading the brain (neural network)...")
 
         # One check covers a missing and an empty folder; rc 1 stays until P4.4 (APP-8).
         files = list_models()
@@ -67,14 +67,14 @@ class GlitchHunterApp:
 
         # The newest timestamp in the name, not ctime (apps:APPX-4).
         latest_model_path = files[-1]
-        print(f"{len(files)} Modelle gefunden.")
-        print(f"Lade neuestes Modell: {os.path.basename(latest_model_path)}")
+        print(f"Found {len(files)} models.")
+        print(f"Loading the latest model: {os.path.basename(latest_model_path)}")
 
         self.model = load_model(latest_model_path)
         self.noise_warning = training_noise_warning(read_metadata(latest_model_path))
         if self.noise_warning:
             print(self.noise_warning)
-        print(">>> Bereit zum Jagen!")
+        print(">>> Ready to hunt!")
 
         self.fs = SAMPLE_RATE
         self.duration = DURATION
@@ -87,7 +87,7 @@ class GlitchHunterApp:
         self.event_name = ""
         self.prediction = None
         self.true_snr = 0
-        self.detection_threshold = 0.46  # Statt 0.75
+        self.detection_threshold = 0.46  # Instead of 0.75
         self.truth_text_artist = None
 
         self.setup_gui()
@@ -113,7 +113,7 @@ class GlitchHunterApp:
         ax_thresh = plt.axes([0.25, 0.11, 0.5, 0.03])
         self.slider_thresh = Slider(
             ax_thresh,
-            "Alarm-Schwelle",
+            "Alarm threshold",
             0.5,
             0.99,
             valinit=self.detection_threshold,
@@ -129,39 +129,37 @@ class GlitchHunterApp:
 
         ax_real = plt.axes([0.28, 0.03, 0.20, 0.05])
         self.btn_real = Button(
-            ax_real, "LIGO Zufall", color="mediumpurple", hovercolor="violet"
+            ax_real, "LIGO random", color="mediumpurple", hovercolor="violet"
         )
-        # Ruft jetzt den Background-Starter auf
+        # Starts the download in the background
         self.btn_real.on_clicked(self.start_background_loading)
 
         ax_sound = plt.axes([0.51, 0.03, 0.20, 0.05])
-        self.btn_sound = Button(ax_sound, "Anhören", color="gold", hovercolor="yellow")
+        self.btn_sound = Button(ax_sound, "Listen", color="gold", hovercolor="yellow")
         self.btn_sound.on_clicked(self.play_sound)
 
         ax_ask = plt.axes([0.74, 0.03, 0.20, 0.05])
-        self.btn_ask = Button(
-            ax_ask, "KI fragen", color="lightgreen", hovercolor="lime"
-        )
+        self.btn_ask = Button(ax_ask, "Ask AI", color="lightgreen", hovercolor="lime")
         self.btn_ask.on_clicked(self.ask_ai)
 
     def start_background_loading(self, event):
-        """Startet den Download in einem separaten Thread, damit die GUI nicht einfriert."""
+        """Start the download in a separate thread, so the GUI does not freeze."""
         self.ax_signal.set_title(
-            "Lade Daten von LIGO... (Bitte warten)",
+            "Loading data from LIGO... (please wait)",
             fontsize=12,
             fontweight="bold",
             color="orange",
         )
         self.fig.canvas.draw_idle()
 
-        # Thread starten
+        # Start the thread
         thread = threading.Thread(target=self.load_random_real_thread)
-        thread.daemon = True  # Thread stirbt, wenn Hauptprogramm beendet wird
+        thread.daemon = True  # The thread dies when the main program ends
         thread.start()
 
     def load_random_real_thread(self):
-        """Die eigentliche Arbeit passiert hier im Hintergrund."""
-        print("Background Thread: Wähle zufällige LIGO-Daten...")
+        """The actual work happens here, in the background."""
+        print("Background thread: choosing random LIGO data...")
 
         want_signal = random.choice([True, False])
         t0 = 0
@@ -170,12 +168,12 @@ class GlitchHunterApp:
         if want_signal:
             known = random.choice(EVENTS)
             name, time = known.name, known.gps
-            print(f"Ziel: Bekanntes Event {name}")
+            print(f"Target: known event {name}")
             t0 = int(time)
             self.event_name = name
             self.has_signal = True
         else:
-            print("Ziel: Zufälliges Rauschen (O3 Run)")
+            print("Target: random noise (O3 run)")
             self.event_name = "Random Noise (O3)"
             self.has_signal = False
 
@@ -193,12 +191,12 @@ class GlitchHunterApp:
                     break
 
             if not found_data:
-                print("Kein Slot gefunden, fallback.")
+                print("No slot found, falling back.")
                 self.update_plot_threadsafe(fallback=True)
                 return
 
         try:
-            print(f"Download H1 Daten um {t0}...")
+            print(f"Downloading H1 data around {t0}...")
             # Raises on a wrong length or NaN instead of trimming or padding
             strain = fetch_strain(detector, t0 - 2, t0 + 2)
 
@@ -213,23 +211,23 @@ class GlitchHunterApp:
             self.true_snr = 0
             self.prediction = None
 
-            # GUI Update muss vom Haupt-Thread gemacht werden?
-            # Matplotlib mit TkAgg ist da manchmal zickig, aber draw_idle ist meist thread-safe genug für einfache updates.
+            # Must the GUI update happen in the main thread?
+            # Matplotlib with TkAgg is sometimes picky here, but draw_idle is usually thread-safe enough for simple updates.
             self.update_plot_threadsafe(
-                title=f"ECHTE DATEN: {self.event_name} ({detector})"
+                title=f"REAL DATA: {self.event_name} ({detector})"
             )
-            print("Daten geladen und bereinigt!")
+            print("Data loaded and cleaned!")
 
         except Exception as e:
-            print(f"Fehler im Thread: {e}")
+            print(f"Error in the thread: {e}")
             self.update_plot_threadsafe(fallback=True)
 
     def update_plot_threadsafe(self, title="", fallback=False):
-        """Hilfsmethode, um Plot aus dem Thread zu aktualisieren"""
+        """Helper to update the plot from the thread"""
         if fallback:
-            # Wenn was schief ging, generieren wir schnell eine Simulation
-            # Aber wir müssen aufpassen, nicht rekursiv Threads zu starten
-            # Wir rufen einfach die Logik direkt auf
+            # If something went wrong, quickly generate a simulation
+            # But take care not to start threads recursively
+            # Simply call the logic directly
             self.is_real_data = False
             self.event_name = "Simulation (Fallback)"
             # Noise only, from the same scenario as the simulation mode
@@ -237,7 +235,7 @@ class GlitchHunterApp:
             self.current_data = noise
             self.has_signal = False
             self.pure_signal = np.zeros_like(noise)
-            title = "Simulierte Daten (Fallback)"
+            title = "Simulated data (fallback)"
 
         # Reset UI
         if self.truth_text_artist is not None:
@@ -250,7 +248,7 @@ class GlitchHunterApp:
         self.ax_confidence.text(
             0.5,
             0.5,
-            "Drücke 'KI fragen' für Analyse",
+            "Press 'Ask AI' for an analysis",
             ha="center",
             va="center",
             color="gray",
@@ -270,7 +268,7 @@ class GlitchHunterApp:
             self.current_data, NFFT=256, Fs=self.fs, noverlap=200, cmap="inferno"
         )
         self.ax_spec.set_title(
-            "2. Spektrogramm (Bereinigt)", fontsize=12, fontweight="bold"
+            "2. Spectrogram (cleaned)", fontsize=12, fontweight="bold"
         )
         self.ax_spec.set_ylim(0, 600)
 
@@ -296,7 +294,7 @@ class GlitchHunterApp:
 
                 winsound.PlaySound(filename, winsound.SND_FILENAME | winsound.SND_ASYNC)
         except Exception as e:
-            print(f"Audio Fehler: {e}")
+            print(f"Audio error: {e}")
 
     def update_threshold(self, val):
         self.detection_threshold = val
@@ -315,7 +313,7 @@ class GlitchHunterApp:
             self.pure_signal = np.zeros_like(sample.data)
         self.true_snr = sample.snr
 
-        self.update_plot_threadsafe(title="Simulierte Daten")
+        self.update_plot_threadsafe(title="Simulated data")
 
     def ask_ai(self, event):
         if self.prediction is not None:
@@ -340,13 +338,13 @@ class GlitchHunterApp:
 
         if self.is_real_data:
             if self.has_signal:
-                truth_text = f"WAHRHEIT: {self.event_name}"
+                truth_text = f"TRUTH: {self.event_name}"
                 box_color = "gold"
             else:
-                truth_text = "WAHRHEIT: Echtes Rauschen"
+                truth_text = "TRUTH: real noise"
                 box_color = "lightgray"
         else:
-            truth_text = "WAHRHEIT: " + ("SIGNAL" if self.has_signal else "RAUSCHEN")
+            truth_text = "TRUTH: " + ("SIGNAL" if self.has_signal else "NOISE")
             if self.has_signal:
                 truth_text += f" (SNR: {self.true_snr:.2f})"
             is_detection = self.prediction > self.detection_threshold
@@ -369,13 +367,13 @@ class GlitchHunterApp:
         threshold = self.detection_threshold
 
         if pred_prob > threshold:
-            decision = "ALARM: SIGNAL ENTDECKT!"
+            decision = "ALARM: SIGNAL DETECTED!"
             bar_color = "red"
         elif pred_prob > 0.5:
-            decision = "UNSICHER (Ignoriert)"
+            decision = "UNSURE (ignored)"
             bar_color = "orange"
         else:
-            decision = "RUHIG: Nur Rauschen"
+            decision = "QUIET: noise only"
             bar_color = "blue"
 
         self.ax_confidence.axvline(threshold, color="black", linestyle="--", alpha=0.5)
@@ -401,7 +399,7 @@ class GlitchHunterApp:
             color=bar_color,
         )
         self.ax_confidence.text(
-            0.5, -0.3, f"KI Konfidenz: {percent:.2f}%", ha="center", fontsize=12
+            0.5, -0.3, f"AI confidence: {percent:.2f}%", ha="center", fontsize=12
         )
         self.fig.canvas.draw_idle()
 

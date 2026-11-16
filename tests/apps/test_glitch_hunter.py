@@ -42,7 +42,7 @@ def test_an_event_is_fetched_as_a_four_second_window(hunter):
     assert hunter.event_name == EVENTS[0].name
     assert hunter.is_real_data is True
     assert hunter.current_data.shape == (N_SAMPLES,)
-    assert hunter.plots == [{"title": f"ECHTE DATEN: {EVENTS[0].name} (H1)"}]
+    assert hunter.plots == [{"title": f"REAL DATA: {EVENTS[0].name} (H1)"}]
 
 
 def test_a_rejected_download_falls_back_to_simulation(hunter):
