@@ -42,6 +42,7 @@ from gwd.config import (
 )
 from gwd.core import noise as core_noise
 from gwd.core.population import random_bbh_params
+from gwd.core.snr import scale_signal_to_snr
 from gwd.core.timebase import time_axis
 from gwd.core.waveforms import generate_chirp
 from gwd.data.preprocessing import normalize
@@ -83,31 +84,6 @@ def _rng(rng):
 def white_noise(length, rng=None):
     """Unit white noise from gwd.core.noise.white_noise."""
     return core_noise.white_noise(length, 1.0, rng=_rng(rng))
-
-
-def scale_signal_to_snr(signal, noise, target_snr, reference="noise_std"):
-    """Scale signal to a peak SNR and return (scaled signal, SNR).
-
-    "noise_std" (TRAIN_V1): the peak becomes target_snr times the std of noise. A
-    signal without peak returns zeros and SNR 0.0.
-    "unit" (EVAL_V1, APP_V1): signal * target_snr. This is a peak SNR only because the
-    chirp has peak 1 and the white noise a nominal std of 1; the measured std is not
-    used.
-    """
-    if reference == "unit":
-        return signal * target_snr, target_snr
-
-    noise_level = np.std(noise)
-    if noise_level == 0:
-        noise_level = 1.0
-
-    sig_max = np.max(np.abs(signal))
-    if sig_max == 0:
-        return signal, 0.0
-
-    signal_normalized = signal / sig_max
-    scaled_signal = signal_normalized * target_snr * noise_level
-    return scaled_signal, target_snr
 
 
 def real_noise_files(folder=DATA_DIR_NOISE):

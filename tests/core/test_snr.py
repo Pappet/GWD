@@ -143,3 +143,15 @@ def test_the_welch_variant_of_white_noise_is_the_white_optimal_snr(rng):
     noise = white_noise(len(h), 1.0, rng=rng)
     full_band = snr.optimal_snr_welch(h, noise, FS, 1.0, FS / 2)
     assert full_band == pytest.approx(snr.optimal_snr_white(h, 1.0), rel=0.10)
+
+
+def test_scale_signal_to_snr_is_the_v1_peak_scaling(rng):
+    h = chirp()
+    noise = white_noise(len(h), 2.0, rng=rng)
+    scaled, value = snr.scale_signal_to_snr(h, noise, 4.0)
+    assert value == 4.0
+    assert snr.peak_snr(scaled, np.std(noise)) == pytest.approx(4.0, rel=1e-12)
+    unit, value = snr.scale_signal_to_snr(h, noise, 1.5, "unit")
+    assert value == 1.5 and np.array_equal(unit, h * 1.5)
+    zeros, value = snr.scale_signal_to_snr(np.zeros(8), noise[:8], 3.0)
+    assert value == 0.0 and not zeros.any()

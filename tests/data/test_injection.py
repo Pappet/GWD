@@ -140,14 +140,6 @@ def test_train_draws_the_noise_choice_even_without_chunks():
     assert np.array_equal(sample.data, injection.white_noise(N_SAMPLES, reference))
 
 
-def test_noise_std_reference_scales_to_the_measured_noise_std():
-    noise = 3.0 * np.random.RandomState(1).normal(size=N_SAMPLES)
-    chirp = np.sin(np.linspace(0, 40, N_SAMPLES))
-    scaled, snr = injection.scale_signal_to_snr(chirp, noise, 4.0, "noise_std")
-    assert snr == 4.0
-    assert np.isclose(np.max(np.abs(scaled)), 4.0 * np.std(noise))
-
-
 def test_real_chunks_keep_the_v1_scale_skew(noise_folder):
     """V1 normalizes raw strain with the default eps, so the std is near 1e-11, not 1."""
     files = injection.real_noise_files(noise_folder)

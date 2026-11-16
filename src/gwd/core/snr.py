@@ -17,7 +17,9 @@ Parseval: optimal_snr_white. optimal_snr_welch estimates S from a noise series w
 Welch's method first, for noise whose PSD is not known, such as a real chunk.
 
 scale_to_snr scales h linearly to a target value of one of these definitions, and
-measure measures it.
+measure measures it. scale_signal_to_snr is the V1 scaling of gwd.data.injection
+(moved here in P5.5): a peak SNR against the measured noise std, or against a nominal
+std of 1.
 
 numpy and scipy only, no config: the caller passes fs and the band.
 """
@@ -150,3 +152,29 @@ def scale_to_snr(h, target, kind, **kwargs):
     if current == 0:
         raise ValueError(f"cannot scale a signal whose {kind} SNR is 0")
     return np.asarray(h) * (target / current)
+
+
+def scale_signal_to_snr(signal, noise, target_snr, reference="noise_std"):
+    """Scale signal to a peak SNR and return (scaled signal, SNR): the V1 scaling.
+
+    "noise_std" (TRAIN_V1): the peak becomes target_snr times the std of noise. A
+    signal without peak returns zeros and SNR 0.0.
+    "unit" (EVAL_V1, APP_V1): signal * target_snr. This is a peak SNR only because the
+    chirp has peak 1 and the white noise a nominal std of 1; the measured std is not
+    used.
+    The arithmetic is that of V1, so the golden values stay bit for bit.
+    """
+    if reference == "unit":
+        return signal * target_snr, target_snr
+
+    noise_level = np.std(noise)
+    if noise_level == 0:
+        noise_level = 1.0
+
+    sig_max = np.max(np.abs(signal))
+    if sig_max == 0:
+        return signal, 0.0
+
+    signal_normalized = signal / sig_max
+    scaled_signal = signal_normalized * target_snr * noise_level
+    return scaled_signal, target_snr
