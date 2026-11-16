@@ -296,7 +296,7 @@ Each step PR ticks its own step, so a tick takes effect when that PR is merged.
 | [x] | P5.4 | Correct noise normalization; interferometer as an honest learning model | #42 |
 | [x] | P5.5 | Name and measure SNR honestly: `peak_snr` and `optimal_snr` | #43 |
 | [x] | P5.6 | Training: grouped three-way split, seeds, float32, full metadata | #41 |
-| [ ] | P5.7 | Fixed, hashed test sets; metrics per SNR bin, mass bin, and noise type | |
+| [x] | P5.7 | Fixed, hashed test sets; metrics per SNR bin, mass bin, and noise type | #44 |
 | [ ] | P5.8 | Per-model threshold at fixed FPR; leaderboard v2 with raw numbers | |
 | [ ] | P6.1 | Delete or correct the Newton backend (D1) | |
 | [ ] | P6.2 | Scenario V2: inject first, then condition together | |
