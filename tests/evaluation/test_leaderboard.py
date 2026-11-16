@@ -232,6 +232,19 @@ def test_show_ranks_per_test_set_and_formats_only_there(tmp_path):
     assert "%" not in path.read_text()
 
 
+def test_show_labels_the_snr_columns_as_peak_and_adds_optimal_snr90(tmp_path):
+    """snr50 and snr90 are peak SNRs; the table said only 'SNR50' and 'SNR90'."""
+    path = tmp_path / "results" / "leaderboard_v2.csv"
+    add(path, snr50=1.25, snr90=1.81, optimal_snr90=23.456)
+    header = leaderboard.display_table(leaderboard.read_leaderboard(path)).columns
+    snr = [column for column in header if "SNR" in column]
+    assert snr == ["peak SNR50", "peak SNR90", "optimal SNR90"]
+    out = show(tmp_path)
+    assert "peak SNR50" in out and "optimal SNR90" in out and "23.46" in out
+    # The CSV keeps its schema.
+    assert tuple(pd.read_csv(path).columns) == leaderboard.COLUMNS
+
+
 def test_show_names_the_archives_and_never_changes_them(tmp_path):
     legacy, original = write_legacy(tmp_path)
     analysis = tmp_path / "analysis" / "model_leaderboard.csv"

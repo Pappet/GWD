@@ -241,8 +241,10 @@ def display_table(df):
             "n sig/noise": [
                 f"{int(s)}/{int(n)}" for s, n in zip(df["n_signal"], df["n_noise"])
             ],
-            "SNR50": df["snr50"].map(lambda v: _fmt(v, ".2f")),
-            "SNR90": df["snr90"].map(lambda v: _fmt(v, ".2f")),
+            # snr50 and snr90 are peak SNRs; the labels say so (the CSV keeps its names).
+            "peak SNR50": df["snr50"].map(lambda v: _fmt(v, ".2f")),
+            "peak SNR90": df["snr90"].map(lambda v: _fmt(v, ".2f")),
+            "optimal SNR90": df["optimal_snr90"].map(lambda v: _fmt(v, ".2f")),
             "real events": [
                 _count(f, lo, t)
                 for f, lo, t in zip(
@@ -291,9 +293,10 @@ def show():
             print(f"\nTest set {name} (seed {seed}, n {n}), SHA-256 {sha[:12]}:")
             print(display_table(rank(group)).to_markdown(index=False))
         print(
-            "\nRanked by ROC AUC, then TPR. TPR and SNR50/90 are at each model's "
-            "threshold, at the FPR next to them; '(fallback)' marks a model without "
-            "a calibrated threshold (gwd eval thresholds --model <m> --save)."
+            "\nRanked by ROC AUC, then TPR. TPR and the peak and optimal SNR50/90 are "
+            "at each model's threshold, at the FPR next to them; '(fallback)' marks a "
+            "model without a calibrated threshold "
+            "(gwd eval thresholds --model <m> --save)."
         )
     for line in legacy_note():
         print(line)

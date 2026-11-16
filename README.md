@@ -203,7 +203,7 @@ All paths are below the project root, the folder with `pyproject.toml`. `gwd env
 | `data/noise_background/` | Real noise chunks from `gwd data fetch-noise`, `real_noise_NNNN.npy` |
 | `data/eval/` | The fixed test sets, `<set>_<seed>_<n>.npz` (since P5.7) |
 | `models_registry/` | Trained models (`.keras`) and their metadata (`.json`) |
-| `results/` | `leaderboard_v2.csv`, `optimal_thresholds.json` (the report of the last `gwd eval thresholds`), the test set manifests in `testsets/`, and the old `model_leaderboard.csv` as an archive |
+| `results/` | `leaderboard_v2.csv`, one `gwd eval thresholds` report per model in `thresholds/<model name>.json`, the test set manifests in `testsets/`, and the old `model_leaderboard.csv` and `optimal_thresholds.json` (the single report that every run overwrote until the per-model reports) as archives |
 | `plots/` | `validation_dataset/`, `training/`, and `evaluation_models/` |
 
 Git ignores all of these folders; they exist only on the machine that made them. The legacy paths `gw_noise_background/`, `gw_training_data/`, `./model_leaderboard.csv`, and `analysis/model_leaderboard.csv` come from before the cleanup. The code writes none of them; since P5.8 it also no longer writes or copies `results/model_leaderboard.csv`, and `gwd eval leaderboard` only names the old leaderboards that exist as archives. Keep the legacy paths; ignored files cannot be restored from Git.

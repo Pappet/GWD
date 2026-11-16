@@ -9,7 +9,8 @@ threshold whose false alarm rate on calib_bg is at most THRESHOLD_TARGET_FPR (1 
 With --save (the default) it stores the threshold, the target and the reached FPR, the
 strategy, and the test set with its SHA-256 in the model's metadata
 (gwd.registry.set_threshold), where gwd eval run, gwd eval compare, and the Glitch Hunter
-read it, and it writes a report to results/optimal_thresholds.json.
+read it, and it writes a report to results/thresholds/<model name>.json, one per model
+(results/optimal_thresholds.json, which every run overwrote, is no longer written).
 
 It then reports the TPR and FPR of that threshold on the part test, with n. The six
 strategies of find_optimal_thresholds are still shown for reference, but they are
@@ -33,9 +34,9 @@ import numpy as np
 from gwd.config import (
     DEFAULT_TESTSET,
     EVALUATION_MODELS_PLOTS_DIR,
-    OPTIMAL_THRESHOLDS_FILE,
     TESTSET_SEED,
     TESTSET_SIZE,
+    THRESHOLD_REPORTS_DIR,
     THRESHOLD_TARGET_FPR,
     ensure_dirs,
 )
@@ -46,7 +47,7 @@ import matplotlib.pyplot as plt
 from gwd import registry
 from gwd.evaluation import testsets
 from gwd.evaluation.metrics import find_optimal_thresholds, rate_at, threshold_at_fpr
-from gwd.registry import load_model, resolve
+from gwd.registry import load_model, model_name, resolve
 
 # The strategy that gwd eval thresholds saves in the registry.
 STRATEGY = "fixed_fpr on calib_bg"
@@ -54,11 +55,26 @@ STRATEGY = "fixed_fpr on calib_bg"
 TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
-def visualize_thresholds(y_true, y_scores, optimal_thresholds, roc_data, calibrated):
+def report_path(model_path):
+    """The report of one model: results/thresholds/<model name>.json."""
+    return os.path.join(THRESHOLD_REPORTS_DIR, model_name(model_path) + ".json")
+
+
+def plot_path(model_path):
+    """The plot of one run: plot_optimize_threshold_<model name>_<timestamp>.png."""
+    return os.path.join(
+        EVALUATION_MODELS_PLOTS_DIR,
+        f"plot_optimize_threshold_{model_name(model_path)}_{TIMESTAMP}.png",
+    )
+
+
+def visualize_thresholds(
+    y_true, y_scores, optimal_thresholds, roc_data, calibrated, model_path
+):
     """Plot the calibrated threshold and the reference strategies on the ROC curve.
 
     calibrated is the result of calibrate(): its point is the TPR and FPR of the
-    calib_bg threshold on the part test.
+    calib_bg threshold on the part test. model_path names the plot file (plot_path).
     """
 
     fpr, tpr, thresholds = roc_data
@@ -178,17 +194,15 @@ def visualize_thresholds(y_true, y_scores, optimal_thresholds, roc_data, calibra
         bbox=dict(boxstyle="round", facecolor="lightblue", alpha=0.3),
     )
 
-    plt.suptitle("Threshold Optimization Analysis", fontsize=16, fontweight="bold")
-    ensure_dirs(EVALUATION_MODELS_PLOTS_DIR)
-    plt.savefig(
-        os.path.join(
-            EVALUATION_MODELS_PLOTS_DIR, f"plot_optimize_threshold_{TIMESTAMP}.png"
-        ),
-        dpi=150,
+    plt.suptitle(
+        f"Threshold Optimization Analysis: {model_name(model_path)}",
+        fontsize=16,
+        fontweight="bold",
     )
-    print(
-        f"📊 Plot: {os.path.join(EVALUATION_MODELS_PLOTS_DIR, f'plot_optimize_threshold_{TIMESTAMP}.png')}"
-    )
+    path = plot_path(model_path)
+    ensure_dirs(os.path.dirname(path))
+    plt.savefig(path, dpi=150)
+    print(f"📊 Plot: {path}")
     plt.close()
 
 
@@ -346,7 +360,9 @@ def run(
     # 5. Reference strategies on test, and the plot
     optimal_thresholds, roc_data = find_optimal_thresholds(y_true, y_scores)
     print("\n📈 Creating the plot...")
-    visualize_thresholds(y_true, y_scores, optimal_thresholds, roc_data, calibrated)
+    visualize_thresholds(
+        y_true, y_scores, optimal_thresholds, roc_data, calibrated, model_path
+    )
     recommend_threshold(optimal_thresholds)
 
     # 6. Save (default; --no-save skips it)
@@ -381,10 +397,11 @@ def run(
         },
     }
 
-    ensure_dirs(os.path.dirname(OPTIMAL_THRESHOLDS_FILE))
-    with open(OPTIMAL_THRESHOLDS_FILE, "w") as f:
+    report = report_path(model_path)
+    ensure_dirs(os.path.dirname(report))
+    with open(report, "w") as f:
         json.dump(output, f, indent=2)
-    print(f"✓ Report saved to {OPTIMAL_THRESHOLDS_FILE}")
+    print(f"✓ Report saved to {report}")
     return 0
 
 

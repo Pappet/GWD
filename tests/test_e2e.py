@@ -258,8 +258,12 @@ def test_the_test_set_and_its_manifest_exist(e2e):
     )
     assert (home / "data" / "eval" / f"{TESTSET_STEM}.npz").exists()
     assert manifest["noise_sources"]["test"] == {"gaussian": 1000}
-    thresholds = json.loads((home / "results" / "optimal_thresholds.json").read_text())
+    # One report per model; the single optimal_thresholds.json is no longer written.
+    (model,) = (home / "models_registry").glob("*.keras")
+    report = home / "results" / "thresholds" / f"{model.stem}.json"
+    thresholds = json.loads(report.read_text())
     assert thresholds["testset"]["sha256"] == manifest["sha256"]
+    assert not (home / "results" / "optimal_thresholds.json").exists()
 
 
 def test_thresholds_saves_the_threshold_that_run_uses(e2e):
@@ -299,6 +303,15 @@ def test_the_comparison_plot_exists(e2e):
     (zoom,) = plots.glob("plot_compare_roc_*_zoom.png")
     comparison = plots / zoom.name.replace("_zoom.png", ".png")
     assert sorted(plots.glob("plot_compare_roc_*.png")) == sorted([comparison, zoom])
+
+
+def test_the_plots_of_thresholds_and_run_name_the_model(e2e):
+    home = e2e[0]
+    plots = home / "plots" / "evaluation_models"
+    (model,) = (home / "models_registry").glob("*.keras")
+    for prefix in ("plot_optimize_threshold", "plot_evaluate_model_with_roc"):
+        assert len(list(plots.glob(f"{prefix}_{model.stem}_*.png"))) == 1, prefix
+        assert len(list(plots.glob(f"{prefix}_*.png"))) == 1, prefix
 
 
 def test_the_glitch_hunter_rates_with_the_model_and_its_saved_threshold(e2e):

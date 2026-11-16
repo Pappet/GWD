@@ -21,6 +21,25 @@ MODEL_HELP = (
 )
 
 
+# Read by TensorFlow's C++ runtime when it is imported. Level 3 hides its info,
+# warning, and error lines (cudart_stub, oneDNN, cpu_feature_guard, and the cuInit error
+# on a machine without a CUDA driver); Python exceptions still surface.
+TF_ENVIRONMENT = {
+    "TF_CPP_MIN_LOG_LEVEL": "3",
+    "TF_ENABLE_ONEDNN_OPTS": "0",  # oneDNN off, as in training before P3.7
+}
+
+
+def quiet_tensorflow():
+    """Set TF_ENVIRONMENT before TensorFlow is imported; values the caller set win.
+
+    Every handler that can load TensorFlow calls it first. Once TensorFlow is
+    imported, the variables have no effect any more.
+    """
+    for name, value in TF_ENVIRONMENT.items():
+        os.environ.setdefault(name, value)
+
+
 # --- handlers: each returns an exit code ---
 
 
@@ -79,9 +98,7 @@ def _train(args):
         )
         return 1
 
-    # Read by TensorFlow when it is imported; values the caller has set win.
-    os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")  # hide info and warnings
-    os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")  # oneDNN off, as before
+    quiet_tensorflow()
     from gwd.data.validate import InvalidDatasetError
     from gwd.training.train import TrainConfig, train
 
@@ -134,18 +151,21 @@ def _eval_build_testset(args):
 
 
 def _eval_run(args):
+    quiet_tensorflow()
     from gwd.evaluation import evaluate
 
     return evaluate.run(model=args.model, real=args.real, **_testset_options(args))
 
 
 def _eval_thresholds(args):
+    quiet_tensorflow()
     from gwd.evaluation import thresholds
 
     return thresholds.run(model=args.model, save=args.save, **_testset_options(args))
 
 
 def _eval_compare(args):
+    quiet_tensorflow()
     from gwd.evaluation import compare
 
     return compare.run(models=args.model, **_testset_options(args))
@@ -167,6 +187,7 @@ APPS = {
 def _app(args):
     if args.app == "glitch-hunter":
         # It takes --model; without PyCBC it starts with the simulation off (P4.4).
+        quiet_tensorflow()
         from gwd.apps.glitch_hunter.app import main
 
         return main(model=args.model or "latest")
@@ -427,7 +448,8 @@ def build_parser():
         description="Calibrate one model's detection threshold on the noise-only part "
         "calib_bg of a fixed test set, at a false alarm rate of 1%, and save it in the "
         "model's metadata in models_registry/, where gwd eval run, gwd eval compare, "
-        "and the Glitch Hunter read it. Also writes results/optimal_thresholds.json.",
+        "and the Glitch Hunter read it. Also writes a report to "
+        "results/thresholds/<model name>.json, one per model.",
     )
     _add_model(thresholds)
     thresholds.add_argument(

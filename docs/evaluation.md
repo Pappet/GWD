@@ -9,7 +9,7 @@ This document describes how GWD evaluates a trained CNN today: the commands, the
 | Command | What it does | Writes |
 |---|---|---|
 | `gwd eval build-testset` | Draws a fixed test set once, or loads and checks it if it exists | `data/eval/<set>_<seed>_<n>.npz`, `results/testsets/<set>_<seed>_<n>.json` |
-| `gwd eval thresholds` | Calibrates one model's threshold at FPR 1% on the part `calib_bg` of a fixed test set; shows six reference strategies on `test` | the threshold in the model's `.json` in `models_registry/`; one plot; `results/optimal_thresholds.json` |
+| `gwd eval thresholds` | Calibrates one model's threshold at FPR 1% on the part `calib_bg` of a fixed test set; shows six reference strategies on `test` | the threshold in the model's `.json` in `models_registry/`; one plot; `results/thresholds/<model name>.json` |
 | `gwd eval run` | ROC analysis of one model on a fixed test set at the model's threshold, also per bin; with `--real` also the field test on real data (network) | one plot with six panels; one row in `results/leaderboard_v2.csv` |
 | `gwd eval compare` | ROC curves of several models on the same fixed test set, each with its operating point at its own threshold | two plots |
 | `gwd eval leaderboard` | Prints leaderboard v2, one table per test set, best ROC AUC first | nothing |
@@ -91,7 +91,7 @@ Because of the padding, the `>=` rule, and the new texts, field test results sin
 
 ## Plots
 
-`gwd eval run` writes `plot_evaluate_model_with_roc_<timestamp>.png` with six panels; its title names the test set and the first 12 characters of its SHA-256:
+The plots go to `plots/evaluation_models/`, and every command prints the path of each one. `gwd eval run` writes `plot_evaluate_model_with_roc_<model name>_<timestamp>.png` with six panels, so a loop over the models leaves one plot per model; its title names the model, the test set, and the first 12 characters of the set's SHA-256:
 
 1. ROC curve with the AUC, the chance diagonal, and the operating point at the model's threshold.
 2. Precision-recall curve with the AP.
@@ -100,7 +100,7 @@ Because of the padding, the `>=` rule, and the new texts, field test results sin
 5. Score distributions of the signal and noise samples, with the threshold.
 6. A table of ROC AUC, AP, the threshold, accuracy, TPR, FPR, and SNR50 and SNR90 as peak and as optimal SNR.
 
-`gwd eval thresholds` writes `plot_optimize_threshold_<timestamp>.png`: the ROC curve on `test` with a star at the calibrated threshold and the point of every reference strategy, TPR, FPR, and Youden's J against the threshold, and a table of the calibrated threshold and the strategies.
+`gwd eval thresholds` writes `plot_optimize_threshold_<model name>_<timestamp>.png`, titled with the model: the ROC curve on `test` with a star at the calibrated threshold and the point of every reference strategy, TPR, FPR, and Youden's J against the threshold, and a table of the calibrated threshold and the strategies.
 
 `gwd eval compare` writes `plot_compare_roc_<timestamp>.png` with the ROC curves of all models, titled with the test set, each with a star at its operating point at its own threshold, and a bar chart of their AUCs, and `plot_compare_roc_<timestamp>_zoom.png` with the region FPR ≤ 0.1. Each model has the same color in both plots. The printed ranking, by ROC AUC, lists the TPR of each model at its threshold with the FPR it reached.
 
@@ -122,7 +122,7 @@ With `--save`, the default, the threshold goes into the model's metadata (`gwd.r
 
 `gwd eval run`, `gwd eval compare`, and the Glitch Hunter read it with `gwd.registry.get_threshold`. A model without a threshold, such as every model trained before P5.8, gets 0.5 and a warning that names the command; calibrate each old model once, for example `gwd eval thresholds --model gwd_model_20251205-232013 --save`, or all of them with the loop in the [README](../README.md#3-evaluation). A threshold calibrated on one test set can be used on another; `gwd eval run` then says that the FPR on its set can differ from the target. A model trained after its last calibration is a new file and needs its own.
 
-`gwd eval thresholds` also writes a report of the last run to `results/optimal_thresholds.json`, which nothing reads:
+`gwd eval thresholds` also writes a report to `results/thresholds/<model name>.json` (`THRESHOLD_REPORTS_DIR` in `gwd.config`), one per model, and prints its path; a later run of the same model replaces it, and nothing reads it. Until this change every run overwrote the single file `results/optimal_thresholds.json`, so after a loop over the models only the last report was left; that file is no longer written, and an existing one stays as it is. A report looks like this:
 
 ```json
 {
@@ -152,7 +152,7 @@ If no point of the ROC curve meets an FPR limit, the proposal lies just above th
 
 ## Leaderboard
 
-Since P5.8 every `gwd eval run` appends one row to `results/leaderboard_v2.csv`, on any test set; old rows are never rewritten, so a model evaluated twice has two rows. The file holds raw numbers: floats, integers, and empty cells for missing values, so `pandas.read_csv` reads the metrics as numbers (`gwd.evaluation.leaderboard.read_leaderboard` also reads the hashes as text and every float exactly as written). Only `gwd eval leaderboard` formats them. It prints one table per test set (name, seed, n, and SHA-256), because rows of different sets are not comparable, and ranks each by ROC AUC, then by TPR at the threshold; rows without a numeric AUC go last. It never ranks by SNR50: a model that fires on everything reaches every SNR level (`evaluation:MISS-1`).
+Since P5.8 every `gwd eval run` appends one row to `results/leaderboard_v2.csv`, on any test set; old rows are never rewritten, so a model evaluated twice has two rows. The file holds raw numbers: floats, integers, and empty cells for missing values, so `pandas.read_csv` reads the metrics as numbers (`gwd.evaluation.leaderboard.read_leaderboard` also reads the hashes as text and every float exactly as written). Only `gwd eval leaderboard` formats them. It prints one table per test set (name, seed, n, and SHA-256), because rows of different sets are not comparable, and ranks each by ROC AUC, then by TPR at the threshold; rows without a numeric AUC go last. It never ranks by SNR50: a model that fires on everything reaches every SNR level (`evaluation:MISS-1`). The printed columns `peak SNR50` and `peak SNR90` are the CSV columns `snr50` and `snr90`, and `optimal SNR90` is `optimal_snr90`; until this change the first two were labelled only `SNR50` and `SNR90`, and the optimal SNR was not shown.
 
 | Column | Content |
 |---|---|

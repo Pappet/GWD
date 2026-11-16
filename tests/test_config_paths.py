@@ -25,6 +25,7 @@ PATH_NAMES = [
     "LEADERBOARD_FILE",
     "LEGACY_LEADERBOARD_FILES",
     "OPTIMAL_THRESHOLDS_FILE",
+    "THRESHOLD_REPORTS_DIR",
 ]
 
 
@@ -50,6 +51,8 @@ def expected_paths(root):
         "OPTIMAL_THRESHOLDS_FILE": os.path.join(
             root, "results", "optimal_thresholds.json"
         ),
+        # One report per model instead of the single file above.
+        "THRESHOLD_REPORTS_DIR": os.path.join(root, "results", "thresholds"),
     }
 
 
