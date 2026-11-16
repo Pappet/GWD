@@ -66,6 +66,11 @@ N_SAMPLES = int(SAMPLE_RATE * DURATION)  # 16384 values per sample
 INPUT_SHAPE = (N_SAMPLES, 1)  # (time steps, channels)
 SAMPLES_FOR_TRAINING = 10000
 
+# The waveform backend of the pipeline (datasets, test sets, evaluation). gwd.core reads
+# no config, so the callers pass it on. Without PyCBC the pipeline stops with
+# gwd.core.waveforms.WaveformBackendError instead of falling back to Newton (P5.2, D1).
+WAVEFORM_BACKEND = "pycbc"
+
 # Real-data conditioning: notch the power line and its harmonics, then band-pass.
 NOTCH_FREQS = (60, 120, 180, 240)  # Hz
 BANDPASS = (20, 300)  # Hz, (low, high)

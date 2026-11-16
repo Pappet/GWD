@@ -1,5 +1,7 @@
 """gwd eval run: the start line that names backend and noise (P4.1), the metrics box (P4.2)."""
 
+import sys
+
 import pytest
 
 from gwd.core import waveforms
@@ -29,7 +31,7 @@ def test_the_start_line_names_backend_and_noise(stubbed, capsys):
     assert evaluate.run() == 0
     out, err = capsys.readouterr()
     line = (
-        f"Backend: {waveforms.active_backend()} | Noise: gaussian (EVAL_V1 test sets); "
+        f"Backend: {waveforms.backend_label('pycbc')} | Noise: gaussian (EVAL_V1 test sets); "
         "no field test (--no-real)"
     )
     assert line in out
@@ -61,12 +63,16 @@ def test_without_real_the_row_says_n_a(stubbed, capsys, monkeypatch):
     assert "gwd eval run --real" in capsys.readouterr().out
 
 
-def test_newton_gets_a_loud_warning(stubbed, capsys, monkeypatch):
-    monkeypatch.setattr(waveforms, "HAS_PYCBC", False)
-    assert evaluate.run(real=False) == 0
-    out, err = capsys.readouterr()
-    assert "Backend: newton | Noise:" in out
-    assert "the waveform backend is the Newtonian approximation" in err
+def test_without_pycbc_the_evaluation_stops_before_loading_the_model(
+    stubbed, monkeypatch
+):
+    """P5.2: no Newton test sets; the error names the install command."""
+    monkeypatch.setitem(sys.modules, "pycbc", None)
+    monkeypatch.setattr(
+        evaluate, "load_model", lambda path: pytest.fail("model loaded")
+    )
+    with pytest.raises(waveforms.WaveformBackendError, match="physics"):
+        evaluate.run(real=False)
 
 
 def test_the_metrics_box_has_rows_of_one_width():

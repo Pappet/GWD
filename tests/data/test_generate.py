@@ -49,9 +49,8 @@ def test_labels_name_backend_noise_source_and_chunk(tmp_path, noise_dir):
     _, labels, _ = generate(tmp_path, noise_dir)
     assert list(labels.columns) == OLD_COLUMNS + NEW_COLUMNS
 
-    backend = "pycbc" if waveforms.HAS_PYCBC else "newton"
     signal = labels["has_signal"] == 1
-    assert set(labels.loc[signal, "waveform_backend"]) == {backend}
+    assert set(labels.loc[signal, "waveform_backend"]) == {"pycbc"}
     assert set(labels.loc[~signal, "waveform_backend"]) == {""}
 
     real = labels["noise_source"] == "real"
@@ -67,7 +66,7 @@ def test_the_manifest_describes_the_dataset(tmp_path, noise_dir):
     assert manifest["scenario"] == "TRAIN_V1"
     assert manifest["scenario_hash"] == TRAIN_V1.hash()
     assert (manifest["seed"], manifest["n"]) == (7, 20)
-    assert manifest["waveform_backend"] == waveforms.active_backend()
+    assert manifest["waveform_backend"] == waveforms.backend_label("pycbc")
     assert sum(manifest["signal_backends"].values()) == 10
     assert manifest["real_noise_samples"] == real
     assert manifest["real_noise_fraction"] == real / 20
@@ -107,7 +106,7 @@ def test_rng_and_seed_together_are_rejected(tmp_path):
 def test_the_start_line_names_backend_and_noise(tmp_path, noise_dir, capsys):
     generate(tmp_path, noise_dir, n=2)
     out, err = capsys.readouterr()
-    backend = waveforms.active_backend()
+    backend = waveforms.backend_label("pycbc")
     line = (
         f"Backend: {backend} | Noise: real for 80% of samples (3 chunks), else gaussian"
     )
@@ -131,15 +130,51 @@ def test_a_scenario_without_real_noise_says_so(tmp_path, noise_dir, capsys):
     assert "WARNING" not in err
 
 
-def test_newton_gets_a_loud_warning(tmp_path, noise_dir, capsys, monkeypatch):
-    monkeypatch.setattr(waveforms, "HAS_PYCBC", False)
-    _, labels, manifest = generate(tmp_path, noise_dir, n=4)
+def test_newton_chosen_on_purpose_gets_a_loud_warning(tmp_path, noise_dir, capsys):
+    """Only tests and the golden values pass backend='newton'; gwd data generate never."""
+    out = tmp_path / "out"
+    generate_dataset(4, str(out), seed=7, noise_dir=str(noise_dir), backend="newton")
+    labels = pd.read_csv(out / "labels.csv", keep_default_na=False)
+    manifest = json.loads((out / "manifest.json").read_text())
     out, err = capsys.readouterr()
     assert "Backend: newton | Noise:" in out
     assert "the waveform backend is the Newtonian approximation" in err
     assert manifest["waveform_backend"] == "newton"
     assert manifest["signal_backends"] == {"newton": 2}
     assert set(labels.loc[labels["has_signal"] == 1, "waveform_backend"]) == {"newton"}
+
+
+def test_without_pycbc_nothing_is_written_or_removed(tmp_path, noise_dir, monkeypatch):
+    """P5.2: no silent Newton dataset; the old dataset stays as it was."""
+    out, _, _ = generate(tmp_path, noise_dir, n=4)
+    before = {p.name: p.read_bytes() for p in out.iterdir()}
+    monkeypatch.setitem(sys.modules, "pycbc", None)
+    with pytest.raises(waveforms.WaveformBackendError, match="physics"):
+        generate_dataset(4, str(out), noise_dir=str(noise_dir), overwrite=True)
+    assert {p.name: p.read_bytes() for p in out.iterdir()} == before
+
+
+def test_gwd_data_generate_without_pycbc_exits_with_1_and_the_hint(tmp_path):
+    code = "\n".join(
+        [
+            "import sys",
+            "sys.modules['pycbc'] = None",
+            "from gwd.cli import main",
+            "sys.exit(main(['data', 'generate', '--n', '2', '--out', 'd']))",
+        ]
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env={**os.environ, "GWD_HOME": str(tmp_path)},
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1, result.stderr
+    assert "pip install -e '.[physics]'" in result.stderr
+    assert "WSL" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert not (tmp_path / "d").exists()
 
 
 # --- the output folder (P4.6) ---

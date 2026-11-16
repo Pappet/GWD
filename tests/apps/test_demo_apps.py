@@ -51,6 +51,27 @@ def test_the_noise_plot_rescales_after_the_sliders_move():
     assert top == pytest.approx(high, rel=0.2)
 
 
+def test_without_pycbc_the_explorer_uses_newton_and_says_so(monkeypatch):
+    """P5.2: the demo app chooses Newton on purpose and names it in the window."""
+    monkeypatch.setitem(sys.modules, "pycbc", None)
+    fig, state = waveform_explorer.build_figure()
+    assert state.backend == "newton"
+    assert state.sim.backend == "newton"
+    assert "Newton" in state.backend_text.get_text()
+    assert "physically inaccurate" in state.backend_text.get_text()
+    assert state.backend_text in fig.texts
+    state.s_mass1.set_val(50)
+    assert np.all(np.isfinite(state.line_strain.get_ydata()))
+    assert draw_without_warnings(fig) == []
+
+
+def test_with_pycbc_the_explorer_uses_pycbc():
+    pytest.importorskip("pycbc")
+    fig, state = waveform_explorer.build_figure()
+    assert state.backend == "pycbc"
+    assert state.backend_text.get_text().startswith("Waveforms: pycbc ")
+
+
 def test_the_finesse_follows_the_mirror_slider():
     fig, state = interferometer_designer.build_figure()
     for r in (0.999, 0.9999, 0.995):

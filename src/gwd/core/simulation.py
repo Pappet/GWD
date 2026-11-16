@@ -1,9 +1,7 @@
 import numpy as np
 
+from . import waveforms
 from .noise import generate_colored_noise
-from .waveforms import (
-    generate_astrophysical_chirp,
-)  # Jetzt importieren wir das Super-Hirn
 
 
 class TimeDomainSimulator:
@@ -12,7 +10,10 @@ class TimeDomainSimulator:
     Nutzt zentralisierte Physik-Module.
     """
 
-    def __init__(self, duration=0.5, sample_rate=4096):
+    def __init__(self, duration=0.5, sample_rate=4096, *, backend):
+        # The waveform backend, 'pycbc' or 'newton'. The caller chooses it (P5.2).
+        waveforms.check_backend(backend)
+        self.backend = backend
         self.c = 299792458
         self.arm_length = 4000
         self.laser_wavelength = 1064e-9
@@ -26,8 +27,9 @@ class TimeDomainSimulator:
         Delegiert die Berechnung an waveforms.py.
         WICHTIG: normalize=False, damit wir physikalische Einheiten (Strain) bekommen!
         """
-        strain, freq = generate_astrophysical_chirp(
-            time_array=self.t,
+        strain, freq = waveforms.generate_chirp(
+            self.t,
+            backend=self.backend,
             t_merger=self.duration * 0.8,  # Merger bei 80% der Zeit
             mass1=mass1,
             mass2=mass2,

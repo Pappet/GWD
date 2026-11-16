@@ -74,7 +74,7 @@ def _seed():
 
 
 def _measure_newton(time, waveforms):
-    strain, freq = waveforms.generate_astrophysical_chirp(time, **CHIRP)
+    strain, freq = waveforms.generate_chirp(time, backend="newton", **CHIRP)
     summary = _summary(strain, CHIRP_SAMPLES)
     summary["f_at_peak"] = float(freq[summary["argmax_abs"]])
     return summary
@@ -120,7 +120,11 @@ def _measure_dataset(dataset):
     import pandas as pd
 
     _seed()
-    dataset.generate_dataset(NUM_DATASET_SAMPLES, dataset.DATA_DIR_TRAIN)
+    # Newton on purpose: the dataset values stay numpy-only (P5.2). The pipeline itself
+    # always draws with PyCBC.
+    dataset.generate_dataset(
+        NUM_DATASET_SAMPLES, dataset.DATA_DIR_TRAIN, backend="newton"
+    )
     # keep_default_na: empty cells (no backend, no chunk) stay "" instead of NaN.
     labels = pd.read_csv(
         os.path.join(dataset.DATA_DIR_TRAIN, "labels.csv"), keep_default_na=False
@@ -149,10 +153,8 @@ def _measure_interferometer(interferometer):
 def _measure_pycbc(time, waveforms):
     import numpy as np
 
-    # The waveform code falls back to Newton on any PyCBC error and only warns.
-    strain, freq, backend = waveforms.chirp_and_backend(time, **CHIRP)
-    if backend != "pycbc":
-        raise RuntimeError(f"PyCBC path did not run, the backend was {backend}")
+    # Raises WaveformBackendError on any PyCBC error; nothing falls back (P5.2).
+    strain, freq = waveforms.generate_chirp(time, backend="pycbc", **CHIRP)
     peak = int(np.argmax(np.abs(strain)))
     return {
         "peak_index": peak,
@@ -179,10 +181,7 @@ def _measure(output):
         )
 
     time = np.linspace(0, 4.0, 16384)
-    has_pycbc = waveforms.HAS_PYCBC
-    waveforms.HAS_PYCBC = (
-        False  # Everything except the PyCBC section uses the numpy-only path.
-    )
+    # Everything except the PyCBC section passes backend="newton", the numpy-only path.
     measured = {
         "newton": _measure_newton(time, waveforms),
         "noise": _measure_noise(noise),
@@ -190,8 +189,8 @@ def _measure(output):
         "dataset": _measure_dataset(dataset),
         "interferometer": _measure_interferometer(interferometer),
     }
-    waveforms.HAS_PYCBC = has_pycbc
-    measured["pycbc"] = _measure_pycbc(time, waveforms) if has_pycbc else None
+    pycbc = waveforms.pycbc_available()
+    measured["pycbc"] = _measure_pycbc(time, waveforms) if pycbc else None
 
     Path(output).write_text(json.dumps(measured))
 

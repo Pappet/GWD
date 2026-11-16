@@ -5,6 +5,10 @@ waveform_backend ('pycbc' or 'newton', empty without signal), noise_source ('rea
 'gaussian'), and noise_file (the chunk's file name, empty for Gaussian noise). The new
 columns come after the old seven, so readers that select columns by name are not
 affected. manifest.json records how the dataset was made, see gwd.data.provenance.
+
+The chirps come from gwd.config.WAVEFORM_BACKEND ('pycbc'). Without PyCBC,
+generate_dataset raises gwd.core.waveforms.WaveformBackendError before it touches the
+output folder (P5.2).
 """
 
 import glob
@@ -19,8 +23,10 @@ from gwd.config import (
     DATA_DIR_TRAIN,
     LABELS_FILE,
     SAMPLES_FOR_TRAINING,
+    WAVEFORM_BACKEND,
     ensure_dirs,
 )
+from gwd.core.waveforms import check_backend
 from gwd.data.injection import make_sample, real_noise_provider
 from gwd.data.provenance import announce, build_manifest, write_manifest
 from gwd.data.scenarios import TRAIN_V1
@@ -95,6 +101,7 @@ def generate_dataset(
     seed=None,
     noise_dir=DATA_DIR_NOISE,
     overwrite=False,
+    backend=WAVEFORM_BACKEND,
 ):
     """Write num_samples samples of scenario, labels.csv, and manifest.json to output_folder.
 
@@ -106,10 +113,14 @@ def generate_dataset(
     from np.random.RandomState(seed), which gives the same samples as seeding the
     global RNG with it; rng is used instead if given. Without either, the global numpy
     RNG is used (see gwd.data.injection), and the manifest records the seed as None.
+    backend is the waveform backend; gwd data generate always uses the default, and
+    only tests and the golden values pass 'newton'. It is checked first, so a missing
+    PyCBC raises WaveformBackendError before anything is removed or written.
     Returns the path of manifest.json.
     """
     if rng is not None and seed is not None:
         raise ValueError("Pass rng or seed, not both")
+    check_backend(backend)
     if seed is not None:
         rng = np.random.RandomState(seed)
     removed = prepare_output_folder(output_folder, overwrite, noise_dir)
@@ -118,7 +129,7 @@ def generate_dataset(
 
     noise_provider = real_noise_provider(noise_dir)
     noise_text, notes = describe_noise(scenario, noise_provider, noise_dir)
-    announce(noise_text, notes)
+    announce(noise_text, notes, backend)
     print(
         f"🚀 Generating data ({scenario.name}, {scenario.snr_kind} SNR). Target: {num_samples}"
     )
@@ -129,7 +140,11 @@ def generate_dataset(
 
     for i in range(num_samples):
         sample = make_sample(
-            scenario, rng, has_signal=(i % 2 == 0), noise_provider=noise_provider
+            scenario,
+            rng,
+            has_signal=(i % 2 == 0),
+            noise_provider=noise_provider,
+            backend=backend,
         )
         params = sample.params
 
@@ -169,6 +184,7 @@ def generate_dataset(
         signal_backends,
         len(noise_provider.files) if noise_provider else 0,
         noise_dir,
+        backend,
     )
     manifest_path = write_manifest(output_folder, manifest)
 

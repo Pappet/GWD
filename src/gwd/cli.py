@@ -5,8 +5,9 @@ Only dispatch lives here. Every handler imports its module when it runs, so
 package only breaks the commands that need it. build_parser() is its own function, so
 tests and the menu in main.py can check argument lists without running anything.
 
-Exit codes: 0 on success, 1 when a command fails (for example an unknown model),
-2 for invalid arguments (argparse), 130 on Ctrl+C.
+Exit codes: 0 on success, 1 when a command fails (for example an unknown model, or
+a missing PyCBC for a command that draws waveforms), 2 for invalid arguments
+(argparse), 130 on Ctrl+C.
 """
 
 import argparse
@@ -384,6 +385,15 @@ def build_parser():
     return parser
 
 
+def _is_backend_error(error):
+    """True for gwd.core.waveforms.WaveformBackendError, without importing numpy.
+
+    The error can only come from that module, so it is in sys.modules if it was raised.
+    """
+    waveforms = sys.modules.get("gwd.core.waveforms")
+    return waveforms is not None and isinstance(error, waveforms.WaveformBackendError)
+
+
 def main(argv=None):
     """Run gwd with argv (default: sys.argv[1:]) and return the exit code."""
     args = build_parser().parse_args(argv)
@@ -392,6 +402,12 @@ def main(argv=None):
     except KeyboardInterrupt:
         print("\nInterrupted.", file=sys.stderr)
         return 130
+    except Exception as error:
+        # A missing PyCBC is an environment problem, not a bug: no traceback (P5.2).
+        if not _is_backend_error(error):
+            raise
+        print(f"❌ {error}", file=sys.stderr)
+        return 1
     return 0 if returncode is None else int(returncode)
 
 

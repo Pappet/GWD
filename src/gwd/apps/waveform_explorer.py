@@ -5,8 +5,13 @@ The physics comes from gwd.core.simulation.TimeDomainSimulator.
 
 build_figure() builds the figure and its widgets without showing it, so tests can move
 the sliders under Agg. main() shows it.
+
+The chirps come from PyCBC if it can be imported. Without it, for example on native
+Windows, the explorer chooses the Newtonian approximation on purpose and says so in its
+window (P5.2, default of D1); the pipeline has no such fallback.
 """
 
+import sys
 from types import SimpleNamespace
 
 import matplotlib.pyplot as plt
@@ -15,18 +20,32 @@ from matplotlib.widgets import Button, Slider
 from gwd.apps._backend import require_interactive_backend
 from gwd.config import SAMPLE_RATE
 from gwd.core.simulation import TimeDomainSimulator
+from gwd.core.waveforms import backend_label, pycbc_available
+
+NEWTON_NOTE = (
+    "Newton approximation, physically inaccurate: PyCBC is not installed. "
+    "Install it on Linux or WSL with pip install -e '.[physics]'."
+)
 
 # Start values of the sliders
 START_PARAMS = {"mass1": 30, "mass2": 30, "distance": 400, "noise_level": 1.0}
+
+
+def choose_backend():
+    """'pycbc' if PyCBC can be imported, else 'newton', with the note for the window."""
+    if pycbc_available():
+        return "pycbc", f"Waveforms: {backend_label('pycbc')}"
+    return "newton", NEWTON_NOTE
 
 
 def build_figure():
     """Return (fig, state): the figure with plots, sliders, and button, not shown.
 
     state holds the simulator, the current parameters, the four plot axes, their lines,
-    the sliders, and the reset button.
+    the sliders, the reset button, the waveform backend, and the text that names it.
     """
-    sim = TimeDomainSimulator(duration=0.5, sample_rate=SAMPLE_RATE)
+    backend, note = choose_backend()
+    sim = TimeDomainSimulator(duration=0.5, sample_rate=SAMPLE_RATE, backend=backend)
     gui_params = dict(START_PARAMS)
 
     fig = plt.figure(figsize=(14, 10))
@@ -34,6 +53,15 @@ def build_figure():
         "Gravitational Wave Detector Simulation (gwd.core)",
         fontsize=14,
         fontweight="bold",
+    )
+    backend_text = fig.text(
+        0.5,
+        0.945,
+        note,
+        ha="center",
+        fontsize=10,
+        color="black" if backend == "pycbc" else "red",
+        fontweight="normal" if backend == "pycbc" else "bold",
     )
 
     gs = fig.add_gridspec(4, 2, hspace=0.4, wspace=0.3)
@@ -163,6 +191,8 @@ def build_figure():
         s_dist=s_dist,
         s_noise=s_noise,
         btn_reset=btn_reset,
+        backend=backend,
+        backend_text=backend_text,
     )
     return fig, state
 
@@ -171,6 +201,8 @@ def main():
     require_interactive_backend("Waveform explorer")
     # The widgets only react while fig and state are referenced.
     fig, state = build_figure()
+    if state.backend == "newton":
+        print(NEWTON_NOTE, file=sys.stderr)
     plt.show()
 
 

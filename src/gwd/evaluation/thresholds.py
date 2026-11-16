@@ -23,8 +23,10 @@ import matplotlib
 from gwd.config import (
     EVALUATION_MODELS_PLOTS_DIR,
     OPTIMAL_THRESHOLDS_FILE,
+    WAVEFORM_BACKEND,
     ensure_dirs,
 )
+from gwd.core.waveforms import check_backend
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -195,6 +197,8 @@ def run(model="latest", save=True):
     except FileNotFoundError as error:
         print(f"❌ {error}")
         return 1
+    # The test set needs PyCBC; fail before the model takes its time to load.
+    check_backend(WAVEFORM_BACKEND)
 
     loaded = load_model(model_path)
     name = os.path.basename(model_path)

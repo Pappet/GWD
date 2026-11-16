@@ -1,6 +1,7 @@
 """Tests for gwd.data.scenarios and gwd.data.injection (P3.5)."""
 
 import dataclasses
+import sys
 
 import numpy as np
 import pytest
@@ -173,8 +174,6 @@ def test_known_skew():
 
 
 def test_samples_name_their_noise_chunk_and_waveform_backend(noise_folder):
-    from gwd.core.waveforms import HAS_PYCBC
-
     provider = injection.real_noise_provider(noise_folder)
     samples = batch(TRAIN_V1, 8, provider, n=20)
     chunks = {path.name for path in noise_folder.iterdir()}
@@ -183,7 +182,7 @@ def test_samples_name_their_noise_chunk_and_waveform_backend(noise_folder):
         assert (s.noise_file in chunks) == (s.noise_kind == "real")
         assert s.noise_file is None or s.noise_kind == "real"
         if s.has_signal:
-            assert s.waveform_backend == ("pycbc" if HAS_PYCBC else "newton")
+            assert s.waveform_backend == "pycbc"
         else:
             assert s.waveform_backend is None
 
@@ -207,3 +206,23 @@ def test_a_provider_fallback_is_recorded_as_white_noise():
         scenario, np.random.RandomState(0), noise_provider=white_provider
     )
     assert sample.noise_kind == "white" and sample.noise_file is None
+
+
+def test_the_backend_is_passed_on_and_does_not_change_the_draws():
+    """Newton is only ever chosen on purpose; the random stream is the same."""
+    pycbc = injection.make_sample(TRAIN_V1, np.random.RandomState(4), has_signal=True)
+    newton = injection.make_sample(
+        TRAIN_V1, np.random.RandomState(4), has_signal=True, backend="newton"
+    )
+    assert (pycbc.waveform_backend, newton.waveform_backend) == ("pycbc", "newton")
+    assert pycbc.params == newton.params
+    np.testing.assert_array_equal(pycbc.noise, newton.noise)
+    assert not np.array_equal(pycbc.signal, newton.signal)
+
+
+def test_without_pycbc_a_signal_sample_raises(monkeypatch):
+    from gwd.core.waveforms import WaveformBackendError
+
+    monkeypatch.setitem(sys.modules, "pycbc", None)
+    with pytest.raises(WaveformBackendError):
+        injection.make_sample(TRAIN_V1, np.random.RandomState(4), has_signal=True)
