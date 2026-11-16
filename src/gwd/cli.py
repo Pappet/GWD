@@ -159,6 +159,14 @@ APPS = {
 
 
 def _app(args):
+    if args.app == "glitch-hunter":
+        # Its simulation mode draws signals through gwd.data.injection, so it needs
+        # PyCBC like the pipeline; check before the model loads (P5.2).
+        from gwd.config import WAVEFORM_BACKEND
+        from gwd.core.waveforms import check_backend
+
+        check_backend(WAVEFORM_BACKEND)
+
     # The apps start in their __main__ block; run it as python -m would.
     import runpy
 
