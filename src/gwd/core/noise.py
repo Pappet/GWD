@@ -2,13 +2,15 @@
 Noise for gravitational wave detector simulations.
 
 This module provides functions that generate the kinds of noise found in
-LIGO-like detectors.
+LIGO-like detectors. Every function draws from the rng it is given, a numpy Generator
+or RandomState, never from the global numpy RNG (P5.3, core:MISS-3); the same seed
+gives the same noise.
 """
 
 import numpy as np
 
 
-def generate_gaussian_noise(length, noise_level=1.0):
+def generate_gaussian_noise(length, noise_level=1.0, *, rng):
     """
     Generate plain Gaussian (white) noise.
 
@@ -18,14 +20,15 @@ def generate_gaussian_noise(length, noise_level=1.0):
     Args:
         length: Number of data points
         noise_level: Standard deviation (amplitude of the noise)
+        rng: numpy Generator or RandomState to draw from
 
     Returns:
         np.array: Array of noise values
     """
-    return np.random.normal(loc=0.0, scale=noise_level, size=length)
+    return rng.normal(loc=0.0, scale=noise_level, size=length)
 
 
-def generate_colored_noise(length, sample_rate, noise_level=1.0):
+def generate_colored_noise(length, sample_rate, noise_level=1.0, *, rng):
     """
     Generate more realistic, colored noise (for example dominated by seismic noise).
 
@@ -37,12 +40,13 @@ def generate_colored_noise(length, sample_rate, noise_level=1.0):
         length: Number of data points
         sample_rate: Sampling rate in Hz (needed for the frequency analysis)
         noise_level: Base amplitude of the noise
+        rng: numpy Generator or RandomState to draw from
 
     Returns:
         np.array: Array of colored noise
     """
     # 1. Generate white noise as the basis
-    white_noise = generate_gaussian_noise(length, noise_level)
+    white_noise = generate_gaussian_noise(length, noise_level, rng=rng)
 
     # 2. Go to the frequency domain (FFT)
     freqs = np.fft.fftfreq(length, 1 / sample_rate)

@@ -7,17 +7,17 @@ samples on every machine:
 1. the label, unless the caller passes has_signal;
 2. one number that picks real or white noise, if the scenario uses real noise;
 3. the noise: a real chunk (index, then crop offset if needed) or white noise;
-4. the parameters (draw_params): masses, distance, two spins and an inclination
-   (random masses only), then the merger time, then the SNR unless the caller fixes it.
+4. the parameters (draw_params): masses and distance (random masses only, see
+   gwd.core.population.random_bbh_params), then the merger time, then the SNR unless
+   the caller fixes it.
 
-For TRAIN_V1 this is the order gwd.data.generate used before P3.5. The other callers
-drew the merger time and SNR, or label and noise, in another order.
+For TRAIN_V1 this was the order gwd.data.generate used before P3.5, except that until
+P5.3 two spins and an inclination were drawn after the distance and dropped. The other
+callers drew the merger time and SNR, or label and noise, in another order.
 
 rng is anything with the numpy RandomState methods (rand, uniform, randint, normal).
-The default is np.random, the global RNG, as before. gwd.core has no rng parameter
-until P5.3, so this module draws white noise and random masses itself, with the same
-calls as gwd.core.noise.generate_gaussian_noise and
-gwd.core.waveforms.generate_random_bbh_parameters.
+The default is np.random, the global RNG, as before. It is passed on to gwd.core
+(white noise, random masses), which has no RNG of its own since P5.3.
 
 The chirps come from the backend gwd.config.WAVEFORM_BACKEND ('pycbc'). Without PyCBC,
 make_sample raises gwd.core.waveforms.WaveformBackendError (P5.2); there is no fallback
@@ -40,15 +40,16 @@ from gwd.config import (
     SAMPLE_RATE,
     WAVEFORM_BACKEND,
 )
+from gwd.core.noise import generate_gaussian_noise
+from gwd.core.population import random_bbh_params
 from gwd.core.timebase import time_axis
 from gwd.core.waveforms import generate_chirp
 from gwd.data.preprocessing import normalize
 
-# Distance of the fixed-mass scenarios: the default of generate_chirp.
-FIXED_DISTANCE_MPC = 400.0
-# Random masses: distance uniform in volume up to this value. It does not change the
+# Distance of the fixed-mass scenarios: the default of generate_chirp. Random masses
+# draw it uniform in volume (gwd.core.population). Either way it does not change the
 # sample, because the chirp is normalized to peak 1 before scaling (metadata only).
-MAX_DISTANCE_MPC = 2000
+FIXED_DISTANCE_MPC = 400.0
 
 
 @dataclass(frozen=True)
@@ -80,8 +81,8 @@ def _rng(rng):
 
 
 def white_noise(length, rng=None):
-    """Unit white noise, the same call as gwd.core.noise.generate_gaussian_noise."""
-    return _rng(rng).normal(loc=0.0, scale=1.0, size=length)
+    """Unit white noise from gwd.core.noise.generate_gaussian_noise."""
+    return generate_gaussian_noise(length, 1.0, rng=_rng(rng))
 
 
 def scale_signal_to_snr(signal, noise, target_snr, reference="noise_std"):
@@ -183,16 +184,8 @@ def draw_params(scenario, rng=None, snr=None):
     """
     rng = _rng(rng)
     if scenario.mass_mode == "random":
-        # The draws of gwd.core.waveforms.generate_random_bbh_parameters, in its order.
-        low, high = scenario.masses
-        m1 = 10 ** rng.uniform(np.log10(low), np.log10(high))
-        m2 = 10 ** rng.uniform(np.log10(low), np.log10(m1))  # m2 <= m1
-        distance = (rng.uniform(0, 1) ** (1 / 3)) * MAX_DISTANCE_MPC
-        # Two spins and the inclination are drawn and dropped, which keeps the V1
-        # random stream; the chirp is spinless and face-on (CORE-16, P5.3).
-        rng.uniform(-0.9, 0.9)
-        rng.uniform(-0.9, 0.9)
-        rng.uniform(-1, 1)
+        binary = random_bbh_params(rng, scenario.masses)
+        m1, m2, distance = binary["mass1"], binary["mass2"], binary["distance"]
     else:
         m1, m2 = scenario.masses
         distance = FIXED_DISTANCE_MPC

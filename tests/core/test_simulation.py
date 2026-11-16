@@ -7,8 +7,8 @@ from gwd.core.simulation import TimeDomainSimulator
 
 
 @pytest.fixture
-def simulator(backend):
-    return TimeDomainSimulator(duration=0.5, sample_rate=4096, backend=backend)
+def simulator(backend, rng):
+    return TimeDomainSimulator(duration=0.5, sample_rate=4096, backend=backend, rng=rng)
 
 
 def test_generate_chirp_gives_physical_strain_with_the_merger_at_80_percent(simulator):
@@ -30,9 +30,9 @@ def test_generate_chirp_scales_with_inverse_distance(simulator):
 
 def test_detector_noise_is_added_and_scales_with_the_slider(simulator):
     signal, _ = simulator.generate_chirp(30, 30, 400)
-    state = np.random.get_state()
+    simulator.rng = np.random.default_rng(3)
     noisy = simulator.add_detector_noise(signal, 1.0)
-    np.random.set_state(state)
+    simulator.rng = np.random.default_rng(3)
     noisy_doubled = simulator.add_detector_noise(signal, 2.0)
 
     noise = noisy - signal
@@ -53,4 +53,4 @@ def test_response_converts_strain_to_arm_length_change_and_intensity(simulator):
 
 def test_the_simulator_needs_a_known_backend():
     with pytest.raises(ValueError, match="pycbc"):
-        TimeDomainSimulator(backend="lal")
+        TimeDomainSimulator(backend="lal", rng=np.random.default_rng())

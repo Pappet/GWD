@@ -81,10 +81,15 @@ def _measure_newton(time, waveforms):
 
 
 def _measure_noise(noise):
-    _seed()
-    gaussian = noise.generate_gaussian_noise(16384, 1.0)
-    _seed()
-    colored = noise.generate_colored_noise(16384, 4096, 1.0)
+    import numpy as np
+
+    # RandomState(SEED) draws what the seeded global RNG drew before P5.3.
+    gaussian = noise.generate_gaussian_noise(
+        16384, 1.0, rng=np.random.RandomState(SEED)
+    )
+    colored = noise.generate_colored_noise(
+        16384, 4096, 1.0, rng=np.random.RandomState(SEED)
+    )
     return {
         "gaussian": _summary(gaussian, NOISE_SAMPLES),
         "colored": _summary(colored, NOISE_SAMPLES),

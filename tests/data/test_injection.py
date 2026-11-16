@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from gwd.config import N_SAMPLES
+from gwd.core.population import random_bbh_params
 from gwd.data import injection
 from gwd.data.scenarios import APP_V1, EVAL_V1, SCENARIOS, TRAIN_V1, Scenario
 
@@ -98,6 +99,23 @@ def test_a_fixed_snr_is_not_drawn():
     reference = np.random.RandomState(2)
     assert params.t_merger == reference.uniform(*EVAL_V1.t_merger_range)
     assert rng.rand() == reference.rand()
+
+
+def test_random_masses_come_from_the_core_population():
+    """P5.3: masses and distance from random_bbh_params, then merger time and SNR.
+
+    Before P5.3 two spins and an inclination were drawn after the distance and dropped.
+    """
+    params = injection.draw_params(TRAIN_V1, np.random.RandomState(5))
+    reference = np.random.RandomState(5)
+    binary = random_bbh_params(reference, TRAIN_V1.masses)
+    assert (params.mass1, params.mass2, params.distance) == (
+        binary["mass1"],
+        binary["mass2"],
+        binary["distance"],
+    )
+    assert params.t_merger == reference.uniform(*TRAIN_V1.t_merger_range)
+    assert params.snr == reference.uniform(*TRAIN_V1.snr_range)
 
 
 def test_a_signal_sample_is_noise_plus_the_scaled_chirp():
