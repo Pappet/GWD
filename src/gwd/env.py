@@ -61,15 +61,10 @@ def waveform_backend():
 
 
 def gui_backend():
-    """(name, interactive) of the matplotlib backend that pyplot would use."""
-    import matplotlib
-    from matplotlib.backends import BackendFilter, backend_registry
+    """(name, interactive) of the matplotlib backend, as the apps check it (P4.5)."""
+    from gwd.apps._backend import backend_status
 
-    name = matplotlib.get_backend()
-    interactive = {
-        b.lower() for b in backend_registry.list_builtin(BackendFilter.INTERACTIVE)
-    }
-    return name, name.lower() in interactive
+    return backend_status()
 
 
 def _line(label, value):

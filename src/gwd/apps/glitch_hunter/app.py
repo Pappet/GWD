@@ -11,6 +11,7 @@ import numpy as np
 import scipy.io.wavfile as wavfile
 from matplotlib.widgets import Button, Slider
 
+from gwd.apps._backend import require_interactive_backend
 from gwd.config import (
     DURATION,
     MODELS_DIR,
@@ -406,5 +407,6 @@ class GlitchHunterApp:
 
 
 if __name__ == "__main__":
+    require_interactive_backend("Glitch Hunter")
     app = GlitchHunterApp()
     plt.show()

@@ -1,43 +1,51 @@
 #!/usr/bin/env python3
 """
-Interferometer Designer V2 - GUI Frontend
-Uses gwd.core for the physics calculations.
+Interferometer designer: GUI for the sensitivity curve of
+gwd.core.interferometer.InterferometerModel, a simple learning model (D6).
+
+build_figure() builds the figure and its widgets without showing it, so tests can move
+the sliders under Agg. main() shows it.
 """
+
+from types import SimpleNamespace
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Circle, FancyBboxPatch, Rectangle
 from matplotlib.widgets import CheckButtons, Slider
 
+from gwd.apps._backend import require_interactive_backend
 from gwd.core.interferometer import InterferometerModel
 
 
-def main():
-    # Instanz der Physik-Engine erstellen
+def build_figure():
+    """Return (fig, state): the figure with schema, curve, info box, and widgets, not shown.
+
+    state holds the model, the three axes, the sliders, and the check buttons.
+    """
     sim = InterferometerModel()
 
-    # Figure erstellen
     fig = plt.figure(figsize=(16, 9))
     fig.canvas.manager.set_window_title("Interferometer Designer")
 
     # Layout
-    ax_schema = plt.subplot2grid((3, 3), (0, 0), rowspan=2)
-    ax_sensitivity = plt.subplot2grid((3, 3), (0, 1), colspan=2, rowspan=2)
-    ax_info = plt.subplot2grid((3, 3), (2, 0), colspan=3)
+    ax_schema = plt.subplot2grid((3, 3), (0, 0), rowspan=2, fig=fig)
+    ax_sensitivity = plt.subplot2grid((3, 3), (0, 1), colspan=2, rowspan=2, fig=fig)
+    ax_info = plt.subplot2grid((3, 3), (2, 0), colspan=3, fig=fig)
     ax_info.axis("off")
 
-    plt.subplots_adjust(
+    fig.subplots_adjust(
         left=0.05, bottom=0.35, right=0.95, top=0.95, hspace=0.3, wspace=0.3
     )
 
     def draw_schema():
-        """Zeichne Interferometer-Schema"""
+        """Draw the layout of the interferometer."""
         ax_schema.clear()
         ax_schema.set_xlim(0, 10)
         ax_schema.set_ylim(0, 10)
         ax_schema.set_aspect("equal")
         ax_schema.axis("off")
-        ax_schema.set_title("Interferometer Aufbau", fontweight="bold", fontsize=12)
+        ax_schema.set_title("Interferometer layout", fontweight="bold", fontsize=12)
 
         # Laser
         laser = FancyBboxPatch(
@@ -49,7 +57,7 @@ def main():
         )
         ax_schema.text(1.5, 4.2, f"{sim.laser_power}W", ha="center", fontsize=7)
 
-        # Strahl zum BS
+        # Beam to the beam splitter
         ax_schema.arrow(
             2, 5, 1.5, 0, head_width=0.2, head_length=0.2, fc="red", ec="red", lw=2
         )
@@ -121,13 +129,13 @@ def main():
             3.2, 5, "PD", ha="center", va="center", fontweight="bold", fontsize=8
         )
 
-        # Features anzeigen
+        # Active features
         y_pos = 1.5
         if sim.power_recycling:
             ax_schema.text(
                 1,
                 y_pos,
-                "⚡ Power Recycling",
+                "Power Recycling",
                 fontsize=9,
                 bbox=dict(boxstyle="round", fc="lightgreen", alpha=0.7),
             )
@@ -136,7 +144,7 @@ def main():
             ax_schema.text(
                 1,
                 y_pos,
-                "📡 Signal Recycling",
+                "Signal Recycling",
                 fontsize=9,
                 bbox=dict(boxstyle="round", fc="lightblue", alpha=0.7),
             )
@@ -145,34 +153,31 @@ def main():
             ax_schema.text(
                 1,
                 y_pos,
-                "🌀 Squeezed Light",
+                "Squeezed Light",
                 fontsize=9,
                 bbox=dict(boxstyle="round", fc="plum", alpha=0.7),
             )
 
     def plot_sensitivity():
-        """Plot the sensitivity curve with data from gwd.core"""
+        """Plot the sensitivity curve from gwd.core."""
         ax_sensitivity.clear()
 
-        # HIER: Berechnung durch das Core-Modul
         sensitivity = sim.calculate_total_sensitivity()
 
-        ax_sensitivity.loglog(sim.freq, sensitivity, "b-", lw=3, label="Dein Detektor")
+        ax_sensitivity.loglog(sim.freq, sensitivity, "b-", lw=3, label="Your detector")
 
-        # Referenzlinien (LIGO Design)
+        # Reference line (LIGO Design)
         ligo_ref = 1e-23 * (sim.freq / 100) ** (-0.5)
         ligo_ref = np.where(sim.freq < 40, ligo_ref * 5, ligo_ref)
         ax_sensitivity.loglog(
             sim.freq, ligo_ref, "k--", lw=1.5, alpha=0.5, label="LIGO Design"
         )
 
-        ax_sensitivity.set_xlabel("Frequenz (Hz)", fontsize=12, fontweight="bold")
+        ax_sensitivity.set_xlabel("Frequency (Hz)", fontsize=12, fontweight="bold")
         ax_sensitivity.set_ylabel(
             "Strain Sensitivity [1/√Hz]", fontsize=12, fontweight="bold"
         )
-        ax_sensitivity.set_title(
-            "Detektor-Empfindlichkeit", fontsize=13, fontweight="bold"
-        )
+        ax_sensitivity.set_title("Detector sensitivity", fontsize=13, fontweight="bold")
         ax_sensitivity.grid(True, which="both", alpha=0.3, ls=":")
         ax_sensitivity.legend(loc="upper right")
         ax_sensitivity.set_xlim(10, 3000)
@@ -182,15 +187,15 @@ def main():
         ax_info.clear()
         ax_info.axis("off")
         info = [
-            "═══ AKTUELLE KONFIGURATION ═══",
-            f"Laser-Leistung:     {sim.laser_power:.0f} W",
-            f"Spiegel-Reflekt.:   {sim.mirror_reflectivity * 100:.4f} %",
-            f"Arm-Länge:          {sim.arm_length:.0f} m",
-            f"BS-Verluste:        {sim.beamsplitter_loss:.1e}",
+            "═══ CURRENT CONFIGURATION ═══",
+            f"Laser power:        {sim.laser_power:.0f} W",
+            f"Mirror refl.:       {sim.mirror_reflectivity * 100:.4f} %",
+            f"Arm length:         {sim.arm_length:.0f} m",
+            f"BS loss:            {sim.beamsplitter_loss:.1e}",
             f"Finesse:            {sim.finesse:.0f}",
-            f"Power Recycling:    {'✓ AN' if sim.power_recycling else '✗ AUS'}",
-            f"Signal Recycling:   {'✓ AN' if sim.signal_recycling else '✗ AUS'}",
-            f"Squeezed Light:     {'✓ AN' if sim.squeezed_light else '✗ AUS'}",
+            f"Power Recycling:    {'✓ ON' if sim.power_recycling else '✗ OFF'}",
+            f"Signal Recycling:   {'✓ ON' if sim.signal_recycling else '✗ OFF'}",
+            f"Squeezed Light:     {'✓ ON' if sim.squeezed_light else '✗ OFF'}",
         ]
         ax_info.text(
             0.02,
@@ -209,53 +214,51 @@ def main():
         update_info()
         fig.canvas.draw_idle()
 
-    # --- SLIDER SETUP ---
+    # --- Sliders ---
     slider_left = 0.15
     slider_width = 0.3
 
-    ax_laser = plt.axes([slider_left, 0.26, slider_width, 0.02])
+    ax_laser = fig.add_axes([slider_left, 0.26, slider_width, 0.02])
     slider_laser = Slider(
         ax_laser, "Laser (W)", 100, 500, valinit=sim.laser_power, valstep=50
     )
 
-    ax_mirror = plt.axes([slider_left, 0.23, slider_width, 0.02])
+    ax_mirror = fig.add_axes([slider_left, 0.23, slider_width, 0.02])
     slider_mirror = Slider(
         ax_mirror,
-        "Spiegel R",
+        "Mirror R",
         0.990,
         0.99999,
         valinit=sim.mirror_reflectivity,
         valfmt="%.5f",
     )
 
-    ax_arm = plt.axes([slider_left, 0.20, slider_width, 0.02])
+    ax_arm = fig.add_axes([slider_left, 0.20, slider_width, 0.02])
     slider_arm = Slider(
         ax_arm, "Arm (m)", 2000, 8000, valinit=sim.arm_length, valstep=500
     )
 
-    ax_bs = plt.axes([slider_left, 0.17, slider_width, 0.02])
+    ax_bs = fig.add_axes([slider_left, 0.17, slider_width, 0.02])
     slider_bs = Slider(
         ax_bs, "BS Loss", 1e-5, 1e-3, valinit=sim.beamsplitter_loss, valfmt="%.1e"
     )
 
-    ax_checks = plt.axes([0.55, 0.14, 0.3, 0.12])
-    ax_checks.set_title("Erweiterte Optionen", fontweight="bold")
+    ax_checks = fig.add_axes([0.55, 0.14, 0.3, 0.12])
+    ax_checks.set_title("Advanced options", fontweight="bold")
     checks = CheckButtons(
         ax_checks,
         ["Power Recycling", "Signal Recycling", "Squeezed Light"],
         [False, False, False],
     )
 
-    # --- CALLBACKS ---
+    # --- Callbacks ---
     def update_laser(val):
         sim.laser_power = val
         update_all()
 
     def update_mirror(val):
+        # The finesse follows from R in gwd.core (APP-12).
         sim.mirror_reflectivity = val
-        # Automatische Finesse-Anpassung (Physik-Logik im Client für bessere UX)
-        if val < 1.0:
-            sim.finesse = (np.pi * np.sqrt(val)) / (1 - val)
         update_all()
 
     def update_arm(val):
@@ -282,6 +285,25 @@ def main():
     checks.on_clicked(update_checks)
 
     update_all()
+
+    state = SimpleNamespace(
+        sim=sim,
+        ax_schema=ax_schema,
+        ax_sensitivity=ax_sensitivity,
+        ax_info=ax_info,
+        slider_laser=slider_laser,
+        slider_mirror=slider_mirror,
+        slider_arm=slider_arm,
+        slider_bs=slider_bs,
+        checks=checks,
+    )
+    return fig, state
+
+
+def main():
+    require_interactive_backend("Interferometer designer")
+    # The widgets only react while fig and state are referenced.
+    fig, state = build_figure()
     plt.show()
 
 
