@@ -1,4 +1,5 @@
-"""gwd eval compare: two plots, one scoring pass per model, one color per model (P4.2)."""
+"""gwd eval compare: two plots, one scoring pass per model, one color per model (P4.2),
+and since P5.8 each model's operating point at its registry threshold."""
 
 from types import SimpleNamespace
 
@@ -6,6 +7,7 @@ import numpy as np
 import pytest
 from matplotlib.colors import to_rgba
 
+from gwd import registry
 from gwd.evaluation import compare
 
 
@@ -50,6 +52,7 @@ def stubbed(monkeypatch, tmp_path):
     monkeypatch.setattr(compare.testsets, "build", test_set)
     monkeypatch.setattr(compare.testsets, "describe", lambda built: [])
     monkeypatch.setattr(compare, "save_plot", save)
+    monkeypatch.setattr(registry, "get_threshold", lambda path: 0.9)
     return list(strengths), log, figures
 
 
@@ -154,3 +157,46 @@ def test_all_models_share_the_named_test_set(stubbed, monkeypatch):
     assert calls == [("indist_v1", 10, 4)]
     title = figures[0][1].axes[0].get_title()
     assert title == "ROC curves on indist_v1 (seed 4, n 10), SHA-256 000000000000"
+
+
+def test_compare_uses_the_registry_threshold_of_each_model(
+    stubbed, monkeypatch, capsys
+):
+    """P5.8: the operating point of every model is at exactly registry.get_threshold."""
+    names, _, figures = stubbed
+    asked, used = [], []
+    original = compare.calculate_operating_point
+
+    def get_threshold(path):
+        asked.append(path)
+        return 0.123
+
+    def spy(y_true, y_scores, threshold):
+        used.append(threshold)
+        return original(y_true, y_scores, threshold)
+
+    monkeypatch.setattr(registry, "get_threshold", get_threshold)
+    monkeypatch.setattr(compare, "calculate_operating_point", spy)
+    assert compare.run(names) == 0
+    assert asked == names
+    assert used == [0.123] * 3
+    out = capsys.readouterr().out
+    assert out.count("threshold 0.123") == 3
+    assert "at FPR" in out
+    stars = [
+        line for line in figures[0][1].axes[0].get_lines() if line.get_marker() == "*"
+    ]
+    assert len(stars) == 3
+
+
+def test_score_models_marks_the_operating_point(monkeypatch):
+    class Perfect:
+        def predict(self, X, verbose=0):
+            return X[:, 0, 0].reshape(-1, 1)
+
+    y = np.r_[np.zeros(4), np.ones(4)]
+    monkeypatch.setattr(compare, "load_model", lambda path: Perfect())
+    monkeypatch.setattr(registry, "get_threshold", lambda path: 0.5)
+    (curve,) = compare.score_models(["gwd_model_x"], y[:, None, None], y)
+    assert (curve.threshold, curve.op_tpr, curve.op_fpr) == (0.5, 1.0, 0.0)
+    assert curve.roc_auc == 1.0
