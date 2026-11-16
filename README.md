@@ -30,7 +30,7 @@ apps: use core, data, and registry      cli: the gwd command      main.py: menu
 
 ## Installation
 
-GWD needs Python 3.11 or newer. Use Linux or WSL: PyCBC, the waveform backend, is not available on Windows. Without PyCBC, `gwd data generate`, `gwd eval run`, `gwd eval thresholds`, `gwd eval compare`, and `gwd app glitch-hunter` stop with exit code 1 and print how to install it; only the waveform explorer then runs, with a Newtonian approximation that it marks as physically inaccurate in its window.
+GWD needs Python 3.11 or newer. Use Linux or WSL: PyCBC, the waveform backend, is not available on Windows. Without PyCBC, `gwd data generate`, `gwd eval run`, `gwd eval thresholds`, and `gwd eval compare` stop with exit code 1 and print how to install it; the waveform explorer then runs with a Newtonian approximation that it marks as physically inaccurate in its window, and the Glitch Hunter starts with its simulation off and shows only real GWOSC data.
 
 ```bash
 # A fresh virtual environment
@@ -48,9 +48,9 @@ The base install has numpy, scipy, pandas, matplotlib, scikit-learn, and tabulat
 
 | Extra | Installs | Needed for |
 |---|---|---|
-| `physics` | pycbc (not on Windows) | PyCBC waveforms: `gwd data generate`, `gwd eval run`, `gwd eval thresholds`, `gwd eval compare`, and the Glitch Hunter. There is no fallback; only the waveform explorer uses a Newtonian approximation without it. |
+| `physics` | pycbc (not on Windows) | PyCBC waveforms: `gwd data generate`, `gwd eval run`, `gwd eval thresholds`, `gwd eval compare`, and the Glitch Hunter's simulation. There is no fallback; only the waveform explorer uses a Newtonian approximation without it. |
 | `gwdata` | gwpy | `gwd data fetch-noise`, the field test of `gwd eval run`, and real data in the Glitch Hunter |
-| `ml` | tensorflow | `gwd train`, `gwd eval run`, `gwd eval thresholds`, `gwd eval compare`, and the Glitch Hunter |
+| `ml` | tensorflow | `gwd train`, `gwd eval run`, `gwd eval thresholds`, `gwd eval compare`, and 'Ask AI' in the Glitch Hunter |
 | `dev` | pytest, ruff | Tests and linting |
 | `all` | `physics`, `gwdata`, and `ml` | |
 
@@ -155,6 +155,7 @@ gwd eval compare --model gwd_model_20251203-220536 --model latest
 ```bash
 # Glitch Hunter: the latest model in models_registry/ rates simulated data or real GWOSC data
 gwd app glitch-hunter
+gwd app glitch-hunter --model gwd_model_20251205-232013
 
 # Waveform explorer: strain, frequency, and detector signal with sliders for masses, distance, and noise
 gwd app waveform
@@ -163,7 +164,9 @@ gwd app waveform
 gwd app interferometer
 ```
 
-The interferometer designer is a learning model, not a calibrated detector model. The Glitch Hunter needs a trained model and exits with code 1 without one.
+The interferometer designer is a learning model, not a calibrated detector model.
+
+The Glitch Hunter has two simulation modes. 'Training', the start mode, draws from the training distribution `TRAIN_V1`; 'Challenge' draws from `APP_V1`, which is hard on purpose: peak SNR 0.5–2, partly below what the model was trained on. 'LIGO random' downloads a known event or a random stretch of O3 noise from GWOSC in the background (about 36 s of data: 4 s plus 16 s on each side for the filters); if the download fails, a simulated sample stands in and the title says why. 'Ask AI' shows the model's score against the alarm threshold, which starts at 0.46 and moves with the slider, and then the truth, judged right or wrong at the current threshold, also on real data; events outside the training masses are marked OOD. Without a model (or without TensorFlow) the Glitch Hunter starts with 'Ask AI' off; a model named with `--model` that does not exist ends with exit code 1. 'Listen' plays the sample through paplay or aplay (Linux), afplay (macOS), or winsound (Windows), from a temporary file.
 
 ### 5. Menu
 
