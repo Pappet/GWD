@@ -377,6 +377,7 @@ Each step PR ticks its own step, so a tick takes effect when that PR is merged. 
 | [x] | P6.4 | Rewrite the Matched Filter baseline (D5) | #47 (D5 = B: dropped; one sentence in `docs/evaluation.md`) |
 | [ ] | P6.5 | Retrain and re-evaluate, switch to V2, archive old artifacts | Open: the owner, on the GPU; waits on the confirmation of D2 and D3 |
 | [x] | P6.6 | Scenario V3: whiten before the band-pass, the same samples as V2; preprocessing follows the model | #50 |
+| [x] | P6.7 | Online training: fresh samples every epoch; BatchNorm recalibration before validation | #51 |
 | [x] | P7.1 | New README, `docs/evaluation.md`, documentation command test | #35 |
 | [x] | P7.2 | License entry in `pyproject.toml` (D12) | #17 (done in P2.1) |
 | [x] | P7.3 | CI on the lockfile, README on updating it (D7) | #19 |
