@@ -40,8 +40,10 @@ def expected_paths(root):
         "VALIDATION_DATASET_PLOTS_DIR": os.path.join(root, "plots/validation_dataset"),
         "TRAINING_PLOTS_DIR": os.path.join(root, "plots/training"),
         "EVALUATION_MODELS_PLOTS_DIR": os.path.join(root, "plots/evaluation_models"),
-        "LEADERBOARD_FILE": os.path.join(root, "results", "model_leaderboard.csv"),
+        # P5.8: leaderboard v2; the old file in results/ became an archive.
+        "LEADERBOARD_FILE": os.path.join(root, "results", "leaderboard_v2.csv"),
         "LEGACY_LEADERBOARD_FILES": [
+            os.path.join(root, "results", "model_leaderboard.csv"),
             os.path.join(root, "analysis/model_leaderboard.csv"),
             os.path.join(root, "model_leaderboard.csv"),
         ],

@@ -57,8 +57,12 @@ TRAINING_PLOTS_DIR = os.path.join(ROOT_DIR, "plots/training")
 EVALUATION_MODELS_PLOTS_DIR = os.path.join(ROOT_DIR, "plots/evaluation_models")
 
 # File names
-LEADERBOARD_FILE = os.path.join(RESULTS_DIR, "model_leaderboard.csv")
+# Leaderboard v2 (P5.8): raw numbers, one row per gwd eval run, with the test set hash.
+LEADERBOARD_FILE = os.path.join(RESULTS_DIR, "leaderboard_v2.csv")
+# The 12-column leaderboards from before P5.8. Nothing writes them any more; they stay
+# as archives and can still be read (gwd.evaluation.leaderboard.read_legacy).
 LEGACY_LEADERBOARD_FILES = (
+    os.path.join(RESULTS_DIR, "model_leaderboard.csv"),
     os.path.join(ROOT_DIR, "analysis/model_leaderboard.csv"),
     os.path.join(ROOT_DIR, "model_leaderboard.csv"),
 )

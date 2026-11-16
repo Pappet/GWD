@@ -1,3 +1,10 @@
+"""Where the results go (P1.2), and since P5.8 that the old leaderboards stay archives.
+
+Before P5.8, show() and the writer copied analysis/model_leaderboard.csv to
+results/model_leaderboard.csv once. Leaderboard v2 writes results/leaderboard_v2.csv
+only; no old file is copied, created, or changed any more.
+"""
+
 import os
 import subprocess
 import sys
@@ -18,26 +25,16 @@ def run_python(home, *args):
     )
 
 
-def show(home):
-    result = run_python(home, "-m", "gwd.evaluation.leaderboard")
-    assert result.returncode == 0, result.stderr
-    return result.stdout
+def write_legacy(home):
+    analysis = home / "analysis" / "model_leaderboard.csv"
+    analysis.parent.mkdir()
+    analysis.write_bytes(ANALYSIS_CSV.encode())
+    root = home / "model_leaderboard.csv"
+    root.write_bytes(ROOT_CSV.encode())
+    return analysis, root
 
 
-def write_analysis_csv(home):
-    path = home / "analysis" / "model_leaderboard.csv"
-    path.parent.mkdir()
-    path.write_bytes(ANALYSIS_CSV.encode())
-    return path
-
-
-def write_root_csv(home):
-    path = home / "model_leaderboard.csv"
-    path.write_bytes(ROOT_CSV.encode())
-    return path
-
-
-def target(home):
+def old_target(home):
     return home / "results" / "model_leaderboard.csv"
 
 
@@ -47,87 +44,35 @@ def test_import_config_does_not_create_results(tmp_path):
     assert not (tmp_path / "results").exists()
 
 
-def test_show_copies_analysis_csv_and_keeps_the_original(tmp_path):
-    original = write_analysis_csv(tmp_path)
-
-    output = show(tmp_path)
-
-    assert target(tmp_path).read_bytes() == ANALYSIS_CSV.encode()
-    assert original.read_bytes() == ANALYSIS_CSV.encode()
-    assert "Copied leaderboard" in output
-    assert "from_analysis.keras" in output
-
-
-def test_copy_happens_only_once(tmp_path):
-    write_analysis_csv(tmp_path)
-    show(tmp_path)
-    changed = ANALYSIS_CSV + "newer.keras,2026-01-01 00:00,0.95,-\n"
-    target(tmp_path).write_text(changed)
-
-    output = show(tmp_path)
-
-    assert target(tmp_path).read_text() == changed
-    assert "Copied leaderboard" not in output
-
-
-def test_root_leaderboard_only_gives_a_note(tmp_path):
-    original = write_root_csv(tmp_path)
-
-    output = show(tmp_path)
-
-    assert "was not copied" in output
-    assert not target(tmp_path).exists()
-    assert original.read_bytes() == ROOT_CSV.encode()
-    assert "from_root.keras" not in output
-
-
-def test_analysis_csv_wins_over_root_leaderboard(tmp_path):
-    write_analysis_csv(tmp_path)
-    write_root_csv(tmp_path)
-
-    output = show(tmp_path)
-
-    assert target(tmp_path).read_bytes() == ANALYSIS_CSV.encode()
-    assert "was not copied" in output
-    assert "from_root.keras" not in output
-
-
-def write_row(home, destination):
-    code = f"""
-from gwd import config
-from gwd.evaluation.leaderboard import update_leaderboard_roc
-destination = {destination}
-sim = dict(roc_auc=0.9, avg_precision=0.8, acc=0.7, tpr=0.6, fpr=0.01, snr50=1.0, snr90=2.0)
-real = dict(events_text="n/a", far_text="n/a")
-update_leaderboard_roc("new.keras", sim, real, destination, "unused.json")
-"""
-    result = run_python(home, "-W", "ignore", "-c", code)
+def test_show_copies_nothing_and_names_the_archives(tmp_path):
+    analysis, root = write_legacy(tmp_path)
+    result = run_python(tmp_path, "-m", "gwd.evaluation.leaderboard")
     assert result.returncode == 0, result.stderr
-
-
-def test_writer_migrates_first_and_leaves_the_original(tmp_path):
-    original = write_analysis_csv(tmp_path)
-
-    write_row(tmp_path, "config.LEADERBOARD_FILE")
-
-    written = target(tmp_path).read_text()
-    assert "from_analysis.keras" in written
-    assert "new.keras" in written
-    assert original.read_bytes() == ANALYSIS_CSV.encode()
-
-
-def test_writer_creates_results_without_a_legacy_file(tmp_path):
-    write_row(tmp_path, "config.LEADERBOARD_FILE")
-    assert "new.keras" in target(tmp_path).read_text()
-
-
-def test_writing_elsewhere_does_not_migrate(tmp_path):
-    write_analysis_csv(tmp_path)
-    other = tmp_path / "other" / "board.csv"
-
-    write_row(tmp_path, repr(str(other)))
-
-    written = other.read_text()
-    assert "new.keras" in written
-    assert "from_analysis.keras" not in written
     assert not (tmp_path / "results").exists()
+    assert analysis.read_bytes() == ANALYSIS_CSV.encode()
+    assert root.read_bytes() == ROOT_CSV.encode()
+    assert "from_analysis.keras" not in result.stdout
+    assert f"Archive, not shown: {analysis}" in result.stdout
+    assert f"Archive, not shown: {root}" in result.stdout
+
+
+WRITE_ROW = """
+from gwd import config
+from gwd.evaluation.leaderboard import add_row
+from gwd.evaluation.real_data import NO_FIELD_TEST
+testset = dict(name="stress_v1", seed=0, n=10, sha256="a" * 64, scenario="EVAL_V1",
+               backend="pycbc", noise_source="gaussian")
+sim = dict(roc_auc=0.9, avg_precision=0.8, tpr=0.6, fpr=0.01, n_signal=5, n_noise=5)
+threshold = dict(threshold=0.5, fpr=None, testset_hash=None)
+add_row("new.keras", testset, sim, NO_FIELD_TEST, threshold, config.LEADERBOARD_FILE)
+"""
+
+
+def test_the_writer_creates_only_leaderboard_v2(tmp_path):
+    analysis, root = write_legacy(tmp_path)
+    result = run_python(tmp_path, "-c", WRITE_ROW)
+    assert result.returncode == 0, result.stderr
+    assert "new.keras" in (tmp_path / "results" / "leaderboard_v2.csv").read_text()
+    assert not old_target(tmp_path).exists()
+    assert analysis.read_bytes() == ANALYSIS_CSV.encode()
+    assert root.read_bytes() == ROOT_CSV.encode()

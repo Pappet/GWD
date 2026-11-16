@@ -5,6 +5,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from gwd.evaluation.leaderboard import COLUMNS as LEADERBOARD_COLUMNS
+from gwd.evaluation.leaderboard import read_leaderboard
+
 from .conftest import assert_ran_cleanly, run_stage
 from .entrypoints import NUM_SAMPLES, PIPELINE, SEED
 
@@ -12,7 +15,6 @@ pytestmark = pytest.mark.slow
 
 # 7 until P4.1, then waveform_backend, noise_source, noise_file; P5.5 peak_snr, optimal_snr
 LABEL_COLUMNS = 12
-LEADERBOARD_COLUMNS = 12
 SAMPLE_LENGTH = 16384
 
 
@@ -75,11 +77,30 @@ def test_training_writes_one_model_and_one_config(pipeline_home):
 
 
 def test_leaderboard_has_one_row(pipeline_home):
-    leaderboard = pd.read_csv(
-        pipeline_home / "results" / "model_leaderboard.csv", dtype=str
-    )
-    assert leaderboard.shape == (1, LEADERBOARD_COLUMNS)
+    """P5.8: leaderboard v2 with raw numbers; the old CSV is never written."""
+    leaderboard = pd.read_csv(pipeline_home / "results" / "leaderboard_v2.csv")
+    assert tuple(leaderboard.columns) == LEADERBOARD_COLUMNS
+    assert len(leaderboard) == 1
+    assert leaderboard["roc_auc"].dtype.kind == "f"
+    assert not (pipeline_home / "results" / "model_leaderboard.csv").exists()
     assert not (pipeline_home / "analysis").exists()
+
+
+def test_evaluate_uses_the_threshold_that_thresholds_saved(pipeline_home):
+    """P5.8: thresholds calibrates on calib_bg and saves to the model's metadata;
+    evaluate then reads it from there."""
+    stem = f"stress_v1_{SEED}_1000"
+    manifest = json.loads(
+        (pipeline_home / "results" / "testsets" / f"{stem}.json").read_text()
+    )
+    (config,) = (pipeline_home / "models_registry").glob("*.json")
+    metadata = json.loads(config.read_text())
+    assert metadata["threshold_testset"]["part"] == "calib_bg"
+    assert metadata["threshold_testset"]["sha256"] == manifest["sha256"]
+    assert metadata["threshold_fpr_achieved"] <= metadata["threshold_fpr"] == 0.01
+    row = read_leaderboard(pipeline_home / "results" / "leaderboard_v2.csv").iloc[0]
+    assert row["threshold"] == metadata["threshold"]
+    assert row["testset_hash"] == manifest["sha256"]
 
 
 def test_the_test_set_and_its_manifest_exist(pipeline_home):

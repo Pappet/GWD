@@ -2,23 +2,30 @@
 """
 Model evaluation: ROC analysis on simulated data and an optional field test on real LIGO data.
 
-Run it with ``gwd eval run``; it writes one plot with six panels and, for the test set
-stress_v1, adds a row to the leaderboard. The field test (gwd.evaluation.real_data)
-runs only with ``--real``.
+Run it with ``gwd eval run``; it writes one plot with six panels and adds a row to
+leaderboard v2 (results/leaderboard_v2.csv, gwd.evaluation.leaderboard). The field test
+(gwd.evaluation.real_data) runs only with ``--real``.
+
+Since P5.8 the threshold is the model's own, from gwd.registry.get_threshold:
+calibrated by gwd eval thresholds on the noise-only part calib_bg at FPR 1 % (D10 = A),
+or 0.5 with a warning for a model without one. TPR, FPR, and SNR50/90 are reported at
+that threshold, always with the FPR it reached on the part test and n.
 
 Since P5.7 the simulated data is a fixed, hashed test set of gwd.evaluation.testsets
 (--testset, --seed, --n; default stress_v1, which is EVAL_V1), drawn once and then
 loaded. Its part 'test' gives the ROC curve, the operating point, and the efficiency
 curve: the detection rate of its signal samples in each peak SNR bin, with the mean
 optimal (matched filter) SNR of the bin's samples (P5.5); SNR50 and SNR90 are reported
-both ways, and the leaderboard keeps the peak values. The metrics are also reported per
+both ways, interpolated between the bins (P5.8). The metrics are also reported per
 peak SNR bin, optimal SNR bin, total mass bin, and noise source; a bin whose signal
 samples all lie outside the training ranges is marked 'Extrapolation'.
 """
 
 import datetime
+import json
 import os
 import sys
+from collections import Counter
 
 import matplotlib
 import numpy as np
@@ -27,9 +34,9 @@ from gwd.config import (
     DEFAULT_TESTSET,
     EVALUATION_MODELS_PLOTS_DIR,
     LEADERBOARD_FILE,
-    MODELS_DIR,
     TESTSET_SEED,
     TESTSET_SIZE,
+    WAVEFORM_BACKEND,
     ensure_dirs,
 )
 
@@ -43,9 +50,10 @@ from sklearn.metrics import (
     roc_curve,
 )
 
+from gwd import registry
 from gwd.data.provenance import announce
 from gwd.evaluation import testsets
-from gwd.evaluation.leaderboard import update_leaderboard_roc
+from gwd.evaluation.leaderboard import add_row
 from gwd.evaluation.metrics import (
     bin_index,
     calculate_operating_point,
@@ -63,14 +71,7 @@ from gwd.registry import load_model, resolve
 # ==========================================
 # CONFIGURATION
 # ==========================================
-BASELINE_FILE = os.path.join(MODELS_DIR, "physics_baseline.json")
 TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-
-# Operating point of the tests; the ROC curve itself does not depend on it
-THRESHOLD = 0.15
-# The leaderboard (12 columns, no test set column) only takes rows of this set, the
-# distribution of all its older rows (EVAL_V1). Leaderboard v2 (P5.8) records the set.
-LEADERBOARD_TESTSET = "stress_v1"
 
 
 # ==========================================
@@ -87,7 +88,7 @@ def metrics_box(rows, width=27):
     return "\n".join(lines)
 
 
-def efficiency_curve(built, y_scores, threshold=THRESHOLD):
+def efficiency_curve(built, y_scores, threshold):
     """(bin centers, detection rates, mean optimal SNRs) per peak SNR bin of a test set.
 
     The signal samples of the set's part 'test' fill its peak SNR bins
@@ -110,7 +111,7 @@ def efficiency_curve(built, y_scores, threshold=THRESHOLD):
     return centers, rates, means
 
 
-def binned_metrics(built, y_scores, threshold=THRESHOLD):
+def binned_metrics(built, y_scores, threshold):
     """The metrics per peak SNR, optimal SNR, and total mass bin and per noise source.
 
     The SNR and mass rows describe the signal samples of a bin against all noise-only
@@ -180,7 +181,7 @@ def bin_table(title, rows, value_format=".2f"):
     return "\n".join(lines)
 
 
-def print_binned_metrics(report, threshold=THRESHOLD):
+def print_binned_metrics(report, threshold):
     print(
         f"\n   📋 Per bin (TPR at threshold {threshold}; the AUC of an SNR or mass "
         "bin is its signal samples against all noise samples):"
@@ -204,9 +205,12 @@ def optimal_per_peak(snr_levels, optimal_snrs):
 # ==========================================
 # TEST 1: SIMULATION WITH ROC ANALYSIS
 # ==========================================
-def evaluate_simulation_with_roc(model, built):
+def evaluate_simulation_with_roc(model, built, threshold):
     """ROC, precision-recall, efficiency curve, confusion matrix, and the binned
-    metrics on the part 'test' of a test set (gwd.evaluation.testsets); one plot."""
+    metrics on the part 'test' of a test set (gwd.evaluation.testsets); one plot.
+
+    threshold is the model's threshold (gwd.registry.get_threshold); the operating
+    point, the efficiency curve, and SNR50/90 use it."""
     print(f"\n🧪 [LAB] Starting the ROC analysis on the test set {built.label()}...")
 
     # --- A. ROC curve (independent of the threshold) ---
@@ -225,20 +229,26 @@ def evaluate_simulation_with_roc(model, built):
     precision, recall, pr_thresholds = precision_recall_curve(y_true_roc, y_scores)
     avg_precision = average_precision_score(y_true_roc, y_scores)
 
-    # Operating point at THRESHOLD
-    op_tpr, op_fpr = calculate_operating_point(y_true_roc, y_scores, THRESHOLD)
+    # Operating point at the model's threshold, with n of each class
+    op_tpr, op_fpr = calculate_operating_point(y_true_roc, y_scores, threshold)
+    n_signal = int(np.sum(y_true_roc == 1))
+    n_noise = int(np.sum(y_true_roc == 0))
 
     print(f"   ✅ ROC AUC: {roc_auc:.4f}")
     print(f"   ✅ Average Precision: {avg_precision:.4f}")
     print(
-        f"   📍 Operating Point (Threshold={THRESHOLD}): TPR={op_tpr:.2%}, FPR={op_fpr:.2%}"
+        f"   📍 Operating point (threshold {threshold:.4g}): TPR {op_tpr:.2%} "
+        f"(n {n_signal}) at FPR {op_fpr:.2%} (n {n_noise})"
     )
 
     # --- B. Efficiency curve: detection rate per peak SNR bin of the signal samples ---
-    snr_levels, detection_rates, optimal_snrs = efficiency_curve(built, y_scores)
+    snr_levels, detection_rates, optimal_snrs = efficiency_curve(
+        built, y_scores, threshold
+    )
 
-    # SNR50 / SNR90: the first peak SNR bin (its center) whose detection rate reaches
-    # 50% / 90%, and the mean optimal SNR of that bin's samples (P5.5).
+    # SNR50 / SNR90: where the detection rate over the peak SNR bin centers reaches
+    # 50% / 90%, interpolated between the bins (P5.8), and the same over the mean
+    # optimal SNR of the bins' samples (P5.5).
     snr_50 = snr_at_rate(snr_levels, detection_rates, 0.5)
     snr_90 = snr_at_rate(snr_levels, detection_rates, 0.9)
     optimal_50 = snr_at_rate(np.array(optimal_snrs), detection_rates, 0.5)
@@ -251,12 +261,17 @@ def evaluate_simulation_with_roc(model, built):
             f"{built.spec.scenario.name}): {ratio:.1f}"
         )
 
-    report = binned_metrics(built, y_scores)
-    print_binned_metrics(report)
+    print(
+        f"   ✅ Peak SNR50 {format_snr(snr_50)}, SNR90 {format_snr(snr_90)} at FPR "
+        f"{op_fpr:.2%} (threshold {threshold:.4g})"
+    )
 
-    # --- C. Confusion matrix at THRESHOLD ---
-    y_pred = predict_labels(y_scores, THRESHOLD)
-    tn, fp, fn, tp = confusion_counts(y_true_roc, y_scores, THRESHOLD)
+    report = binned_metrics(built, y_scores, threshold)
+    print_binned_metrics(report, threshold)
+
+    # --- C. Confusion matrix at the threshold ---
+    y_pred = predict_labels(y_scores, threshold)
+    tn, fp, fn, tp = confusion_counts(y_true_roc, y_scores, threshold)
     acc = (tp + tn) / n_roc_samples
 
     # --- PLOTTING ---
@@ -269,7 +284,11 @@ def evaluate_simulation_with_roc(model, built):
     ax1.plot(fpr, tpr, color="blue", lw=2, label=f"ROC (AUC = {roc_auc:.3f})")
     ax1.plot([0, 1], [0, 1], "k--", lw=1, alpha=0.5, label="Random")
     ax1.plot(
-        op_fpr, op_tpr, "ro", markersize=10, label=f"Operating Point (τ={THRESHOLD})"
+        op_fpr,
+        op_tpr,
+        "ro",
+        markersize=10,
+        label=f"Operating Point (τ={threshold:.4g})",
     )
     ax1.set_xlabel("False Positive Rate", fontweight="bold")
     ax1.set_ylabel("True Positive Rate", fontweight="bold")
@@ -294,7 +313,7 @@ def evaluate_simulation_with_roc(model, built):
     ConfusionMatrixDisplay.from_predictions(
         y_true_roc, y_pred, ax=ax3, colorbar=False, cmap="Blues"
     )
-    ax3.set_title(f"Confusion Matrix (τ={THRESHOLD})", fontweight="bold")
+    ax3.set_title(f"Confusion Matrix (τ={threshold:.4g})", fontweight="bold")
 
     # 4. Efficiency curve
     ax4 = fig.add_subplot(gs[1, 0])
@@ -305,6 +324,14 @@ def evaluate_simulation_with_roc(model, built):
         ax4.axvline(snr_50, color="orange", linestyle=":", label=f"SNR50={snr_50:.2f}")
     if snr_90 is not None:
         ax4.axvline(snr_90, color="red", linestyle=":", label=f"SNR90={snr_90:.2f}")
+    ax4.text(
+        0.98,
+        0.04,
+        f"at FPR {op_fpr:.2%}",
+        transform=ax4.transAxes,
+        ha="right",
+        fontsize=9,
+    )
     ax4.set_xlabel("Injected peak SNR (bin center)", fontweight="bold")
     if ratio:
         # The optimal SNR is about proportional to the peak SNR for fixed masses.
@@ -328,7 +355,11 @@ def evaluate_simulation_with_roc(model, built):
         scores_signal, bins=30, alpha=0.5, label="Signal", color="red", density=True
     )
     ax5.axvline(
-        THRESHOLD, color="black", linestyle="--", lw=2, label=f"Threshold={THRESHOLD}"
+        threshold,
+        color="black",
+        linestyle="--",
+        lw=2,
+        label=f"Threshold={threshold:.4g}",
     )
     ax5.set_xlabel("Model Score", fontweight="bold")
     ax5.set_ylabel("Density", fontweight="bold")
@@ -345,6 +376,7 @@ def evaluate_simulation_with_roc(model, built):
             ("ROC AUC:", f"{roc_auc:.4f}"),
             ("Avg Precision:", f"{avg_precision:.4f}"),
             None,
+            ("Threshold:", f"{threshold:.4g}"),
             ("Accuracy:", f"{acc:.2%}"),
             ("TPR (Recall):", f"{op_tpr:.2%}"),
             ("FPR:", f"{op_fpr:.2%}"),
@@ -394,6 +426,8 @@ def evaluate_simulation_with_roc(model, built):
         "avg_precision": avg_precision,
         "tpr": op_tpr,
         "fpr": op_fpr,
+        "n_signal": n_signal,
+        "n_noise": n_noise,
         "bins": report,
     }
 
@@ -415,6 +449,64 @@ def noise_description(spec, real):
     return f"{noise} (test set {spec.name} = {scenario.name}); {field_test}"
 
 
+def threshold_info(model_path):
+    """The model's threshold for the run and the leaderboard.
+
+    {"threshold", "fpr" (the target of its calibration), "testset_hash" (of the set it
+    was calibrated on), "testset" (name, seed, n, part, sha256)}; the last three are
+    None for the fallback, for which get_threshold warns.
+    """
+    threshold = registry.get_threshold(model_path)
+    record = registry.threshold_record(model_path) or {}
+    calibration = record.get("threshold_testset") or {}
+    return {
+        "threshold": threshold,
+        "fpr": record.get("threshold_fpr"),
+        "testset_hash": calibration.get("sha256"),
+        "testset": calibration or None,
+    }
+
+
+def describe_threshold(info, built):
+    """The line that names the threshold and where it comes from."""
+    if info["testset"] is None:
+        return (
+            f"Threshold: {info['threshold']} (fallback: the model has no calibrated "
+            f"threshold; gwd eval thresholds --model <m> --save)"
+        )
+    calibration = info["testset"]
+    line = (
+        f"Threshold: {info['threshold']:.6g} (FPR ≤ {info['fpr']:.0%} on calib_bg of "
+        f"{calibration.get('name')} (seed {calibration.get('seed')}, "
+        f"n {calibration.get('n')}))"
+    )
+    if calibration.get("sha256") != built.sha256:
+        line += (
+            f"; this run uses another test set, so the FPR on {built.spec.name} can "
+            "differ from the target"
+        )
+    return line
+
+
+def testset_info(built):
+    """The test set columns of the leaderboard: name, seed, n, hash, scenario, ..."""
+    try:
+        with open(built.manifest_path, encoding="utf-8") as f:
+            backend = json.load(f).get("waveform_backend")
+    except (OSError, ValueError):
+        backend = None
+    sources = sorted(Counter(map(str, built.noise_source)))
+    return {
+        "name": built.spec.name,
+        "seed": built.seed,
+        "n": built.n,
+        "sha256": built.sha256,
+        "scenario": built.spec.scenario.name,
+        "backend": backend or WAVEFORM_BACKEND,
+        "noise_source": "+".join(sources),
+    }
+
+
 def run(
     model="latest",
     real=False,
@@ -425,9 +517,10 @@ def run(
     """Evaluate one model on a fixed test set and report it. Returns the exit code.
 
     testset, seed, and n name the set (gwd.evaluation.testsets.build: built once,
-    then loaded). real=True adds the real data field test, which needs network access
-    (D10: optional, off by default); without it the row reports 'n/a' for the events
-    and the false alarms. Only the set LEADERBOARD_TESTSET adds a leaderboard row.
+    then loaded). The threshold is the model's own (gwd.registry.get_threshold).
+    real=True adds the real data field test, which needs network access (D10:
+    optional, off by default); without it the field test cells of the row stay empty.
+    Every run adds a row to leaderboard v2, which records the test set and its hash.
     """
     try:
         model_path = resolve(model)
@@ -448,19 +541,24 @@ def run(
         return 1
     print("\n".join(testsets.describe(built)))
 
+    info = threshold_info(model_path)
+    threshold = info["threshold"]
+    print(describe_threshold(info, built))
+
     loaded = load_model(model_path)
 
     # 1. Simulation with ROC
-    sim_res = evaluate_simulation_with_roc(loaded, built)
+    sim_res = evaluate_simulation_with_roc(loaded, built, threshold)
 
     # 2. Real Data
     if real:
-        real_res = run_field_test(loaded, THRESHOLD)
+        real_res = run_field_test(loaded, threshold)
     else:
         print("\nField test skipped; gwd eval run --real runs it (network).")
         real_res = NO_FIELD_TEST
 
     # 3. Final Report
+    fpr = f"at FPR {sim_res['fpr']:.2%}"
     print("\n" + "=" * 70)
     print("📊 FINAL SUMMARY:")
     print("=" * 70)
@@ -468,23 +566,29 @@ def run(
     print(f"  Test set SHA-256:     {built.sha256}")
     print(f"  ROC AUC:              {sim_res['roc_auc']:.4f}")
     print(f"  Average Precision:    {sim_res['avg_precision']:.4f}")
+    print(
+        f"  Threshold:            {threshold:.6g}"
+        + ("" if info["testset"] else " (fallback)")
+    )
+    print(
+        f"  TPR at threshold:     {sim_res['tpr']:.2%} (n {sim_res['n_signal']}) "
+        f"at FPR {sim_res['fpr']:.2%} (n {sim_res['n_noise']})"
+    )
     print(f"  Accuracy:             {sim_res['acc']:.1%}")
-    print(f"  TPR (Sensitivity):    {sim_res['tpr']:.2%}")
-    print(f"  FPR:                  {sim_res['fpr']:.2%}")
-    print(f"  Peak SNR90:           {format_snr(sim_res['snr90'])}")
-    print(f"  Optimal SNR90:        {format_snr(sim_res['optimal_snr90'])}")
+    print(f"  Peak SNR50:           {format_snr(sim_res['snr50'])} {fpr}")
+    print(f"  Peak SNR90:           {format_snr(sim_res['snr90'])} {fpr}")
+    print(f"  Optimal SNR90:        {format_snr(sim_res['optimal_snr90'])} {fpr}")
     print(f"  Real Events Found:    {real_res['events_text']}")
     print(f"  Real Noise:           {real_res['far_text']}")
     print("=" * 70)
 
-    if spec.name != LEADERBOARD_TESTSET:
-        print(
-            f"\nLeaderboard not updated: its rows all come from {LEADERBOARD_TESTSET} "
-            "(EVAL_V1), and it has no test set column until leaderboard v2 (P5.8)."
-        )
-        return 0
-    update_leaderboard_roc(
-        os.path.basename(model_path), sim_res, real_res, LEADERBOARD_FILE, BASELINE_FILE
+    add_row(
+        os.path.basename(model_path),
+        testset_info(built),
+        sim_res,
+        real_res,
+        info,
+        LEADERBOARD_FILE,
     )
     return 0
 

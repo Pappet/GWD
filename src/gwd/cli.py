@@ -405,8 +405,9 @@ def build_parser():
         help="ROC evaluation of one model on a fixed test set.",
         description="ROC evaluation on a fixed, hashed test set (built on first use), "
         "with metrics per peak SNR, optimal SNR, total mass, and noise source, and, "
-        "with --real, the field test on real events. On the test set stress_v1 it adds "
-        "a row to results/model_leaderboard.csv.",
+        "with --real, the field test on real events, at the model's threshold from "
+        "gwd eval thresholds (0.5 with a warning if it has none). Adds a row to "
+        "results/leaderboard_v2.csv.",
     )
     _add_model(run)
     run.add_argument(
@@ -451,7 +452,8 @@ def build_parser():
     compare.set_defaults(handler=_eval_compare)
 
     leaderboard = eval_commands.add_parser(
-        "leaderboard", help="Show the leaderboard, best ROC AUC first."
+        "leaderboard",
+        help="Show leaderboard v2, one table per test set, best ROC AUC first.",
     )
     leaderboard.set_defaults(handler=_eval_leaderboard)
 
