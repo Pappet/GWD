@@ -99,7 +99,7 @@ Every step is a `gwd` command; `gwd --help` and `gwd <command> --help` list the 
 
 ```bash
 # Optional: download real H1 noise from GWOSC and cut it into chunks (network).
-# Overwrites chunks of the same name in data/noise_background/.
+# Overwrites chunks of the same name in data/noise_background/ and keeps all others.
 gwd data fetch-noise
 
 # Generate training data (--seed makes it reproducible, --n sets the number of samples)
@@ -109,7 +109,7 @@ gwd data generate --seed 1
 gwd data validate
 ```
 
-`gwd data generate` and `gwd eval run` start with a line `Backend: ... | Noise: ...` that names the waveform backend (`pycbc <version>` or `newton`) and the noise. Without PyCBC, or without real noise chunks in `data/noise_background/`, they print a warning on stderr. The dataset folder gets a `manifest.json` with the scenario, seed, backend, package versions, Git commit, and the share of real noise; `labels.csv` names the backend, the noise source (`real` or `gaussian`), and the noise chunk of every sample. `gwd data validate` exits with code 1 if the dataset is not fit for training.
+`gwd data generate` and `gwd eval run` start with a line `Backend: ... | Noise: ...` that names the waveform backend (`pycbc <version>` or `newton`) and the noise. Without PyCBC, or without real noise chunks in `data/noise_background/`, they print a warning on stderr. The dataset folder gets a `manifest.json` with the scenario, seed, backend, package versions, Git commit, and the share of real noise; `labels.csv` names the backend, the noise source (`real` or `gaussian`), and the noise chunk of every sample. `gwd data validate` exits with code 1 if the dataset is not fit for training. `gwd data fetch-noise` conditions its segment in one piece and writes every 4 s chunk except the first and the last, which hold the ringing of the filters at the ends of the segment; `NNNN` in the file name is the chunk's position in the segment. Files already in the folder are kept, and the files that are not from the new download are named on stderr.
 
 ### 2. Training
 
@@ -123,8 +123,11 @@ gwd train --epochs 10 --seed 1
 ### 3. Evaluation
 
 ```bash
-# ROC evaluation of the latest model; --no-real skips the real data field test (network)
+# ROC evaluation of the latest model on simulated data (offline)
 gwd eval run
+
+# The same plus the field test on real GWOSC data (network)
+gwd eval run --real
 
 # Detection thresholds of the latest model, saved to results/optimal_thresholds.json (--no-save to skip)
 gwd eval thresholds
@@ -162,7 +165,7 @@ The interferometer designer is a learning model, not a calibrated detector model
 
 ### 5. Menu
 
-`python main.py` opens a menu with the data, training, and evaluation steps, the leaderboard, the three apps, and `gwd env`. Each entry runs the `gwd` command with its defaults. It works from any folder: each entry runs in the project folder with the same Python, and the menu shows the exit code when a step fails.
+`python main.py` opens a menu with the data, training, and evaluation steps, the leaderboard, the three apps, and `gwd env`. Each entry runs the `gwd` command with its defaults; one extra entry runs `gwd eval run --real`, the evaluation with the field test. It works from any folder: each entry runs in the project folder with the same Python, and the menu shows the exit code when a step fails.
 
 ## Data and paths
 

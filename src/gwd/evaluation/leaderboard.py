@@ -9,6 +9,14 @@ import pandas as pd  # type: ignore
 from gwd.config import LEADERBOARD_FILE, LEGACY_LEADERBOARD_FILES, ensure_dirs
 
 
+def read_leaderboard(path):
+    """The leaderboard as strings, exactly as written: 'n/a' and 'N/A' stay text.
+
+    pandas would read them as NaN and write them back as empty cells.
+    """
+    return pd.read_csv(path, dtype=str, keep_default_na=False)
+
+
 def migrate_legacy_leaderboard(leaderboard_file: str = LEADERBOARD_FILE) -> None:
     """Copy the old leaderboard to the configured path once. Nothing is deleted.
 
@@ -39,7 +47,7 @@ def update_leaderboard_roc(
     leaderboard_file: str,
     baseline_file: str,
 ):
-    """Schreibt erweiterte Metriken in die CSV."""
+    """Append one row with the simulated and the field test metrics to the CSV."""
     # baseline_file is unused until P5.8 removes it: the baseline is not valid.
     warnings.warn("Physics baseline currently invalid (EVAL-6, see D5)")
     migrate_legacy_leaderboard(leaderboard_file)
@@ -59,7 +67,7 @@ def update_leaderboard_roc(
         if sim_metrics.get("snr90") is not None
         else "-",
         "Physik_Gap": "-",
-        "Real_Events_Found": f"{real_metrics['found']}/{real_metrics['total']}",
+        "Real_Events_Found": real_metrics["events_text"],
         "Real_Noise_FAR": real_metrics["far_text"],
     }
 
@@ -68,7 +76,7 @@ def update_leaderboard_roc(
     ensure_dirs(os.path.dirname(os.path.abspath(leaderboard_file)))
 
     if os.path.exists(leaderboard_file):
-        df_old = pd.read_csv(leaderboard_file)
+        df_old = read_leaderboard(leaderboard_file)
         df_combined = pd.concat([df_old, df_new], ignore_index=True)
         df_combined.to_csv(leaderboard_file, index=False)
     else:
@@ -87,7 +95,7 @@ def show():
         )
         return 0
 
-    df = pd.read_csv(LEADERBOARD_FILE)
+    df = read_leaderboard(LEADERBOARD_FILE)
     # Display only: the values in the CSV are based on an invalid baseline
     df["Physik_Gap"] = "-"
 

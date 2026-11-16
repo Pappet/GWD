@@ -17,7 +17,11 @@ MENU = [
     ("[DATA]   Generate training data", ["data", "generate"]),
     ("[DATA]   Validate dataset", ["data", "validate"]),
     ("[TRAIN]  Train CNN model", ["train"]),
-    ("[EVAL]   Evaluate model (ROC, plots, field test)", ["eval", "run"]),
+    ("[EVAL]   Evaluate model (ROC, plots; offline)", ["eval", "run"]),
+    (
+        "[EVAL]   Evaluate model + real data field test (network)",
+        ["eval", "run", "--real"],
+    ),
     ("[EVAL]   Optimize threshold", ["eval", "thresholds"]),
     ("[EVAL]   Compare models", ["eval", "compare"]),
     ("[EVAL]   Show leaderboard", ["eval", "leaderboard"]),

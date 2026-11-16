@@ -44,7 +44,14 @@ def test_every_menu_entry_parses_as_a_gwd_command(entry):
 
 def test_menu_covers_every_command_once():
     commands = [tuple(args) for _, args in MENU]
-    assert len(commands) == len(set(commands)) == 12
+    assert len(commands) == len(set(commands)) == 13
+
+
+def test_only_the_field_test_entry_needs_the_network():
+    """gwd eval run is offline by default (D10); one entry adds --real (P4.3)."""
+    evaluations = [args for _, args in MENU if args[:2] == ["eval", "run"]]
+    assert evaluations == [["eval", "run"], ["eval", "run", "--real"]]
+    assert build_parser().parse_args(["eval", "run"]).real is False
 
 
 def test_commands_do_not_depend_on_the_working_directory(tmp_path, monkeypatch):

@@ -41,7 +41,10 @@ def sim_metrics(**overrides):
     return metrics
 
 
-REAL_METRICS = {"found": 3, "total": 5, "far_text": "< 1.0/y"}
+REAL_METRICS = {
+    "events_text": "n/a (3 of 4 loaded); OOD 0/1",
+    "far_text": "2 false alarms in 0.0556 h",
+}
 
 
 def write_row(tmp_path, **overrides):
@@ -117,6 +120,25 @@ def test_missing_snr_is_dash(tmp_path):
 
 def test_schema_stays_twelve_columns(tmp_path):
     assert list(write_row(tmp_path)) == COLUMNS
+
+
+def test_field_test_texts_are_written_as_given(tmp_path):
+    row = write_row(tmp_path)
+    assert row["Real_Events_Found"] == "n/a (3 of 4 loaded); OOD 0/1"
+    assert row["Real_Noise_FAR"] == "2 false alarms in 0.0556 h"
+
+
+def test_appending_keeps_the_older_rows_as_written(tmp_path):
+    """'n/a' (no field test) and '0.9000' must not turn into an empty cell and '0.9'."""
+    leaderboard = tmp_path / "leaderboard.csv"
+    for real in ({"events_text": "n/a", "far_text": "n/a"}, REAL_METRICS):
+        update_leaderboard_roc(
+            "model.keras", sim_metrics(roc_auc=0.9), real, str(leaderboard), "x.json"
+        )
+    with leaderboard.open(newline="") as f:
+        first = list(csv.DictReader(f))[0]
+    assert (first["Real_Events_Found"], first["Real_Noise_FAR"]) == ("n/a", "n/a")
+    assert first["ROC_AUC"] == "0.9000"
 
 
 def test_rows_are_appended(tmp_path):
