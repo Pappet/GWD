@@ -59,7 +59,7 @@ def update_leaderboard_roc(
         if sim_metrics.get("snr90") is not None
         else "-",
         "Physik_Gap": "-",
-        "Real_Events_Found": f"{real_metrics['found']}/{real_metrics['total']}",
+        "Real_Events_Found": real_metrics["events_text"],
         "Real_Noise_FAR": real_metrics["far_text"],
     }
 

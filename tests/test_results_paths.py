@@ -98,7 +98,7 @@ from gwd import config
 from gwd.evaluation.leaderboard import update_leaderboard_roc
 destination = {destination}
 sim = dict(roc_auc=0.9, avg_precision=0.8, acc=0.7, tpr=0.6, fpr=0.01, snr50=1.0, snr90=2.0)
-real = dict(found=0, total=0, far_text="n/a")
+real = dict(events_text="n/a", far_text="n/a")
 update_leaderboard_roc("new.keras", sim, real, destination, "unused.json")
 """
     result = run_python(home, "-W", "ignore", "-c", code)

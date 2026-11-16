@@ -41,7 +41,10 @@ def sim_metrics(**overrides):
     return metrics
 
 
-REAL_METRICS = {"found": 3, "total": 5, "far_text": "< 1.0/y"}
+REAL_METRICS = {
+    "events_text": "n/a (3 of 4 loaded); OOD 0/1",
+    "far_text": "2 false alarms in 0.0556 h",
+}
 
 
 def write_row(tmp_path, **overrides):
@@ -117,6 +120,12 @@ def test_missing_snr_is_dash(tmp_path):
 
 def test_schema_stays_twelve_columns(tmp_path):
     assert list(write_row(tmp_path)) == COLUMNS
+
+
+def test_field_test_texts_are_written_as_given(tmp_path):
+    row = write_row(tmp_path)
+    assert row["Real_Events_Found"] == "n/a (3 of 4 loaded); OOD 0/1"
+    assert row["Real_Noise_FAR"] == "2 false alarms in 0.0556 h"
 
 
 def test_rows_are_appended(tmp_path):

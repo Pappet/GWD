@@ -3,7 +3,7 @@
 Model evaluation: ROC analysis on simulated data and an optional field test on real LIGO data.
 
 Run it with ``gwd eval run``; it writes one plot with six panels and adds a row to the
-leaderboard.
+leaderboard. The field test (gwd.evaluation.real_data) runs only with ``--real``.
 """
 
 import datetime
@@ -14,12 +14,10 @@ import matplotlib
 import numpy as np
 
 from gwd.config import (
-    DURATION,
     EVALUATION_MODELS_PLOTS_DIR,
     LEADERBOARD_FILE,
     MODELS_DIR,
     N_SAMPLES,
-    SAMPLE_RATE,
     ensure_dirs,
 )
 
@@ -33,9 +31,8 @@ from sklearn.metrics import (
     roc_curve,
 )
 
-from gwd.data.gwosc import event, fetch_strain
 from gwd.data.injection import make_sample, make_test_set
-from gwd.data.preprocessing import condition_strain, normalize
+from gwd.data.preprocessing import normalize
 from gwd.data.provenance import announce
 from gwd.data.scenarios import EVAL_V1
 from gwd.evaluation.leaderboard import update_leaderboard_roc
@@ -47,6 +44,7 @@ from gwd.evaluation.metrics import (
     predict_labels,
     snr_at_rate,
 )
+from gwd.evaluation.real_data import NO_FIELD_TEST, run_field_test
 from gwd.registry import load_model, resolve
 
 # ==========================================
@@ -57,18 +55,6 @@ TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
 # Operating point of the tests; the ROC curve itself does not depend on it
 THRESHOLD = 0.15
-
-# Field test events from gwd.data.gwosc.EVENTS, in the order they are reported
-FIELD_TEST_EVENTS = tuple(
-    event(name) for name in ("GW150914", "GW170817", "GW190521", "GW170104", "GW151226")
-)
-
-# A stretch of real noise (Hanford, O3 run)
-REAL_NOISE_START = 1253326755
-REAL_NOISE_DUR = 200
-
-# The field test result when it is skipped (--no-real)
-NO_FIELD_TEST = {"found": 0, "total": 0, "far_text": "n/a", "event_scores": {}}
 
 
 # ==========================================
@@ -268,95 +254,6 @@ def evaluate_simulation_with_roc(model):
 
 
 # ==========================================
-# TEST 2: REAL DATA
-# ==========================================
-def evaluate_real_world(model):
-    """Score the field test events and count false alarms on real H1 noise (network)."""
-    print("\n🌍 [REAL WORLD] Starting the test on real LIGO data...")
-
-    # --- A. Find the known events ---
-    found_events = 0
-    event_scores = {}
-
-    print("   Searching for known events...", end=" ")
-    for ev in FIELD_TEST_EVENTS:
-        name = ev.name
-        try:
-            t_start = int(ev.gps - 2.0)
-            t_end = int(ev.gps + 2.0)
-
-            # fetch_strain raises on a wrong length or NaN; the except reports it
-            strain = fetch_strain("H1", t_start, t_end)
-            data = condition_strain(strain, SAMPLE_RATE)
-
-            expected = N_SAMPLES
-            # eps=0: the conditioned strain has a std near 1e-21, eps would dominate
-            data = normalize(data, eps=0.0)
-
-            pred = model.predict(data.reshape(1, expected, 1), verbose=0)[0][0]
-            event_scores[name] = pred
-
-            if pred > THRESHOLD:
-                found_events += 1
-        except Exception as e:
-            print(f"\n⚠️ Error for {name}: {e}")
-            event_scores[name] = None
-
-    print(f"-> {found_events}/{len(FIELD_TEST_EVENTS)} found.")
-
-    # Print the scores
-    print("\n   Event Detection Scores:")
-    for name, score in event_scores.items():
-        if score is not None:
-            status = "✓ DETECTED" if score > THRESHOLD else "✗ Missed"
-            print(f"      {name:12s}: {score:.3f} {status}")
-
-    # --- B. False alarm rate on noise ---
-    print(f"\n   Checking {REAL_NOISE_DUR} s of background noise...", end=" ")
-    false_alarms = 0
-    total_samples = 0
-    far_text = "N/A"
-
-    try:
-        long_strain = fetch_strain(
-            "H1", REAL_NOISE_START, REAL_NOISE_START + REAL_NOISE_DUR
-        )
-        clean_data = condition_strain(long_strain, SAMPLE_RATE)
-
-        step = N_SAMPLES
-        num_cuts = len(clean_data) // step
-
-        for i in range(num_cuts):
-            segment = clean_data[i * step : (i + 1) * step]
-            segment = normalize(segment, eps=0.0)
-
-            pred = model.predict(segment.reshape(1, step, 1), verbose=0)[0][0]
-            if pred > THRESHOLD:
-                false_alarms += 1
-
-        total_samples = num_cuts
-
-        # Events per year
-        analyzed_years = (total_samples * DURATION) / (365.25 * 24 * 3600)
-        if false_alarms == 0:
-            far_text = f"< {1 / analyzed_years:.1f}/y"
-        else:
-            far_text = f"{false_alarms / analyzed_years:.1f}/y"
-
-        print(f"-> {false_alarms} false alarms ({far_text})")
-
-    except Exception as e:
-        print(f"\n⚠️ Could not load the LIGO data: {e}")
-
-    return {
-        "found": found_events,
-        "total": len(FIELD_TEST_EVENTS),
-        "far_text": far_text,
-        "event_scores": event_scores,
-    }
-
-
-# ==========================================
 # MAIN
 # ==========================================
 def noise_description(real):
@@ -365,11 +262,12 @@ def noise_description(real):
     return f"gaussian ({EVAL_V1.name} test sets); {field_test}"
 
 
-def run(model="latest", real=True):
+def run(model="latest", real=False):
     """Evaluate one model and add a leaderboard row. Returns the exit code.
 
-    real=False skips the real data field test, which needs network access; the row then
-    reports 0/0 events and 'n/a' as the false alarm rate.
+    real=True adds the real data field test, which needs network access (D10: optional,
+    off by default); without it the row reports 'n/a' for the events and the false
+    alarms.
     """
     try:
         model_path = resolve(model)
@@ -388,9 +286,9 @@ def run(model="latest", real=True):
 
     # 2. Real Data
     if real:
-        real_res = evaluate_real_world(loaded)
+        real_res = run_field_test(loaded, THRESHOLD)
     else:
-        print("\nField test skipped (--no-real).")
+        print("\nField test skipped; gwd eval run --real runs it (network).")
         real_res = NO_FIELD_TEST
 
     # 3. Final Report
@@ -403,8 +301,8 @@ def run(model="latest", real=True):
     print(f"  TPR (Sensitivity):    {sim_res['tpr']:.2%}")
     print(f"  FPR:                  {sim_res['fpr']:.2%}")
     print(f"  SNR90:                {format_snr(sim_res['snr90'])}")
-    print(f"  Real Events Found:    {real_res['found']}/{real_res['total']}")
-    print(f"  False Alarm Rate:     {real_res['far_text']}")
+    print(f"  Real Events Found:    {real_res['events_text']}")
+    print(f"  Real Noise:           {real_res['far_text']}")
     print("=" * 70)
 
     update_leaderboard_roc(
