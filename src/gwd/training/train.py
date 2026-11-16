@@ -9,15 +9,30 @@ Since P5.6 the dataset is split three ways by gwd.training.split: val steers ear
 stopping, the checkpoint, and the learning rate, and test is evaluated exactly once,
 with the best epoch, after training. Every run is seeded: with cfg.seed, or with a
 seed drawn at the start, and the seed goes into the model's metadata.
+
+Online training (cfg.scenario, gwd train --online) reads no dataset: every epoch gets
+fresh samples drawn from the scenario by gwd.data.online, in worker processes, so the
+CNN cannot learn noise realizations by heart. Validation and test are fixed sets drawn
+once from the same scenario, from streams disjoint from the training batches. The
+model's metadata then has no dataset_hash (null, with dataset_hash_note saying why)
+and records the scenario, its hash, the seed streams, and the sizes under "online".
+
+In both modes the moving BatchNorm statistics are recomputed from a fixed set of
+training samples before every validation (gwd.training.callbacks), so val_loss, which
+steers early stopping, the checkpoint, and the learning rate, describes the model as it
+is saved and used.
 """
 
+import contextlib
 import datetime
 import hashlib
+import math
 import os
 import secrets
 import sys
+import time
 from dataclasses import dataclass
-from typing import NamedTuple, Optional
+from typing import Callable, NamedTuple, Optional
 
 import numpy as np
 import tensorflow as tf
@@ -25,6 +40,7 @@ from tensorflow.keras import callbacks, models
 
 from gwd.config import (
     BATCH_SIZE,
+    BN_RECALIBRATION_SAMPLES,
     DATA_DIR_TRAIN,
     EARLY_STOPPING_PATIENCE,
     EPOCHS,
@@ -32,12 +48,18 @@ from gwd.config import (
     LEARNING_RATE,
     MODELS_DIR,
     N_SAMPLES,
+    ONLINE_SAMPLES_PER_EPOCH,
+    ONLINE_TEST_SAMPLES,
+    ONLINE_VAL_SAMPLES,
+    ONLINE_WORKERS,
     REDUCE_LR_PATIENCE,
     TEST_SPLIT,
     TRAINING_PLOTS_DIR,
     VAL_SPLIT,
+    WAVEFORM_BACKEND,
     ensure_dirs,
 )
+from gwd.data.online import STREAM_TEXT, SampleSource, check_scenario
 from gwd.data.preprocessing import normalize
 from gwd.data.provenance import UNKNOWN_V1, read_manifest
 from gwd.data.scenarios import DEFAULT_PREPROCESSING, SCENARIOS
@@ -53,8 +75,15 @@ from gwd.registry import (
     metadata_path,
     write_metadata,
 )
+from gwd.training.callbacks import BatchNormRecalibration, EpochTimer
 from gwd.training.model import ARCHITECTURE, build_model
 from gwd.training.split import split_dataset
+
+# dataset_hash_note of an online model, whose dataset_hash is null.
+ONLINE_HASH_NOTE = (
+    "online training: no fixed dataset, fresh samples every epoch; see 'online' for "
+    "the scenario, its hash, and the seed streams"
+)
 
 
 @dataclass(frozen=True)
@@ -76,6 +105,22 @@ class TrainConfig:
     # True also turns on tf.config.experimental.enable_op_determinism() (P5.6). It
     # stays on for the rest of the process; full determinism holds on the CPU only.
     deterministic: bool = False
+    # Online training: the name of a scenario in gwd.data.scenarios.SCENARIOS (any
+    # case) to draw fresh samples from every epoch, instead of reading data_folder.
+    scenario: Optional[str] = None
+    samples_per_epoch: int = ONLINE_SAMPLES_PER_EPOCH  # rounded up to whole batches
+    val_samples: int = ONLINE_VAL_SAMPLES
+    test_samples: int = ONLINE_TEST_SAMPLES
+    # Worker processes that draw the samples; None means default_workers().
+    workers: Optional[int] = None
+    # Fixed training samples the BatchNorm statistics are recomputed from before every
+    # validation (gwd.training.callbacks); a subset of the training part, or online a
+    # fixed set of its own.
+    bn_samples: int = BN_RECALIBRATION_SAMPLES
+
+    @property
+    def online(self):
+        return self.scenario is not None
 
 
 class LoadedData(NamedTuple):
@@ -85,6 +130,28 @@ class LoadedData(NamedTuple):
     y: np.ndarray  # labels, 0 or 1
     labels: object  # labels.csv as a DataFrame
     sha256: str  # dataset_hash in the metadata: labels.csv and every sample
+
+
+@dataclass
+class Prepared:
+    """The data of a run, as the training loop takes it, and what the metadata says.
+
+    fit: the data arguments of model.fit; steps_per_epoch: training batches per epoch;
+    validation and test: (X, y); recalibration: the fixed training samples the
+    BatchNorm statistics are recomputed from before every validation; record: the
+    metadata fields about the data; probe: called after every epoch (EpochTimer), or
+    None; finish: called after training with the number of epochs trained and the
+    EpochTimer, returns more metadata fields.
+    """
+
+    fit: dict
+    steps_per_epoch: int
+    validation: tuple
+    test: tuple
+    recalibration: np.ndarray
+    record: dict
+    probe: Optional[Callable] = None
+    finish: Optional[Callable] = None
 
 
 @dataclass(frozen=True)
@@ -108,6 +175,12 @@ def new_run(models_dir, now=None):
         model_path=model_path,
         config_path=metadata_path(model_path),
     )
+
+
+def default_workers(cpus=None):
+    """The worker processes of online training: ONLINE_WORKERS, at most CPUs - 2."""
+    cpus = os.cpu_count() if cpus is None else cpus
+    return max(1, min(ONLINE_WORKERS, (cpus or 1) - 2))
 
 
 def draw_seed():
@@ -230,51 +303,51 @@ def load_data(data_folder=DATA_DIR_TRAIN):
     return LoadedData(X, y, labels, digest.hexdigest())
 
 
-def save_experiment_config(history_obj, test, cfg, run, policy, run_seed, data, split):
+def save_experiment_config(history_obj, timer, test, cfg, run, policy, seed, data):
     """
     Save the metadata of a run as .json next to the model, so it can be traced later.
 
     Args:
         history_obj: Keras History object of the training
+        timer: EpochTimer of the run (seconds per epoch)
         test: (loss, accuracy) of the best epoch on the test part
         cfg: TrainConfig of the run
         run: Run with the name and the .json path
         policy: Name of the Keras precision policy the model was trained with
-        run_seed: The seed the run used, cfg.seed or a drawn one
-        data: LoadedData of the run
-        split: gwd.training.split.Split of the run
+        seed: The seed the run used, cfg.seed or a drawn one
+        data: Prepared of the run
     """
     history = history_obj.history
+    epochs_trained = len(history["loss"])
     best = int(np.argmin(history["val_loss"]))
     test_loss, test_acc = test
+    record = dict(data.record)
+    if data.finish is not None:
+        record.update(data.finish(epochs_trained, timer))
 
     config = {
         "model_name": run.name,
         "timestamp": run.timestamp,
-        "dataset_folder": cfg.data_folder,
-        **dataset_provenance(cfg.data_folder),
-        "dataset_hash": data.sha256,
-        # One seed for Python, numpy, TensorFlow, and the split (P5.6).
-        "seed": run_seed,
+        **record,
+        # One seed for Python, numpy, TensorFlow, and the split or the online
+        # streams (P5.6).
+        "seed": seed,
         "seed_drawn": cfg.seed is None,
         "deterministic": cfg.deterministic,
         # epochs is the maximum; early stopping can end the run before it.
         "epochs": cfg.epochs,
-        "epochs_trained": len(history["loss"]),
+        "epochs_trained": epochs_trained,
         # The saved weights are those of this epoch (1-based, lowest val_loss).
         "best_epoch": best + 1,
+        # Before every validation, the BatchNorm statistics were recomputed from
+        # this many fixed training samples (gwd.training.callbacks).
+        "bn_recalibration_samples": len(data.recalibration),
+        "steps_per_epoch": data.steps_per_epoch,
+        "epoch_seconds": [round(s, 1) for s in timer.seconds],
         "batch_size": cfg.batch_size,
         "learning_rate": cfg.learning_rate,
         "early_stopping_patience": cfg.patience,
         "precision_policy": policy,
-        "split_grouped": split.grouped,
-        "split": {
-            "val_fraction": VAL_SPLIT,
-            "test_fraction": TEST_SPLIT,
-            "grouped_by": "noise_file" if split.grouped else None,
-            "groups": split.n_groups,
-            **split.sizes(),
-        },
         "architecture": ARCHITECTURE,
         # val: the best epoch, which steered the training; test: evaluated once.
         "val_accuracy": float(history["val_accuracy"][best]),
@@ -308,7 +381,7 @@ def plot_history(history, plot_path):
     loss = history.history["loss"]
     val_loss = history.history["val_loss"]
 
-    best_epoch = np.argmin(val_loss)
+    best = int(np.argmin(val_loss))
     epochs_range = range(len(acc))
 
     # A Figure without pyplot: no backend is chosen or changed, no window can open.
@@ -317,29 +390,18 @@ def plot_history(history, plot_path):
     fig = Figure(figsize=(12, 5))
     ax_acc, ax_loss = fig.subplots(1, 2)
 
-    # Accuracy
-    ax_acc.plot(epochs_range, acc, label="Training Accuracy", linewidth=2)
-    ax_acc.plot(epochs_range, val_acc, label="Validation Accuracy", linewidth=2)
-    ax_acc.axvline(
-        best_epoch, color="green", linestyle="--", label="Best Model", alpha=0.7
-    )
-    ax_acc.legend(loc="lower right")
-    ax_acc.set_xlabel("Epoch")
-    ax_acc.set_ylabel("Accuracy")
-    ax_acc.set_title("Accuracy")
-    ax_acc.grid(True, alpha=0.3)
-
-    # Loss
-    ax_loss.plot(epochs_range, loss, label="Training Loss", linewidth=2)
-    ax_loss.plot(epochs_range, val_loss, label="Validation Loss", linewidth=2)
-    ax_loss.axvline(
-        best_epoch, color="green", linestyle="--", label="Best Model", alpha=0.7
-    )
-    ax_loss.legend(loc="upper right")
-    ax_loss.set_xlabel("Epoch")
-    ax_loss.set_ylabel("Loss")
-    ax_loss.set_title("Loss")
-    ax_loss.grid(True, alpha=0.3)
+    for ax, train_values, val_values, name, where in (
+        (ax_acc, acc, val_acc, "Accuracy", "lower right"),
+        (ax_loss, loss, val_loss, "Loss", "upper right"),
+    ):
+        ax.plot(epochs_range, train_values, label=f"Training {name}", linewidth=2)
+        ax.plot(epochs_range, val_values, label=f"Validation {name}", linewidth=2)
+        ax.axvline(best, color="green", linestyle="--", label="Best Model", alpha=0.7)
+        ax.legend(loc=where)
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel(name)
+        ax.set_title(name)
+        ax.grid(True, alpha=0.3)
 
     fig.tight_layout()
     ensure_dirs(os.path.dirname(plot_path))
@@ -373,16 +435,14 @@ def train(cfg=None):
     previous = tf.keras.mixed_precision.global_policy()
     tf.keras.mixed_precision.set_global_policy(policy)
     try:
-        return _train_and_save(cfg, policy, run_seed)
+        with contextlib.ExitStack() as stack:
+            return _train_and_save(cfg, policy, run_seed, stack)
     finally:
         tf.keras.mixed_precision.set_global_policy(previous)
 
 
-def _train_and_save(cfg, policy, run_seed):
-    """Load and split the data, train, test the best epoch once, and save everything."""
-    run = new_run(cfg.models_dir)
-
-    # Load and split the data
+def prepare_files(cfg, run_seed):
+    """Load and split the dataset in cfg.data_folder (file training)."""
     data = load_data(cfg.data_folder)
     provenance = dataset_provenance(cfg.data_folder)
     if provenance["dataset_scenario"] == UNKNOWN_V1:
@@ -401,8 +461,6 @@ def _train_and_save(cfg, policy, run_seed):
     X_train, y_train = data.X[split.train], data.y[split.train]
     X_val, y_val = data.X[split.val], data.y[split.val]
     X_test, y_test = data.X[split.test], data.y[split.test]
-    # The parts are copies; drop the full array so only they stay in memory.
-    data = data._replace(X=None)
 
     how = "grouped by noise_file" if split.grouped else "ungrouped"
     print(f"\n📊 Data split ({how}, {split.n_groups} groups):")
@@ -410,15 +468,168 @@ def _train_and_save(cfg, policy, run_seed):
     print(f"   - Validation: {len(X_val)} samples (early stopping, checkpoint, LR)")
     print(f"   - Test: {len(X_test)} samples (evaluated once at the end)")
 
+    record = {
+        "training_data": "files",
+        "dataset_folder": cfg.data_folder,
+        **provenance,
+        "dataset_hash": data.sha256,
+        "split_grouped": split.grouped,
+        "split": {
+            "val_fraction": VAL_SPLIT,
+            "test_fraction": TEST_SPLIT,
+            "grouped_by": "noise_file" if split.grouped else None,
+            "groups": split.n_groups,
+            **split.sizes(),
+        },
+    }
+    # A fixed, seeded subset of the training part for the BatchNorm statistics.
+    rng = np.random.default_rng(run_seed)
+    keep = min(cfg.bn_samples, len(X_train))
+    recalibration = X_train[np.sort(rng.choice(len(X_train), keep, replace=False))]
+    # The parts are copies; the full array is dropped with data, so only they stay.
+    return Prepared(
+        fit={"x": X_train, "y": y_train, "batch_size": cfg.batch_size},
+        steps_per_epoch=math.ceil(len(X_train) / cfg.batch_size),
+        validation=(X_val, y_val),
+        test=(X_test, y_test),
+        recalibration=recalibration,
+        record=record,
+    )
+
+
+def prepare_online(cfg, run_seed, stack):
+    """Start the sample workers and draw the fixed val and test sets (online training).
+
+    The workers stay up until stack closes; they draw the training batches during fit.
+    """
+    scenario = SCENARIOS[cfg.scenario.upper()]
+    check_scenario(scenario)
+    workers = default_workers() if cfg.workers is None else cfg.workers
+    steps = math.ceil(cfg.samples_per_epoch / cfg.batch_size)
+    per_epoch = steps * cfg.batch_size
+    print(
+        f"Online training: {scenario.name} (hash {scenario.hash()[:12]}), backend "
+        f"{WAVEFORM_BACKEND}, preprocessing {scenario.preprocessing}"
+    )
+    print(
+        f"   - Training: {per_epoch} fresh samples per epoch ({steps} batches of "
+        f"{cfg.batch_size}), drawn by {workers} worker processes"
+    )
+    source = stack.enter_context(SampleSource(scenario, run_seed, workers))
+    began = time.perf_counter()
+    X_val, y_val, _ = source.draw("val", cfg.val_samples)
+    X_test, y_test, _ = source.draw("test", cfg.test_samples)
+    X_bn, _, _ = source.draw("bn", cfg.bn_samples)
+    seconds = time.perf_counter() - began
+    print(
+        f"   - Validation: {len(y_val)} samples, fixed (early stopping, checkpoint, LR)"
+    )
+    print(f"   - Test: {len(y_test)} samples, fixed (evaluated once at the end)")
+    print(
+        f"   - BatchNorm statistics: {len(X_bn)} samples, fixed (recomputed before "
+        "every validation)"
+    )
+    fixed = len(y_val) + len(y_test) + len(X_bn)
+    print(
+        f"   Drew the fixed sets in {seconds:.1f} s ({fixed / seconds:.0f} samples/s, "
+        "worker start-up included)"
+    )
+
+    seen = {"samples": source.samples, "wait": source.wait_seconds}
+
+    def probe():
+        # What the epoch drew (prefetching included), and how long the batch queue
+        # waited for the workers: about 0 when the workers keep up with training.
+        drawn = source.samples - seen["samples"]
+        waited = source.wait_seconds - seen["wait"]
+        seen.update(samples=source.samples, wait=source.wait_seconds)
+        rate = source.rate()
+        print(
+            f"   Samples: {drawn} drawn this epoch; the batch queue waited {waited:.1f} "
+            f"s for the workers; {rate:.0f} samples/s per worker"
+        )
+        return {"drawn": drawn, "waited_s": waited}
+
+    def finish(epochs_trained, timer):
+        rate = source.rate()
+        return {
+            "online": {
+                **record["online"],
+                "train_samples_seen": epochs_trained * per_epoch,
+                "worker_processes_seen": len(source.pids),
+                "samples_per_s_per_worker": round(rate, 1) if rate else None,
+                "wait_seconds": [round(e["waited_s"], 1) for e in timer.extra],
+            }
+        }
+
+    record = {
+        "training_data": "online",
+        "dataset_folder": None,
+        "dataset_manifest_sha256": None,
+        "dataset_scenario": scenario.name,
+        "waveform_backend": WAVEFORM_BACKEND,
+        "real_noise_fraction": scenario.real_noise_fraction,
+        "preprocessing": scenario.preprocessing,
+        "dataset_hash": None,
+        "dataset_hash_note": ONLINE_HASH_NOTE,
+        "split_grouped": None,
+        "split": {
+            "train_per_epoch": per_epoch,
+            "val": len(y_val),
+            "test": len(y_test),
+            "grouped_by": None,
+        },
+        "online": {
+            "scenario": scenario.name,
+            "scenario_hash": scenario.hash(),
+            "seed": run_seed,
+            "stream": STREAM_TEXT,
+            "samples_per_epoch": per_epoch,
+            "val_samples": len(y_val),
+            "test_samples": len(y_test),
+            "workers": workers,
+            "chunk": source.chunk,
+            "bn_samples": len(X_bn),
+        },
+    }
+    return Prepared(
+        fit={"x": source.batches(cfg.batch_size, steps), "steps_per_epoch": steps},
+        steps_per_epoch=steps,
+        validation=(X_val, y_val),
+        test=(X_test, y_test),
+        recalibration=X_bn,
+        record=record,
+        probe=probe,
+        finish=finish,
+    )
+
+
+def _train_and_save(cfg, policy, run_seed, stack):
+    """Prepare the data, train, test the best epoch once, and save everything."""
+    run = new_run(cfg.models_dir)
+    if cfg.online:
+        data = prepare_online(cfg, run_seed, stack)
+    else:
+        data = prepare_files(cfg, run_seed)
+    X_test, y_test = data.test
+
     # Build the model
-    input_shape = (X_train.shape[1], 1)
-    model = build_model(input_shape, cfg.learning_rate)
+    model = build_model((N_SAMPLES, 1), cfg.learning_rate)
 
     print("\n🏗️ Model architecture:")
     model.summary()
 
+    print(
+        f"\nBatchNorm statistics: recomputed from {len(data.recalibration)} training "
+        "samples before every validation (gwd.training.callbacks)."
+    )
+
     # Callbacks
+    timer = EpochTimer(data.probe)
     my_callbacks = [
+        # Recomputes the BatchNorm statistics in on_test_begin, before every
+        # validation, so the callbacks below watch the model as it is saved.
+        BatchNormRecalibration(data.recalibration, cfg.batch_size),
         callbacks.EarlyStopping(
             patience=cfg.patience,
             monitor="val_loss",
@@ -435,6 +646,7 @@ def _train_and_save(cfg, policy, run_seed):
             min_lr=1e-6,
             verbose=1,
         ),
+        timer,
     ]
 
     print(f"\n🚀 Starting training: {run.name}")
@@ -443,11 +655,10 @@ def _train_and_save(cfg, policy, run_seed):
     # Training (the checkpoint callback writes into models_dir)
     ensure_dirs(cfg.models_dir)
     history = model.fit(
-        X_train,
-        y_train,
+        **data.fit,
         epochs=cfg.epochs,
-        batch_size=cfg.batch_size,
-        validation_data=(X_val, y_val),
+        validation_data=data.validation,
+        validation_batch_size=cfg.batch_size,
         callbacks=my_callbacks,
         verbose=1,
     )
@@ -457,7 +668,8 @@ def _train_and_save(cfg, policy, run_seed):
 
     # Plot the history
     plot_history(
-        history, os.path.join(cfg.plots_dir, f"training_history_{run.timestamp}.png")
+        history,
+        os.path.join(cfg.plots_dir, f"training_history_{run.timestamp}.png"),
     )
 
     # The only evaluation on the test part
@@ -468,7 +680,7 @@ def _train_and_save(cfg, policy, run_seed):
 
     # Save the metadata
     save_experiment_config(
-        history, (loss, acc), cfg, run, policy, run_seed, data, split
+        history, timer, (loss, acc), cfg, run, policy, run_seed, data
     )
 
     print("\n✅ Training finished!")

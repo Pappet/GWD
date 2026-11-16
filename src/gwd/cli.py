@@ -85,12 +85,47 @@ def _validate(args):
     return validate.run(data_folder=args.data or DATA_DIR_TRAIN, output_folder=plots)
 
 
+# Options of gwd train that only online training takes.
+ONLINE_OPTIONS = ("samples_per_epoch", "val_samples", "test_samples", "workers")
+
+
+def _online_usage_error(args):
+    """The message for options of gwd train that do not fit together, or None."""
+    from gwd.data.scenarios import SCENARIOS
+
+    if not args.online:
+        if args.scenario is not None:
+            return "--scenario needs --online (file training reads --data)."
+        given = [name for name in ONLINE_OPTIONS if getattr(args, name) is not None]
+        if given:
+            options = ", ".join("--" + name.replace("_", "-") for name in given)
+            return f"{options} only work with --online."
+        return None
+    if args.scenario is None:
+        return "--online needs --scenario, for example --scenario train_v3."
+    if args.data is not None:
+        return "--online draws its samples; it reads no --data."
+    scenario = SCENARIOS[args.scenario.upper()]
+    if scenario.real_noise_fraction > 0:
+        return (
+            f"{scenario.name} uses real noise chunks, which online training would "
+            "reuse in training, validation, and test; train on a dataset with --data, "
+            "or choose a scenario without real noise (train_v2, train_v3)."
+        )
+    return None
+
+
 def _train(args):
     from gwd.config import DATA_DIR_TRAIN, LABELS_FILE
 
+    # Checked before TensorFlow is imported, so wrong options fail at once.
+    problem = _online_usage_error(args)
+    if problem:
+        print(f"❌ {problem}", file=sys.stderr)
+        return 2
     # Checked before TensorFlow is imported, so a missing dataset fails at once.
     data_folder = args.data or DATA_DIR_TRAIN
-    if not os.path.exists(os.path.join(data_folder, LABELS_FILE)):
+    if not args.online and not os.path.exists(os.path.join(data_folder, LABELS_FILE)):
         print(
             f"❌ No dataset in '{data_folder}': {LABELS_FILE} is missing. "
             "Run 'gwd data generate' first.",
@@ -110,9 +145,11 @@ def _train(args):
         "patience": args.patience,
         "mixed_precision": args.mixed_precision or None,
         "deterministic": args.deterministic or None,
-        # train() seeds Python, numpy, TensorFlow, and the split and records the
-        # seed; without --seed it draws one.
+        # train() seeds Python, numpy, TensorFlow, and the split (or the online
+        # streams) and records the seed; without --seed it draws one.
         "seed": args.seed,
+        "scenario": args.scenario.upper() if args.scenario else None,
+        **{name: getattr(args, name) for name in ONLINE_OPTIONS},
     }
     cfg = TrainConfig(
         **{name: value for name, value in overrides.items() if value is not None}
@@ -223,6 +260,13 @@ def _non_negative(text):
     value = int(text)
     if value < 0:
         raise argparse.ArgumentTypeError(f"must not be negative: {value}")
+    return value
+
+
+def _positive(text):
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"must be at least 1: {value}")
     return value
 
 
@@ -399,8 +443,53 @@ def build_parser():
     )
     _add_seed(
         train,
-        "Python, numpy, TensorFlow, and the train/val/test split",
+        "Python, numpy, TensorFlow, and the train/val/test split (with --online: the "
+        "streams of the training, validation, and test samples)",
         "a drawn seed, printed and recorded in the model's .json",
+    )
+    online = train.add_argument_group(
+        "online training",
+        "Fresh samples every epoch, drawn from a scenario in worker processes, "
+        "instead of a dataset; validation and test are fixed sets drawn once from "
+        "the same scenario.",
+    )
+    online.add_argument(
+        "--online",
+        action="store_true",
+        help="Train on samples drawn on the fly from --scenario. Default: train on "
+        "the dataset in --data.",
+    )
+    online.add_argument(
+        "--scenario",
+        type=str.lower,
+        choices=sorted(name.lower() for name in SCENARIOS),
+        help="Scenario to draw from with --online, for example train_v2 or train_v3. "
+        "Scenarios with real noise (train_v1) are refused.",
+    )
+    online.add_argument(
+        "--samples-per-epoch",
+        type=_positive,
+        help="Fresh training samples per epoch, rounded up to whole batches. "
+        "Default: ONLINE_SAMPLES_PER_EPOCH in gwd.config (8192).",
+    )
+    online.add_argument(
+        "--val-samples",
+        type=_positive,
+        help="Samples of the fixed validation set. Default: ONLINE_VAL_SAMPLES in "
+        "gwd.config (2048).",
+    )
+    online.add_argument(
+        "--test-samples",
+        type=_positive,
+        help="Samples of the fixed test set. Default: ONLINE_TEST_SAMPLES in "
+        "gwd.config (2048).",
+    )
+    online.add_argument(
+        "--workers",
+        type=_non_negative,
+        help="Worker processes that draw the samples; 0 draws in the training "
+        "process. Default: ONLINE_WORKERS in gwd.config (12), at most the CPU count "
+        "minus 2.",
     )
     train.set_defaults(handler=_train)
 

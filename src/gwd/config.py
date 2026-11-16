@@ -131,3 +131,17 @@ REDUCE_LR_PATIENCE = 3  # epochs without a better val_loss before halving the ra
 # noise chunk (gwd.training.split). Until P5.6, one 20 % share was val and test at once.
 VAL_SPLIT = 0.15  # steers early stopping, the checkpoint, and the learning rate
 TEST_SPLIT = 0.15  # evaluated once, with the best epoch, after training
+# Before every validation, gwd train recomputes the moving BatchNorm statistics from
+# this many fixed training samples with the current weights (gwd.training.callbacks).
+BN_RECALIBRATION_SAMPLES = 1024
+
+# --- ONLINE TRAINING (gwd train --online, gwd.data.online) ---
+# Fresh samples from the scenario for every epoch; val and test are fixed, seeded sets.
+# gwd train overrides them with --samples-per-epoch, --val-samples, --test-samples, and
+# --workers.
+ONLINE_SAMPLES_PER_EPOCH = 8192  # rounded up to whole batches
+ONLINE_VAL_SAMPLES = 2048
+ONLINE_TEST_SAMPLES = 2048
+# Worker processes that draw the samples; at most the CPU count minus 2 at run time.
+ONLINE_WORKERS = 12
+ONLINE_CHUNK = 16  # samples per task of a worker
