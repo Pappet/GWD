@@ -47,7 +47,7 @@ def update_leaderboard_roc(
     leaderboard_file: str,
     baseline_file: str,
 ):
-    """Schreibt erweiterte Metriken in die CSV."""
+    """Append one row with the simulated and the field test metrics to the CSV."""
     # baseline_file is unused until P5.8 removes it: the baseline is not valid.
     warnings.warn("Physics baseline currently invalid (EVAL-6, see D5)")
     migrate_legacy_leaderboard(leaderboard_file)
