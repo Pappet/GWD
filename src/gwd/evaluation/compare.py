@@ -4,8 +4,8 @@ ROC Comparison Tool - Vergleicht mehrere Modelle in einer ROC-Kurve
 Nützlich um zu sehen, welches Modell threshold-unabhängig besser ist.
 """
 
+import argparse
 import datetime
-import glob
 import os
 
 import matplotlib
@@ -14,42 +14,32 @@ import numpy as np
 from gwd.config import (
     DURATION,
     EVALUATION_MODELS_PLOTS_DIR,
-    MODELS_DIR,
     N_SAMPLES,
     ensure_dirs,
 )
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import tensorflow as tf
 from sklearn.metrics import auc, roc_curve
 
 from gwd.core.noise import generate_gaussian_noise
 from gwd.core.waveforms import generate_astrophysical_chirp
+from gwd.registry import MODEL_HELP, list_models, load_model, model_name, resolve
 
 TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
-def load_all_models():
-    """Lädt alle verfügbaren Modelle."""
-    if not os.path.exists(MODELS_DIR):
-        print(f"❌ Ordner '{MODELS_DIR}' nicht gefunden.")
-        return []
-
-    files = glob.glob(os.path.join(MODELS_DIR, "*.keras"))
-    if not files:
-        print("❌ Keine Modelle gefunden.")
-        return []
-
+def load_models(paths):
+    """Load the given models, oldest first when they come from list_models()."""
     models = []
-    for f in sorted(files, key=os.path.getctime):
+    for path in paths:
         try:
-            model = tf.keras.models.load_model(f)
-            name = os.path.basename(f).replace(".keras", "")
+            model = load_model(path)
+            name = model_name(path)
             models.append((name, model))
             print(f"✓ Geladen: {name}")
         except Exception as e:
-            print(f"✗ Fehler bei {f}: {e}")
+            print(f"✗ Fehler bei {path}: {e}")
 
     return models
 
@@ -213,13 +203,28 @@ def zoom_to_relevant_region(models, X_test, y_true):
     plt.close()
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Compare models in one ROC plot (default: all models in models_registry/)."
+    )
+    parser.add_argument(
+        "--model",
+        action="append",
+        help=f"One model to compare, repeatable: {MODEL_HELP}. Default: all models.",
+    )
+    args = parser.parse_args(argv)
+
     print("=" * 70)
     print("🏆 ROC CURVE COMPARISON TOOL")
     print("=" * 70)
 
     # 1. Modelle laden
-    models = load_all_models()
+    try:
+        paths = [resolve(spec) for spec in args.model] if args.model else list_models()
+    except FileNotFoundError as error:
+        print(f"❌ {error}")
+        return
+    models = load_models(paths)
 
     if len(models) == 0:
         print("\n❌ Keine Modelle zum Vergleichen gefunden.")

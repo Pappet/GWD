@@ -73,14 +73,9 @@ ALLOWLIST = {
     ("src/gwd/data/fetch_noise.py", "gwpy"),
     # DATA-13: module-level side effects in training, matplotlib on top (P3.7).
     ("src/gwd/training/train.py", "matplotlib"),
-    # EVAL-24, EVAL-11: TensorFlow imported directly, not through gwd.registry (P3.3).
-    ("src/gwd/evaluation/evaluate.py", "tensorflow"),
-    ("src/gwd/evaluation/thresholds.py", "tensorflow"),
-    ("src/gwd/evaluation/compare.py", "tensorflow"),
     # EVAL-24: gwpy is imported directly instead of through gwd.data.gwosc (P3.4).
     ("src/gwd/evaluation/evaluate.py", "gwpy"),
-    # APP-7: TensorFlow and gwpy at module level in the Glitch Hunter (P3.3, P3.4).
-    ("src/gwd/apps/glitch_hunter/app.py", "tensorflow"),
+    # APP-7: gwpy at module level in the Glitch Hunter (P3.4).
     ("src/gwd/apps/glitch_hunter/app.py", "gwpy"),
     # HYG-16: the dependency check imports pycbc and gwd.core on top (P3.6, gwd env).
     ("src/gwd/env.py", "pycbc"),

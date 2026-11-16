@@ -14,16 +14,16 @@ LIGHT_MODULES = [
     "gwd.data.fetch_noise",
     "gwd.data.preprocessing",
     "gwd.evaluation.leaderboard",
-    "gwd.registry",
-    "gwd.apps.waveform_explorer",
-    "gwd.apps.interferometer_designer",
-]
-TF_MODULES = [
-    "gwd.training.train",
     "gwd.evaluation.evaluate",
     "gwd.evaluation.thresholds",
     "gwd.evaluation.compare",
+    "gwd.registry",
+    "gwd.apps.waveform_explorer",
+    "gwd.apps.interferometer_designer",
     "gwd.apps.glitch_hunter.app",
+]
+TF_MODULES = [
+    "gwd.training.train",
 ]
 
 

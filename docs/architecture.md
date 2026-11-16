@@ -42,7 +42,9 @@ The target is one installable package, `gwd`, in `src/gwd/` (D8).
 
 `core/interferometer.py` and `core/simulation.py` stay in core on purpose. Whether app-specific physics belongs there is a design question (`APP-14`), and the import rules below keep the boundary.
 
-Before the cleanup, the scripts in `src/` found each other through `sys.path` edits with generic top-level names such as `config` and `utils` (`hygiene:HYG-M5`). Since P2.1, tests and scripts both import `gwd.core` (`CORE-5`). From P2.3 to P2.6, the root `config.py` was only a shim for `gwd.config`. Since P2.4, `gwd.data` and `gwd.training` use absolute imports without `sys.path` edits and run with `python -m`, for example `python -m gwd.data.generate`. Since P2.5, all code is in `src/gwd/`: evaluation, apps, and `gwd.data.preprocessing` import absolutely, `src/utils/` is gone, and `src/gwd` has no `sys.path` edits. `gwd.registry` so far only holds `get_latest_model`, unchanged; P3.3 makes it the one model search. Since P2.6, the root `config.py` shim and the pytest `pythonpath` entries (`src` and `.`) are gone. Tests import the installed `gwd` package (editable in `.venv`, `pip install -e` in CI), so the old top-level names `config`, `utils`, `dataset`, and `gwd_core` no longer resolve.
+Before the cleanup, the scripts in `src/` found each other through `sys.path` edits with generic top-level names such as `config` and `utils` (`hygiene:HYG-M5`). Since P2.1, tests and scripts both import `gwd.core` (`CORE-5`). From P2.3 to P2.6, the root `config.py` was only a shim for `gwd.config`. Since P2.4, `gwd.data` and `gwd.training` use absolute imports without `sys.path` edits and run with `python -m`, for example `python -m gwd.data.generate`. Since P2.5, all code is in `src/gwd/`: evaluation, apps, and `gwd.data.preprocessing` import absolutely, `src/utils/` is gone, and `src/gwd` has no `sys.path` edits. Since P2.6, the root `config.py` shim and the pytest `pythonpath` entries (`src` and `.`) are gone. Tests import the installed `gwd` package (editable in `.venv`, `pip install -e` in CI), so the old top-level names `config`, `utils`, `dataset`, and `gwd_core` no longer resolve.
+
+**Model registry (since P3.3).** `gwd.registry` is the only model search. `list_models()` returns the `.keras` files in `models_registry/`, oldest first, ordered by the timestamp in the name `gwd_model_YYYYMMDD-HHMMSS`. Before P3.3 the four copies chose by ctime, which changes on chmod, copy, or restore under Linux and WSL (`apps:APPX-4`). On the laptop, ctime picked `gwd_model_20251124-234359` as the newest; the name picks `gwd_model_20251205-232013`. Names without a valid timestamp fall back to mtime with a warning. `resolve()` turns `latest`, a model name, or a path into a file, and `load_model()` imports TensorFlow lazily and loads with `compile=False`, which also avoids Keras' optimizer warning. `read_metadata()` and `write_metadata()` handle the `.json` file next to a model; training does not use them yet. `evaluate` and `thresholds` take `--model` (default `latest`), and `compare` takes it repeatedly (default: all models). The Glitch Hunter loads the latest model through the registry and still exits with rc 1 without one (`APP-8`, P4.4). No evaluation module and no app imports TensorFlow itself: `tests/test_architecture.py` checks the source, and `tests/test_registry.py` checks at runtime that the three evaluation scripts run `--model` without loading TensorFlow.
 
 **Menu (since P2.4).** `main.py` reads a `MENU` table. Since P2.5 all 11 entries are `('module', 'gwd....')` and run as `python -m`, including the leaderboard (`gwd.evaluation.leaderboard`) and the interferometer designer. Each entry runs with `subprocess.run([sys.executable, ...])` in the project folder, so the menu works from any working directory and reports the real exit code (`tests/test_menu.py`).
 
@@ -52,7 +54,7 @@ Before the cleanup, the scripts in `src/` found each other through `sys.path` ed
 
 Since P2.6, `tests/test_architecture.py` enforces these rules. It parses every module in `src/gwd/` and `main.py` with `ast` and counts an import as lazy only inside a function body; a `try` block at module level is not lazy. The standard library is always allowed, and anything not listed under "May import" fails, so the test also limits where tensorflow, gwpy, and pycbc may appear at all. Dynamic imports (`__import__`, `importlib`) are not checked. The same test fails on any `sys.path` edit in `src/`, `tests/`, or `main.py`, and on two byte-identical `.py` files (empty `__init__.py` files excepted, `HYG-1`).
 
-Known violations are in the test's `ALLOWLIST`, each with its finding ID and the step that removes it. An entry that no longer matches a real violation fails the test, so the list can only shrink. It must be empty by P7.4. At P2.6 it has 12 entries:
+Known violations are in the test's `ALLOWLIST`, each with its finding ID and the step that removes it. An entry that no longer matches a real violation fails the test, so the list can only shrink. It must be empty by P7.4. It had 12 entries at P2.6; since P3.3 it has 8:
 
 | File | Import | Finding | Removed in |
 |---|---|---|---|
@@ -60,9 +62,8 @@ Known violations are in the test's `ALLOWLIST`, each with its finding ID and the
 | `core/waveforms.py` | `print` in library code | `CORE-17` | P4.1 |
 | `data/fetch_noise.py` | gwpy at module level | `DATA-25` | P3.4 |
 | `training/train.py` | matplotlib at module level | `DATA-13` | P3.7 |
-| `evaluation/evaluate.py`, `thresholds.py`, `compare.py` | tensorflow directly | `EVAL-24`, `EVAL-11` | P3.3 |
 | `evaluation/evaluate.py` | gwpy directly | `EVAL-24` | P3.4 |
-| `apps/glitch_hunter/app.py` | tensorflow and gwpy at module level | `APP-7` | P3.3, P3.4 |
+| `apps/glitch_hunter/app.py` | gwpy at module level | `APP-7` | P3.4 |
 | `env.py` | pycbc and `gwd.core` at module level | `HYG-16` | P3.6 |
 
 
@@ -128,7 +129,7 @@ Each of these has several copies today. P3 leaves exactly one.
 | Signal injection | 6 | `generate_chirp_dataset.py:126`, `evaluate_model_with_roc.py:98` and `:142`, `optimize_threshold.py:59`, `compare_models_roc.py:67`, `glitch_hunter_app.py:269` | `gwd.data.injection` (P3.5) |
 | Conditioning (notch and bandpass) | 3 | `utils/data_processing.py:9`, `fetch_real_noise.py:37`, `glitch_hunter_app.py:169`. `data_processing.py` has no 240 Hz notch. | `gwd.data.preprocessing` (P3.2) |
 | z-score | 10 | `generate_chirp_dataset.py:64`, `train_cnn.py:73`, `evaluate_model_with_roc.py:102`, `:143`, `:290`, `:327`, `optimize_threshold.py:63`, `compare_models_roc.py:71`, `glitch_hunter_app.py:181`, `:283`. Two of them add an epsilon. | `gwd.data.preprocessing` (P3.2) |
-| Model search | 4 | `utils/evaluation.py:11`, `optimize_threshold.py:32`, `compare_models_roc.py:28`, `glitch_hunter_app.py:49` | `gwd.registry` (P3.3) |
+| Model search | 4 | `utils/evaluation.py:11`, `optimize_threshold.py:32`, `compare_models_roc.py:28`, `glitch_hunter_app.py:49` | `gwd.registry` (done in P3.3) |
 | Event list | 2 | `REAL_EVENTS` in `evaluate_model_with_roc.py:45`, `KNOWN_EVENTS` in `glitch_hunter_app.py:24` | `gwd.data.gwosc` (P3.4) |
 | Detection threshold | 3 values | `0.15` in `evaluate_model_with_roc.py:42`, `0.46` in `glitch_hunter_app.py:73`. `0.75` survives only in comments at `evaluate_model_with_roc.py:121` and `glitch_hunter_app.py:73`. | Per-model threshold in `gwd.registry` (P5.8) |
 
@@ -227,7 +228,7 @@ Each step PR ticks its own step, so a tick takes effect when that PR is merged.
 | [x] | P2.6 | Remove the shim and last `sys.path` edits; architecture test | #23 |
 | [x] | P3.1 | Central constants instead of hard-coded values | #24 |
 | [ ] | P3.2 | One conditioning and one normalization function | |
-| [ ] | P3.3 | Model registry: one model search, selection by timestamp, `--model` | |
+| [x] | P3.3 | Model registry: one model search, selection by timestamp, `--model` | #25 |
 | [ ] | P3.4 | GWOSC access and shared event list | |
 | [ ] | P3.5 | Central injection with named V1 scenarios | |
 | [ ] | P3.6 | Unified `gwd` CLI, `gwd env`, thin menu | |
