@@ -117,7 +117,7 @@ def build_figure(rng=None):
         # 2. Add noise (gwd.core)
         strain_noisy = sim.add_detector_noise(strain, gui_params["noise_level"])
         # 3. Compute the response (gwd.core)
-        delta_L, _ = sim.calculate_response(strain_noisy)
+        delta_L = sim.arm_length_change(strain_noisy)
         return strain, freq, strain_noisy, delta_L
 
     strain, freq, strain_noisy, delta_L = calculate_model()

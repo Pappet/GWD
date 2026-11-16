@@ -55,14 +55,14 @@ def test_detector_noise_is_drawn_from_the_noise_psd(simulator):
     np.testing.assert_array_equal(noisy, expected)
 
 
-def test_response_converts_strain_to_arm_length_change_and_intensity(simulator):
+def test_the_arm_length_change_is_strain_times_the_arm_length(simulator):
     strain, _ = simulator.generate_chirp(30, 30, 400)
-    delta_l, intensity = simulator.calculate_response(strain)
-    np.testing.assert_allclose(delta_l, strain * simulator.arm_length)
-    assert np.all((intensity >= 0) & (intensity <= 1))
-    # Small phase: sin^2(x) = x^2 with x = 4 pi dL / lambda.
-    phase = 4 * np.pi * delta_l / simulator.laser_wavelength
-    np.testing.assert_allclose(intensity, phase**2, rtol=1e-6, atol=0)
+    np.testing.assert_array_equal(
+        simulator.arm_length_change(strain), strain * simulator.arm_length
+    )
+    assert simulator.arm_length == 4000
+    # CORE-12: the unused intensity is gone with calculate_response.
+    assert not hasattr(simulator, "calculate_response")
 
 
 def test_the_simulator_needs_a_known_backend():

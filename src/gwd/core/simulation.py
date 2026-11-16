@@ -1,9 +1,7 @@
 """Time domain simulation of a chirp and the detector response, for the waveform explorer."""
 
-import numpy as np
-
 from . import waveforms
-from .constants import LASER_WAVELENGTH, LIGO_ARM_LENGTH
+from .constants import LIGO_ARM_LENGTH
 from .noise import colored_noise_from_psd
 from .timebase import time_axis
 
@@ -25,7 +23,6 @@ class TimeDomainSimulator:
         # gwd.core.interferometer.reference_psd (P5.4).
         self.noise_psd = noise_psd
         self.arm_length = LIGO_ARM_LENGTH
-        self.laser_wavelength = LASER_WAVELENGTH
 
         self.duration = duration
         self.sample_rate = sample_rate
@@ -60,11 +57,10 @@ class TimeDomainSimulator:
         )
         return signal + noise_scale * noise
 
-    def calculate_response(self, strain):
+    def arm_length_change(self, strain):
+        """The change of the arm length in metres: strain times the arm length.
+
+        Before P5.4 this was calculate_response, which also returned an intensity
+        sin^2(4 pi dL / lambda) that nothing used (CORE-12, APP-17).
         """
-        Computes the interferometer response: (arm length change, intensity).
-        """
-        delta_L = strain * self.arm_length
-        phase_shift = 4 * np.pi * delta_L / self.laser_wavelength
-        intensity = np.sin(phase_shift) ** 2
-        return delta_L, intensity
+        return strain * self.arm_length
