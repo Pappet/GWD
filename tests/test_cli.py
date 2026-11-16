@@ -217,3 +217,53 @@ def test_seed_everything_seeds_random_and_numpy():
 def test_seed_none_leaves_the_rngs_alone(monkeypatch):
     monkeypatch.setattr(np.random, "seed", lambda seed: pytest.fail("seeded"))
     cli.seed_everything(None)
+
+
+class FakeTraining:
+    """Stands in for gwd.training.train, so the train handler runs without TensorFlow."""
+
+    def __init__(self):
+        self.calls = []
+
+    def TrainConfig(self, **options):
+        return options
+
+    def train(self, cfg):
+        self.calls.append(cfg)
+
+
+@pytest.fixture
+def fake_training(monkeypatch):
+    fake = FakeTraining()
+    monkeypatch.setitem(sys.modules, "gwd.training.train", fake)
+    for name in ("TF_CPP_MIN_LOG_LEVEL", "TF_ENABLE_ONEDNN_OPTS"):
+        # setenv first, so monkeypatch also undoes what the handler sets.
+        monkeypatch.setenv(name, "")
+        monkeypatch.delenv(name)
+    return fake
+
+
+def test_train_without_options_uses_the_config_defaults(fake_training):
+    assert cli.main(["train"]) == 0
+    # Only what is given on the command line is passed; TrainConfig has the rest.
+    assert fake_training.calls == [{}]
+    assert os.environ["TF_CPP_MIN_LOG_LEVEL"] == "2"
+    assert os.environ["TF_ENABLE_ONEDNN_OPTS"] == "0"
+
+
+def test_train_passes_the_overrides(fake_training, monkeypatch):
+    monkeypatch.setenv("TF_CPP_MIN_LOG_LEVEL", "0")
+    args = "train --data d --epochs 3 --batch-size 16 --lr 0.001 --patience 2"
+    args += " --mixed-precision"
+    assert cli.main(args.split()) == 0
+    assert fake_training.calls == [
+        {
+            "data_folder": "d",
+            "epochs": 3,
+            "batch_size": 16,
+            "learning_rate": 0.001,
+            "patience": 2,
+            "mixed_precision": True,
+        }
+    ]
+    assert os.environ["TF_CPP_MIN_LOG_LEVEL"] == "0"

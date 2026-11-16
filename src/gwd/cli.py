@@ -10,6 +10,7 @@ Exit codes: 0 on success, 1 when a command fails (for example an unknown model),
 """
 
 import argparse
+import os
 import sys
 
 # What --model accepts; gwd.registry.resolve() turns it into a file.
@@ -79,17 +80,24 @@ def _validate(args):
 
 
 def _train(args):
-    # Until P3.7 the training settings are module globals; set them before main().
-    from gwd.training import train
+    # Read by TensorFlow when it is imported; values the caller has set win.
+    os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")  # hide info and warnings
+    os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")  # oneDNN off, as before
+    from gwd.training.train import TrainConfig, train
 
-    if args.data:
-        train.DATA_FOLDER = args.data
-    if args.epochs is not None:
-        train.EPOCHS = args.epochs
-    if args.batch_size is not None:
-        train.BATCH_SIZE = args.batch_size
+    overrides = {
+        "data_folder": args.data,
+        "epochs": args.epochs,
+        "batch_size": args.batch_size,
+        "learning_rate": args.lr,
+        "patience": args.patience,
+        "mixed_precision": args.mixed_precision or None,
+    }
+    cfg = TrainConfig(
+        **{name: value for name, value in overrides.items() if value is not None}
+    )
     seed_everything(args.seed, tensorflow=True)
-    train.main()
+    train(cfg)
     return 0
 
 
@@ -239,9 +247,30 @@ def build_parser():
     )
     train.add_argument("--data", help="Dataset folder. Default: data/training/.")
     train.add_argument(
-        "--epochs", type=int, help="Maximum number of epochs. Default: 40."
+        "--epochs",
+        type=int,
+        help="Maximum number of epochs. Default: EPOCHS in gwd.config.",
     )
-    train.add_argument("--batch-size", type=int, help="Batch size. Default: 128.")
+    train.add_argument(
+        "--batch-size", type=int, help="Batch size. Default: BATCH_SIZE in gwd.config."
+    )
+    train.add_argument(
+        "--lr",
+        type=float,
+        help="Adam learning rate. Default: LEARNING_RATE in gwd.config.",
+    )
+    train.add_argument(
+        "--patience",
+        type=int,
+        help="Epochs without a better val_loss before early stopping. "
+        "Default: EARLY_STOPPING_PATIENCE in gwd.config.",
+    )
+    train.add_argument(
+        "--mixed-precision",
+        action="store_true",
+        help="Train with mixed_float16 even without a GPU. Default: mixed_float16 "
+        "only if TensorFlow finds a GPU, else float32.",
+    )
     _add_seed(train, "Python, numpy, and TensorFlow")
     train.set_defaults(handler=_train)
 

@@ -73,3 +73,12 @@ BANDPASS = (20, 300)  # Hz, (low, high)
 # Length of the real-noise segment that fetch_noise downloads (about 68 minutes).
 # The segment start is START_GPS in gwd.data.fetch_noise.
 NOISE_FETCH_SECONDS = 4096
+
+# --- TRAINING DEFAULTS ---
+# gwd train overrides them with --epochs, --batch-size, --lr, and --patience.
+EPOCHS = 40  # upper limit; early stopping usually ends sooner
+BATCH_SIZE = 128
+LEARNING_RATE = 5e-4  # Adam
+EARLY_STOPPING_PATIENCE = 5  # epochs without a better val_loss before stopping
+REDUCE_LR_PATIENCE = 3  # epochs without a better val_loss before halving the rate
+TEST_SPLIT = 0.2  # held-out share, also the validation data until P5.6

@@ -69,8 +69,6 @@ ALLOWLIST = {
     ("src/gwd/core/waveforms.py", "pycbc"),
     # CORE-17: print in library code (P4.1).
     ("src/gwd/core/waveforms.py", "print"),
-    # DATA-13: module-level side effects in training, matplotlib on top (P3.7).
-    ("src/gwd/training/train.py", "matplotlib"),
 }
 
 

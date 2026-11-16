@@ -79,6 +79,8 @@ gwd data validate
 gwd train
 ```
 
+`gwd train` takes the defaults `EPOCHS`, `BATCH_SIZE`, `LEARNING_RATE`, and `EARLY_STOPPING_PATIENCE` from `src/gwd/config.py`; `--epochs`, `--batch-size`, `--lr`, and `--patience` override them for one run. It trains with mixed precision (`mixed_float16`) only if TensorFlow finds a GPU, otherwise in float32; `--mixed-precision` forces it. It prints the precision it chose in a `Precision:` line.
+
 ### 3. Evaluate Results
 ```bash
 # ROC evaluation of the latest model; --no-real skips the real data field test (network)

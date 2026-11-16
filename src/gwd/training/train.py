@@ -1,71 +1,110 @@
+"""Training of the CNN: train(cfg) loads a dataset, trains, and saves the model (P3.7).
+
+Importing this module changes nothing: the timestamp, the model name, the paths, and
+the precision policy come into being when train() runs. The plot uses a matplotlib
+Figure without pyplot, so no backend is chosen. The hyperparameter defaults are in
+gwd.config, and gwd train overrides them.
+"""
+
+import datetime
+import json
 import os
+import sys
+from dataclasses import dataclass
+
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+from sklearn.model_selection import train_test_split
+from tensorflow.keras import callbacks, models
 
 from gwd.config import (
+    BATCH_SIZE,
     DATA_DIR_TRAIN,
+    EARLY_STOPPING_PATIENCE,
+    EPOCHS,
     LABELS_FILE,
+    LEARNING_RATE,
     MODELS_DIR,
     N_SAMPLES,
+    REDUCE_LR_PATIENCE,
+    TEST_SPLIT,
     TRAINING_PLOTS_DIR,
     ensure_dirs,
 )
 from gwd.data.preprocessing import normalize
-
-# --- 1. LOGGING BEREINIGEN (Muss vor dem TensorFlow Import stehen!) ---
-# 0 = Alle Nachrichten (Standard)
-# 1 = Info filtern
-# 2 = Warnungen filtern (Das wollen wir)
-# 3 = Fehler filtern
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
-# oneDNN Optimierungen "leise" schalten oder deaktivieren
-os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
-
-import datetime
-import json
-
-import matplotlib
-import numpy as np
-import pandas as pd
-
-matplotlib.use("Agg")  # Non-interactive backend
-import matplotlib.pyplot as plt
-import tensorflow as tf
-from sklearn.model_selection import train_test_split
-from tensorflow.keras import callbacks, layers, models
-
-# Mixed precision für schnelleres Training auf RTX GPUs
-tf.keras.mixed_precision.set_global_policy("mixed_float16")
-
-# ==========================================
-# KONFIGURATION & VERSIONIERUNG
-# ==========================================
-DATA_FOLDER = DATA_DIR_TRAIN
-LABEL_FILE = LABELS_FILE
-
-# Wir erstellen einen Zeitstempel für dieses Experiment
-TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-MODEL_NAME = f"gwd_model_{TIMESTAMP}"
-
-# Pfade für Modell und Config
-MODEL_SAVE_PATH = os.path.join(MODELS_DIR, f"{MODEL_NAME}.keras")
-CONFIG_SAVE_PATH = os.path.join(MODELS_DIR, f"{MODEL_NAME}.json")
-
-BATCH_SIZE = 128
-EPOCHS = 40
-TEST_SPLIT = 0.2
+from gwd.registry import MODEL_EXTENSION, TIMESTAMP_FORMAT, metadata_path
+from gwd.training.model import ARCHITECTURE, build_model
 
 
-def load_data():
+@dataclass(frozen=True)
+class TrainConfig:
+    """Settings of one training run. The defaults come from gwd.config."""
+
+    data_folder: str = DATA_DIR_TRAIN
+    models_dir: str = MODELS_DIR
+    plots_dir: str = TRAINING_PLOTS_DIR
+    epochs: int = EPOCHS
+    batch_size: int = BATCH_SIZE
+    learning_rate: float = LEARNING_RATE
+    patience: int = EARLY_STOPPING_PATIENCE
+    # True forces mixed_float16; otherwise only a GPU turns it on (D7).
+    mixed_precision: bool = False
+
+
+@dataclass(frozen=True)
+class Run:
+    """Name and output files of one training run."""
+
+    timestamp: str
+    name: str
+    model_path: str
+    config_path: str
+
+
+def new_run(models_dir, now=None):
+    """Name a run after the current time, as gwd.registry expects: gwd_model_YYYYMMDD-HHMMSS."""
+    timestamp = (now or datetime.datetime.now()).strftime(TIMESTAMP_FORMAT)
+    name = f"gwd_model_{timestamp}"
+    model_path = os.path.join(models_dir, name + MODEL_EXTENSION)
+    return Run(
+        timestamp=timestamp,
+        name=name,
+        model_path=model_path,
+        config_path=metadata_path(model_path),
+    )
+
+
+def choose_precision(mixed_precision=False, gpus=None):
+    """Return the Keras policy for a run and why: mixed_float16 on request or with a GPU.
+
+    On the CPU, mixed_float16 is slow and only emulated, so float32 is used there (D7).
+    gpus=None asks TensorFlow for the visible GPUs.
     """
-    Lädt den Trainingsdatensatz aus Numpy-Dateien und CSV-Labels.
+    if mixed_precision:
+        return "mixed_float16", "--mixed-precision"
+    if gpus is None:
+        gpus = tf.config.list_physical_devices("GPU")
+    if gpus:
+        return "mixed_float16", f"{len(gpus)} GPU(s) found"
+    return "float32", "no GPU found"
+
+
+def load_data(data_folder=DATA_DIR_TRAIN):
+    """
+    Load the training dataset from the .npy files listed in labels.csv.
+
+    Args:
+        data_folder: Dataset folder with labels.csv.
 
     Returns:
-        X: Array der Form (n_samples, n_timesteps, 1)
-        y: Array der Labels (0 oder 1)
+        X: array of shape (n_samples, n_timesteps, 1)
+        y: array of labels (0 or 1)
     """
-    print("📂 Lade Datensatz...")
-    csv_path = os.path.join(DATA_FOLDER, LABEL_FILE)
+    print("📂 Loading dataset...")
+    csv_path = os.path.join(data_folder, LABELS_FILE)
     if not os.path.exists(csv_path):
-        raise FileNotFoundError(f"Konnte {csv_path} nicht finden.")
+        raise FileNotFoundError(f"Cannot find {csv_path}.")
 
     df = pd.read_csv(csv_path)
     signals = []
@@ -73,13 +112,13 @@ def load_data():
 
     for index, row in df.iterrows():
         try:
-            file_path = os.path.join(DATA_FOLDER, row["filename"])
+            file_path = os.path.join(data_folder, row["filename"])
             data = np.load(file_path)
 
             # Z-score with the default eps, as before
             data = normalize(data)
 
-            # Sicherstellen, dass die Länge stimmt (Clip/Pad)
+            # Clip or pad to the expected length
             TARGET_LEN = N_SAMPLES
             if len(data) > TARGET_LEN:
                 data = data[:TARGET_LEN]
@@ -89,99 +128,49 @@ def load_data():
             signals.append(data)
             labels.append(row["has_signal"])
         except Exception as e:
-            print(f"⚠️ Fehler beim Laden von {row['filename']}: {e}")
+            print(f"⚠️ Error loading {row['filename']}: {e}")
 
     X = np.array(signals)
     y = np.array(labels)
     X = X.reshape(X.shape[0], X.shape[1], 1)
 
-    print(f"✅ Daten geladen: {len(X)} Samples. Shape: {X.shape}")
-    print(f"   - Samples mit Signal: {np.sum(y)} ({np.sum(y) / len(y) * 100:.1f}%)")
+    print(f"✅ Data loaded: {len(X)} samples. Shape: {X.shape}")
+    print(f"   - Samples with signal: {np.sum(y)} ({np.sum(y) / len(y) * 100:.1f}%)")
     print(
-        f"   - Samples ohne Signal: {len(y) - np.sum(y)} ({(len(y) - np.sum(y)) / len(y) * 100:.1f}%)"
+        f"   - Samples without signal: {len(y) - np.sum(y)} ({(len(y) - np.sum(y)) / len(y) * 100:.1f}%)"
     )
 
     return X, y
 
 
-def build_model(input_shape):
+def save_experiment_config(history_obj, final_acc, cfg, run, policy):
     """
-    Baut ein modernes CNN-Modell mit BatchNormalization.
-
-    Architektur:
-    - 3 Conv1D Blöcke mit steigenden Filtern (16 -> 32 -> 64)
-    - BatchNormalization nach jeder Conv-Schicht
-    - MaxPooling für Dimensionsreduktion
-    - Dense Layer mit Dropout zur Regularisierung
-    - Sigmoid Output für binäre Klassifikation
+    Save the metadata of a run as .json next to the model, so it can be traced later.
 
     Args:
-        input_shape: Tuple (n_timesteps, n_channels)
-
-    Returns:
-        Kompiliertes Keras Model
+        history_obj: Keras History object of the training
+        final_acc: test set accuracy
+        cfg: TrainConfig of the run
+        run: Run with the name and the .json path
+        policy: Name of the Keras precision policy the model was trained with
     """
-    model = models.Sequential(
-        [
-            # --- INPUT LAYER MODERNISIEREN ---
-            # Statt input_shape=... im Conv1D, nutzen wir einen expliziten Input-Layer
-            layers.Input(shape=input_shape),
-            # Block 1
-            layers.Conv1D(filters=16, kernel_size=32, padding="same"),
-            layers.BatchNormalization(),
-            layers.Activation("relu"),
-            layers.MaxPooling1D(pool_size=4),
-            # Block 2
-            layers.Conv1D(filters=32, kernel_size=16, padding="same"),
-            layers.BatchNormalization(),
-            layers.Activation("relu"),
-            layers.MaxPooling1D(pool_size=4),
-            # Block 3
-            layers.Conv1D(filters=64, kernel_size=8, padding="same"),
-            layers.BatchNormalization(),
-            layers.Activation("relu"),
-            layers.MaxPooling1D(pool_size=4),
-            # Classifier
-            layers.Flatten(),
-            layers.Dense(64),
-            layers.BatchNormalization(),
-            layers.Activation("relu"),
-            layers.Dropout(0.3),
-            layers.Dense(
-                1, activation="sigmoid", dtype="float32"
-            ),  # Output immer in float32
-        ]
-    )
-
-    opt = tf.keras.optimizers.Adam(learning_rate=0.0005)
-
-    model.compile(optimizer=opt, loss="binary_crossentropy", metrics=["accuracy"])
-
-    return model
-
-
-def save_experiment_config(history_obj, final_acc):
-    """
-    Speichert Metadaten zum Training, damit wir später wissen, was wir getan haben.
-
-    Args:
-        history_obj: Keras History-Objekt vom Training
-        final_acc: Test-Set Accuracy
-    """
-    # Wir holen uns die letzten Werte aus der History
+    # The values of the last epoch
     final_train_acc = history_obj.history["accuracy"][-1]
     final_val_acc = history_obj.history["val_accuracy"][-1]
     final_train_loss = history_obj.history["loss"][-1]
     final_val_loss = history_obj.history["val_loss"][-1]
 
     config = {
-        "model_name": MODEL_NAME,
-        "timestamp": TIMESTAMP,
-        "dataset_folder": DATA_FOLDER,
-        "epochs": EPOCHS,
-        "batch_size": BATCH_SIZE,
+        "model_name": run.name,
+        "timestamp": run.timestamp,
+        "dataset_folder": cfg.data_folder,
+        "epochs": cfg.epochs,
+        "batch_size": cfg.batch_size,
+        "learning_rate": cfg.learning_rate,
+        "early_stopping_patience": cfg.patience,
+        "precision_policy": policy,
         "test_split": TEST_SPLIT,
-        "architecture": "CNN_V2_BatchNorm",
+        "architecture": ARCHITECTURE,
         "metrics": {
             "final_training_acc": float(final_train_acc),
             "final_val_acc": float(final_val_acc),
@@ -189,20 +178,21 @@ def save_experiment_config(history_obj, final_acc):
             "final_val_loss": float(final_val_loss),
             "test_set_accuracy": float(final_acc),
         },
-        "note": "Training mit automatischer Versionierung",
+        "note": "Training with automatic versioning",
     }
 
-    with open(CONFIG_SAVE_PATH, "w") as f:
+    with open(run.config_path, "w") as f:
         json.dump(config, f, indent=4)
-    print(f"📋 Experiment-Konfiguration gespeichert: {CONFIG_SAVE_PATH}")
+    print(f"📋 Experiment config saved: {run.config_path}")
 
 
-def plot_history(history):
+def plot_history(history, plot_path):
     """
-    Erstellt Visualisierung des Trainingsverlaufs.
+    Plot accuracy and loss per epoch, with the best epoch marked.
 
     Args:
-        history: Keras History-Objekt
+        history: Keras History object
+        plot_path: PNG file to write; its folder is created if missing.
     """
     acc = history.history["accuracy"]
     val_acc = history.history["val_accuracy"]
@@ -212,110 +202,145 @@ def plot_history(history):
     best_epoch = np.argmin(val_loss)
     epochs_range = range(len(acc))
 
-    plt.figure(figsize=(12, 5))
+    # A Figure without pyplot: no backend is chosen or changed, no window can open.
+    from matplotlib.figure import Figure
 
-    # Accuracy Plot
-    plt.subplot(1, 2, 1)
-    plt.plot(epochs_range, acc, label="Training Accuracy", linewidth=2)
-    plt.plot(epochs_range, val_acc, label="Validation Accuracy", linewidth=2)
-    plt.axvline(
+    fig = Figure(figsize=(12, 5))
+    ax_acc, ax_loss = fig.subplots(1, 2)
+
+    # Accuracy
+    ax_acc.plot(epochs_range, acc, label="Training Accuracy", linewidth=2)
+    ax_acc.plot(epochs_range, val_acc, label="Validation Accuracy", linewidth=2)
+    ax_acc.axvline(
         best_epoch, color="green", linestyle="--", label="Best Model", alpha=0.7
     )
-    plt.legend(loc="lower right")
-    plt.xlabel("Epoch")
-    plt.ylabel("Accuracy")
-    plt.title("Genauigkeit")
-    plt.grid(True, alpha=0.3)
+    ax_acc.legend(loc="lower right")
+    ax_acc.set_xlabel("Epoch")
+    ax_acc.set_ylabel("Accuracy")
+    ax_acc.set_title("Accuracy")
+    ax_acc.grid(True, alpha=0.3)
 
-    # Loss Plot
-    plt.subplot(1, 2, 2)
-    plt.plot(epochs_range, loss, label="Training Loss", linewidth=2)
-    plt.plot(epochs_range, val_loss, label="Validation Loss", linewidth=2)
-    plt.axvline(
+    # Loss
+    ax_loss.plot(epochs_range, loss, label="Training Loss", linewidth=2)
+    ax_loss.plot(epochs_range, val_loss, label="Validation Loss", linewidth=2)
+    ax_loss.axvline(
         best_epoch, color="green", linestyle="--", label="Best Model", alpha=0.7
     )
-    plt.legend(loc="upper right")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.title("Loss")
-    plt.grid(True, alpha=0.3)
+    ax_loss.legend(loc="upper right")
+    ax_loss.set_xlabel("Epoch")
+    ax_loss.set_ylabel("Loss")
+    ax_loss.set_title("Loss")
+    ax_loss.grid(True, alpha=0.3)
 
-    plt.tight_layout()
-    ensure_dirs(TRAINING_PLOTS_DIR)
-    plot_path = os.path.join(TRAINING_PLOTS_DIR, f"training_history_{TIMESTAMP}.png")
-    plt.savefig(plot_path, dpi=150)
-    plt.close()
-    print(f"📊 Training-Plot gespeichert: {plot_path}")
+    fig.tight_layout()
+    ensure_dirs(os.path.dirname(plot_path))
+    fig.savefig(plot_path, dpi=150)
+    print(f"📊 Training plot saved: {plot_path}")
 
 
-def main():
+def train(cfg=None):
     """
-    Hauptfunktion: Lädt Daten, trainiert Modell, evaluiert und speichert alles.
+    Train one model with the precision from choose_precision() and save it.
+
+    The precision policy is set only for the run and restored afterwards.
+
+    Args:
+        cfg: TrainConfig; None means all defaults.
+
+    Returns:
+        The Run with the name and the paths of the saved model and its .json.
     """
-    # Daten laden und aufteilen
-    X, y = load_data()
+    cfg = cfg or TrainConfig()
+    policy, reason = choose_precision(cfg.mixed_precision)
+    print(f"Precision: {policy} ({reason})")
+    previous = tf.keras.mixed_precision.global_policy()
+    tf.keras.mixed_precision.set_global_policy(policy)
+    try:
+        return _train_and_save(cfg, policy)
+    finally:
+        tf.keras.mixed_precision.set_global_policy(previous)
+
+
+def _train_and_save(cfg, policy):
+    """Load the data, train, evaluate the best epoch, and save model, plot, and .json."""
+    run = new_run(cfg.models_dir)
+
+    # Load and split the data
+    X, y = load_data(cfg.data_folder)
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=TEST_SPLIT, random_state=42, stratify=y
     )
 
-    print("\n📊 Datensplit:")
+    print("\n📊 Data split:")
     print(f"   - Training: {len(X_train)} Samples")
     print(f"   - Test: {len(X_test)} Samples")
 
-    # Modell bauen
+    # Build the model
     input_shape = (X_train.shape[1], 1)
-    model = build_model(input_shape)
+    model = build_model(input_shape, cfg.learning_rate)
 
-    print("\n🏗️ Modell-Architektur:")
+    print("\n🏗️ Model architecture:")
     model.summary()
 
     # Callbacks
     my_callbacks = [
         callbacks.EarlyStopping(
-            patience=5, monitor="val_loss", restore_best_weights=True, verbose=1
+            patience=cfg.patience,
+            monitor="val_loss",
+            restore_best_weights=True,
+            verbose=1,
         ),
         callbacks.ModelCheckpoint(
-            filepath=MODEL_SAVE_PATH, save_best_only=True, monitor="val_loss", verbose=1
+            filepath=run.model_path, save_best_only=True, monitor="val_loss", verbose=1
         ),
         callbacks.ReduceLROnPlateau(
-            monitor="val_loss", factor=0.5, patience=3, min_lr=1e-6, verbose=1
+            monitor="val_loss",
+            factor=0.5,
+            patience=REDUCE_LR_PATIENCE,
+            min_lr=1e-6,
+            verbose=1,
         ),
     ]
 
-    print(f"\n🚀 Starte Training: {MODEL_NAME}")
-    print(f"💾 Speicherort: {MODELS_DIR}")
+    print(f"\n🚀 Starting training: {run.name}")
+    print(f"💾 Saving to: {cfg.models_dir}")
 
-    # Training (the checkpoint callback writes into MODELS_DIR)
-    ensure_dirs(MODELS_DIR)
+    # Training (the checkpoint callback writes into models_dir)
+    ensure_dirs(cfg.models_dir)
     history = model.fit(
         X_train,
         y_train,
-        epochs=EPOCHS,
-        batch_size=BATCH_SIZE,
+        epochs=cfg.epochs,
+        batch_size=cfg.batch_size,
         validation_data=(X_test, y_test),
         callbacks=my_callbacks,
         verbose=1,
     )
 
-    # Wir laden das BESTE Modell (nicht das vom letzten Epoch) für die Evaluation
-    best_model = models.load_model(MODEL_SAVE_PATH)
+    # Evaluate the BEST model (the checkpoint), not the one from the last epoch
+    best_model = models.load_model(run.model_path)
 
-    # Visualisierung erstellen
-    plot_history(history)
+    # Plot the history
+    plot_history(
+        history, os.path.join(cfg.plots_dir, f"training_history_{run.timestamp}.png")
+    )
 
-    # Finale Evaluation
-    print("\n📈 Finale Evaluation:")
+    # Final evaluation
+    print("\n📈 Final evaluation:")
     loss, acc = best_model.evaluate(X_test, y_test, verbose=0)
     print(f"   - Test Loss: {loss:.4f}")
     print(f"   - Test Accuracy: {acc * 100:.2f}%")
 
-    # Metadaten speichern
-    save_experiment_config(history, acc)
+    # Save the metadata
+    save_experiment_config(history, acc, cfg, run, policy)
 
-    print("\n✅ Training abgeschlossen!")
-    print(f"   - Modell: {MODEL_SAVE_PATH}")
-    print(f"   - Config: {CONFIG_SAVE_PATH}")
+    print("\n✅ Training finished!")
+    print(f"   - Model: {run.model_path}")
+    print(f"   - Config: {run.config_path}")
+    return run
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 1:
+        sys.exit("The options are on the gwd command: gwd train --help")
+    train()
