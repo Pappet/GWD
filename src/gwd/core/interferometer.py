@@ -1,5 +1,7 @@
 import numpy as np
 
+from .constants import LASER_WAVELENGTH, C
+
 
 class InterferometerModel:
     """
@@ -19,8 +21,7 @@ class InterferometerModel:
         self.signal_recycling = False
         self.squeezed_light = False
 
-        # Constants
-        self.c = 299792458
+        # Planck constant
         self.h = 6.626e-34
 
         # Frequency range of the curve
@@ -38,11 +39,10 @@ class InterferometerModel:
         return np.pi * np.sqrt(r) / (1 - r)
 
     def calculate_shot_noise(self):
-        wavelength = 1064e-9
         shot_noise = np.sqrt(
             self.h
-            * self.c
-            * wavelength
+            * C
+            * LASER_WAVELENGTH
             / (2 * np.pi * self.laser_power * self.arm_length**2)
         )
 
@@ -52,7 +52,7 @@ class InterferometerModel:
         if self.squeezed_light:
             shot_noise = shot_noise / 3
 
-        return shot_noise * 1.0 * np.ones_like(self.freq)
+        return shot_noise * np.ones_like(self.freq)
 
     def calculate_thermal_noise(self):
         kB = 1.381e-23
@@ -68,13 +68,12 @@ class InterferometerModel:
 
     def calculate_radiation_pressure(self):
         h_bar = self.h / (2 * np.pi)
-        wavelength = 1064e-9
         mass = 40
         radiation = np.sqrt(
             8
             * h_bar
             * self.laser_power
-            / (mass * wavelength * self.c * (2 * np.pi * self.freq) ** 2)
+            / (mass * LASER_WAVELENGTH * C * (2 * np.pi * self.freq) ** 2)
         )
         return radiation * 1e-3
 

@@ -3,7 +3,9 @@
 import numpy as np
 
 from . import waveforms
+from .constants import LASER_WAVELENGTH
 from .noise import generate_colored_noise
+from .timebase import time_axis
 
 
 class TimeDomainSimulator:
@@ -12,17 +14,18 @@ class TimeDomainSimulator:
     Uses the shared physics modules of gwd.core.
     """
 
-    def __init__(self, duration=0.5, sample_rate=4096, *, backend):
+    def __init__(self, duration=0.5, sample_rate=4096, *, backend, rng):
         # The waveform backend, 'pycbc' or 'newton'. The caller chooses it (P5.2).
         waveforms.check_backend(backend)
         self.backend = backend
-        self.c = 299792458
+        # The noise is drawn from rng, a numpy Generator or RandomState (P5.3).
+        self.rng = rng
         self.arm_length = 4000
-        self.laser_wavelength = 1064e-9
+        self.laser_wavelength = LASER_WAVELENGTH
 
         self.duration = duration
         self.sample_rate = sample_rate
-        self.t = np.linspace(0, duration, int(duration * sample_rate))
+        self.t = time_axis(sample_rate, duration)
 
     def generate_chirp(self, mass1, mass2, distance_mpc):
         """
@@ -48,7 +51,9 @@ class TimeDomainSimulator:
         phys_noise_level = noise_level_slider * 1e-22
 
         # Colored noise from gwd.core.noise
-        noise = generate_colored_noise(len(signal), self.sample_rate, phys_noise_level)
+        noise = generate_colored_noise(
+            len(signal), self.sample_rate, phys_noise_level, rng=self.rng
+        )
 
         return signal + noise
 

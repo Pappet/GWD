@@ -10,13 +10,10 @@ BACKENDS = list(waveforms.BACKENDS)
 PYCBC_INSTALLED = waveforms.pycbc_available()
 
 
-@pytest.fixture(autouse=True)
-def fixed_seed():
-    """Seed the global numpy RNG, which gwd.core still uses, and restore it afterwards."""
-    state = np.random.get_state()
-    np.random.seed(SEED)
-    yield
-    np.random.set_state(state)
+@pytest.fixture
+def rng():
+    """A seeded numpy Generator; gwd.core draws only from the rng it is given (P5.3)."""
+    return np.random.default_rng(SEED)
 
 
 def require_pycbc():

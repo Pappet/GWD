@@ -17,7 +17,13 @@ import importlib.metadata
 
 import numpy as np
 
+from .constants import M_SUN, MPC, C, G
+
 BACKENDS = ("pycbc", "newton")
+
+# Where the time axis cuts a PyCBC waveform, the cut edge is faded with the cosine half
+# of a Tukey window of this duration, so the cut does not click (CORE-14).
+TAPER_SECONDS = 0.05
 
 PYCBC_INSTALL_HINT = (
     "Install PyCBC on Linux or in WSL with the physics extra:\n"
@@ -101,8 +107,11 @@ def generate_chirp(
     Generate the chirp of a binary black hole merger on time_array.
 
     Args:
-        time_array: Time axis of the simulation (e.g. np.linspace(0, 4, 16384))
-        t_merger: Merger time in seconds. If None, 90% of the time span.
+        time_array: Time axis of the simulation, equally spaced, for example
+                    gwd.core.timebase.time_axis(4096, 4.0).
+        t_merger: Merger time in seconds, on the scale of time_array; it must lie
+                  in [time_array[0], time_array[-1]]. If None, 90% of the span
+                  after time_array[0].
         backend: 'pycbc' or 'newton', required. The pipeline passes
                  gwd.config.WAVEFORM_BACKEND.
         mass1, mass2: Black hole masses in solar masses.
@@ -116,19 +125,33 @@ def generate_chirp(
 
     Returns:
         tuple: (strain, frequency)
-            - strain: np.array with the gravitational wave amplitude
-            - frequency: np.array with the instantaneous frequency over time
+            - strain: np.array with the gravitational wave amplitude, 0 where the
+              chirp has no signal
+            - frequency: np.array with the instantaneous frequency in Hz, NaN where
+              the chirp has no signal (before P5.3: 0, CORE-14). On 'pycbc' it is
+              taken from the phase of h_plus - i h_cross, so it is only meaningful
+              where h_cross is not zero, that is not for an edge-on inclination of
+              pi/2. The pipeline draws face-on chirps (inclination 0).
+
+    On 'pycbc', the waveform is shifted so its peak lies at t_merger. Where time_array
+    cuts it off, at the start or the end, the cut edge is faded over TAPER_SECONDS; a
+    merger within TAPER_SECONDS of such an edge is damped by it.
 
     Raises:
-        ValueError: backend is not 'pycbc' or 'newton'.
+        ValueError: backend is not 'pycbc' or 'newton', or t_merger lies outside
+            time_array. Before P5.3 it was moved to the edge silently (CORE-15).
         WaveformBackendError: 'pycbc' and PyCBC is missing or fails for these
             parameters (for example an unknown approximant).
     """
     check_backend(backend)
 
-    # Default merger time if none is given
+    t0, t_end = time_array[0], time_array[-1]
     if t_merger is None:
-        t_merger = time_array[-1] * 0.9  # 90% of the time span
+        t_merger = t0 + 0.9 * (t_end - t0)
+    elif not t0 <= t_merger <= t_end:
+        raise ValueError(
+            f"t_merger={t_merger} s lies outside the time axis [{t0}, {t_end}] s"
+        )
 
     if backend == "pycbc":
         return _pycbc_chirp(
@@ -209,9 +232,9 @@ def _pycbc_chirp(
     # 3. Compute the shift
     shift = target_idx - peak_idx
 
-    # Empty arrays for the result
-    strain_out = np.zeros_like(time_array)
-    freq_out = np.zeros_like(time_array)
+    # Empty arrays for the result: no strain, and no frequency, outside the signal
+    strain_out = np.zeros_like(time_array, dtype=float)
+    freq_out = np.full_like(time_array, np.nan, dtype=float)
 
     # Copy the overlapping part
     start_src = max(0, -shift)
@@ -224,12 +247,15 @@ def _pycbc_chirp(
         strain_out[start_dst:end_dst] = waveform[start_src:end_src]
         freq_out[start_dst:end_dst] = raw_freq[start_src:end_src]
 
-    # Taper the start of the window to avoid clicks
-    taper_len = min(int(0.05 / dt), start_dst + 50)  # 50 ms taper
-    if start_dst < taper_len and start_dst < len(strain_out):
-        # Soft fade in
-        window = np.linspace(0, 1, taper_len - start_dst)
-        strain_out[start_dst:taper_len] *= window
+        # Fade the edges that time_array cuts off, over TAPER_SECONDS each. Where the
+        # waveform starts inside the window, PyCBC's own taper is kept. PyCBC returns
+        # about 5 s after the peak, so the end is nearly always cut, long after the
+        # ringdown has decayed.
+        ramp = _tukey_ramp(min(int(round(TAPER_SECONDS / dt)), end_dst - start_dst))
+        if start_src > 0:
+            strain_out[start_dst : start_dst + len(ramp)] *= ramp
+        if end_src < len(waveform):
+            strain_out[end_dst - len(ramp) : end_dst] *= ramp[::-1]
 
     # Normalization for machine learning
     if normalize:
@@ -240,17 +266,19 @@ def _pycbc_chirp(
     return strain_out, freq_out
 
 
+def _tukey_ramp(n):
+    """The rising cosine half of a Tukey window, n samples from 0 towards 1."""
+    if n <= 0:
+        return np.ones(0)
+    return 0.5 * (1 - np.cos(np.pi * np.arange(n) / n))
+
+
 def _newton_chirp(time_array, t_merger, mass1, mass2, distance_mpc, normalize):
     # Newtonian approximation: formulas for the inspiral (before the merger)
 
-    # Constants
-    G = 6.674e-11  # gravitational constant
-    c = 2.998e8  # speed of light
-    Msun = 1.989e30  # solar mass in kg
-
-    # Chirp mass
-    ch_mass = (mass1 * mass2) ** 0.6 / (mass1 + mass2) ** 0.2 * Msun
-    dist_m = distance_mpc * 3.086e22  # megaparsec in meters
+    # Chirp mass in kg, distance in m
+    ch_mass = (mass1 * mass2) ** 0.6 / (mass1 + mass2) ** 0.2 * M_SUN
+    dist_m = distance_mpc * MPC
 
     # Time to merger (tau)
     tau = np.clip(t_merger - time_array, 0.0001, None)
@@ -259,29 +287,29 @@ def _newton_chirp(time_array, t_merger, mass1, mass2, distance_mpc, normalize):
     # f(tau) ~ tau^(-3/8)
     freq_newton = (
         (5 / (256 * np.pi)) ** (3 / 8)
-        * (G * ch_mass / c**3) ** (-5 / 8)
+        * (G * ch_mass / C**3) ** (-5 / 8)
         * tau ** (-3 / 8)
     )
 
     # Amplitude (strain); CORE-3: 4 times too large
     # h(tau) ~ 1/D * tau^(-1/4)
     amp_prefactor = (
-        (4 / dist_m) * (G * ch_mass / c**2) ** (5 / 4) * (5 / (c * tau)) ** (1 / 4)
+        (4 / dist_m) * (G * ch_mass / C**2) ** (5 / 4) * (5 / (C * tau)) ** (1 / 4)
     )
 
     # Phase
     # phi(tau) ~ tau^(5/8)
-    phase = -2 * (5 * G * ch_mass / c**3) ** (-5 / 8) * tau ** (5 / 8)
+    phase = -2 * (5 * G * ch_mass / C**3) ** (-5 / 8) * tau ** (5 / 8)
 
     strain_out = amp_prefactor * np.cos(phase)
 
     # Cut everything after the merger (the approximation has no ringdown)
     mask_post_merger = time_array > t_merger
     strain_out[mask_post_merger] = 0
-    freq_newton[mask_post_merger] = 0
+    freq_newton[mask_post_merger] = np.nan
 
     # Fade-in taper to avoid an abrupt start
-    strain_out *= 1 - np.exp(-10 * time_array)
+    strain_out *= 1 - np.exp(-10 * (time_array - time_array[0]))
 
     if normalize:
         m = np.max(np.abs(strain_out))
@@ -289,133 +317,3 @@ def _newton_chirp(time_array, t_merger, mass1, mass2, distance_mpc, normalize):
             strain_out /= m
 
     return strain_out, freq_newton
-
-
-def generate_realistic_chirp(
-    time_array,
-    *,
-    backend,
-    mass1=30,
-    mass2=30,
-    distance=400,
-    spin1z=0.0,
-    spin2z=0.0,
-    inclination=0,
-    approximant="IMRPhenomD",
-):
-    """
-    Generate a strain signal with the given backend, unnormalized.
-
-    Not used by the pipeline; P5.3 deletes it. With 'pycbc' it cuts off the merger
-    (CORE-1); with 'newton' it returns the unnormalized chirp of generate_chirp.
-
-    Args:
-        time_array: np.array of time points (e.g. np.linspace(0, 4, 16384))
-        backend: 'pycbc' or 'newton', required
-        mass1, mass2: Masses in solar masses
-        distance: Distance in Mpc
-        spin1z, spin2z: Spins along the line of sight (-1 to +1)
-        inclination: Inclination (0 = face-on, π/2 = edge-on)
-        approximant: 'IMRPhenomD' (fast) or 'SEOBNRv4' (more accurate)
-
-    Returns:
-        tuple: (strain, freq)
-            - strain: np.array (signal only, no noise)
-            - freq: instantaneous frequency
-    """
-    check_backend(backend)
-    if backend == "newton":
-        return generate_chirp(
-            time_array,
-            backend="newton",
-            mass1=mass1,
-            mass2=mass2,
-            distance_mpc=distance,
-            normalize=False,
-        )
-
-    get_td_waveform = _get_td_waveform()
-    sample_rate = 1.0 / (time_array[1] - time_array[0])
-
-    # Generate the waveform
-    hp, hc = get_td_waveform(
-        approximant=approximant,
-        mass1=mass1,
-        mass2=mass2,
-        spin1z=spin1z,
-        spin2z=spin2z,
-        distance=distance,
-        inclination=inclination,
-        delta_t=1.0 / sample_rate,
-        f_lower=20.0,
-    )
-
-    # Plus polarization only (simplified: optimal orientation)
-    # In a detector: h(t) = F+ * hp + Fx * hc (antenna pattern)
-    strain_raw = hp.numpy()
-
-    # Instantaneous frequency
-    complex_strain = hp.numpy() - 1j * hc.numpy()
-    phase = np.unwrap(np.angle(complex_strain))
-    dt = 1.0 / sample_rate
-    freq = np.abs(np.gradient(phase, dt) / (2 * np.pi))
-
-    # Time alignment: peak near the end
-    peak_idx = np.argmax(np.abs(strain_raw))
-    strain_raw = np.roll(strain_raw, len(strain_raw) - peak_idx - 100)
-    freq = np.roll(freq, len(freq) - peak_idx - 100)
-
-    # Crop or pad to the length of time_array
-    if len(strain_raw) > len(time_array):
-        strain_raw = strain_raw[: len(time_array)]
-        freq = freq[: len(time_array)]
-    elif len(strain_raw) < len(time_array):
-        strain_raw = np.pad(strain_raw, (0, len(time_array) - len(strain_raw)))
-        freq = np.pad(freq, (0, len(time_array) - len(freq)))
-
-    return strain_raw, freq
-
-
-def generate_random_bbh_parameters():
-    """
-    Draw random binary black hole parameters from the global numpy RNG.
-
-    The distributions are simple choices, not fits to an observed population:
-    - Masses: log-uniform (smaller masses more often)
-    - Distance: uniform in volume (larger distances more often)
-    - Spins: uniform between -0.9 and +0.9
-    - Inclination: isotropic
-
-    The pipeline does not call it since P3.5; gwd.data.injection draws the same
-    values in the same order.
-
-    Returns:
-        dict with the parameters:
-            - mass1, mass2: Masses in solar masses (mass1 >= mass2)
-            - distance: Distance in Mpc
-            - spin1z, spin2z: Spins
-            - inclination: Inclination in radians
-    """
-    # Masses: log-uniform between 5 and 100 solar masses
-    m1 = 10 ** np.random.uniform(np.log10(5), np.log10(100))
-    m2 = 10 ** np.random.uniform(np.log10(5), np.log10(m1))  # m2 ≤ m1
-
-    # Distance: uniform in volume, up to 2000 Mpc
-    distance = (np.random.uniform(0, 1) ** (1 / 3)) * 2000
-
-    # Spins: uniform between -0.9 and +0.9
-    spin1z = np.random.uniform(-0.9, 0.9)
-    spin2z = np.random.uniform(-0.9, 0.9)
-
-    # Inclination: isotropic, so cos(i) is uniform
-    cos_inclination = np.random.uniform(-1, 1)
-    inclination = np.arccos(cos_inclination)
-
-    return {
-        "mass1": m1,
-        "mass2": m2,
-        "distance": distance,
-        "spin1z": spin1z,
-        "spin2z": spin2z,
-        "inclination": inclination,
-    }

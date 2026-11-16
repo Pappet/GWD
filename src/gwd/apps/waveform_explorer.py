@@ -15,6 +15,7 @@ import sys
 from types import SimpleNamespace
 
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.widgets import Button, Slider
 
 from gwd.apps._backend import require_interactive_backend
@@ -38,14 +39,20 @@ def choose_backend():
     return "newton", NEWTON_NOTE
 
 
-def build_figure():
+def build_figure(rng=None):
     """Return (fig, state): the figure with plots, sliders, and button, not shown.
 
     state holds the simulator, the current parameters, the four plot axes, their lines,
     the sliders, the reset button, the waveform backend, and the text that names it.
+    rng is the numpy Generator the noise is drawn from; None takes an unseeded one.
     """
     backend, note = choose_backend()
-    sim = TimeDomainSimulator(duration=0.5, sample_rate=SAMPLE_RATE, backend=backend)
+    sim = TimeDomainSimulator(
+        duration=0.5,
+        sample_rate=SAMPLE_RATE,
+        backend=backend,
+        rng=np.random.default_rng() if rng is None else rng,
+    )
     gui_params = dict(START_PARAMS)
 
     fig = plt.figure(figsize=(14, 10))

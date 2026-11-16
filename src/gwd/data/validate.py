@@ -23,13 +23,13 @@ from scipy import signal
 
 from gwd.config import (
     DATA_DIR_TRAIN,
-    DURATION,
     LABELS_FILE,
     N_SAMPLES,
     SAMPLE_RATE,
     VALIDATION_DATASET_PLOTS_DIR,
     ensure_dirs,
 )
+from gwd.core.timebase import time_axis
 from gwd.data.provenance import UNKNOWN_V1, read_manifest, sha256_file
 from gwd.data.scenarios import SCENARIOS
 
@@ -594,7 +594,7 @@ def create_visualizations(
     for ax, (label, row) in zip(axes3, samples_to_plot):
         filepath = os.path.join(data_folder, row["filename"])
         data = np.load(filepath)
-        time = np.linspace(0, DURATION, len(data))
+        time = time_axis(SAMPLE_RATE, len(data) / SAMPLE_RATE)
 
         ax.plot(time, data, linewidth=0.5, color="steelblue")
 
@@ -655,7 +655,7 @@ def create_visualizations(
         fs = SAMPLE_RATE
 
         # Time series
-        time = np.linspace(0, DURATION, len(data))
+        time = time_axis(SAMPLE_RATE, len(data) / SAMPLE_RATE)
         axes4[i, 0].plot(time, data, linewidth=0.5, color="steelblue")
         axes4[i, 0].set_xlabel("Time [s]", fontsize=10)
         axes4[i, 0].set_ylabel("Strain", fontsize=10)

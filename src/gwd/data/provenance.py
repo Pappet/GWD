@@ -21,6 +21,9 @@ from gwd.core.waveforms import backend_label, check_backend
 
 MANIFEST_FILE = "manifest.json"
 MANIFEST_FORMAT = 1
+# The time axis of the samples (gwd.core.timebase.time_axis). Manifests without this
+# key were written before P5.3, on np.linspace from 0 to duration (CORE-19).
+TIME_AXIS = "arange(n)/fs"
 # What training records for a dataset without a manifest (written before P4.1).
 UNKNOWN_V1 = "unknown (v1)"
 
@@ -100,6 +103,7 @@ def build_manifest(
         "scenario_hash": scenario.hash(),
         "seed": seed,
         "n": n,
+        "time_axis": TIME_AXIS,
         "waveform_backend": backend_label(backend),
         "signal_backends": dict(sorted(signal_backends.items())),
         "real_noise_fraction": real_noise_samples / n if n else 0.0,

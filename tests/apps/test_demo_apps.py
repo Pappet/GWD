@@ -38,8 +38,7 @@ def plotted_range(lines):
 
 def test_the_noise_plot_rescales_after_the_sliders_move():
     """APP-11: the slider axes no longer hide the noise plot from update()."""
-    np.random.seed(5)
-    fig, state = waveform_explorer.build_figure()
+    fig, state = waveform_explorer.build_figure(rng=np.random.default_rng(5))
     start_ylim = state.ax_noise.get_ylim()
     state.s_dist.set_val(1000)
     state.s_noise.set_val(0.1)

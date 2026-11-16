@@ -81,10 +81,15 @@ def _measure_newton(time, waveforms):
 
 
 def _measure_noise(noise):
-    _seed()
-    gaussian = noise.generate_gaussian_noise(16384, 1.0)
-    _seed()
-    colored = noise.generate_colored_noise(16384, 4096, 1.0)
+    import numpy as np
+
+    # RandomState(SEED) draws what the seeded global RNG drew before P5.3.
+    gaussian = noise.generate_gaussian_noise(
+        16384, 1.0, rng=np.random.RandomState(SEED)
+    )
+    colored = noise.generate_colored_noise(
+        16384, 4096, 1.0, rng=np.random.RandomState(SEED)
+    )
     return {
         "gaussian": _summary(gaussian, NOISE_SAMPLES),
         "colored": _summary(colored, NOISE_SAMPLES),
@@ -168,11 +173,10 @@ def _measure(output):
     if not home or Path(home).resolve() == REPO_ROOT:
         sys.exit("Refusing to measure: GWD_HOME must point to a temp dir.")
 
-    import numpy as np
-
     import gwd.data.generate as dataset
     from gwd.config import DATA_DIR_NOISE
     from gwd.core import interferometer, noise, waveforms
+    from gwd.core.timebase import time_axis
     from gwd.data import injection
 
     if glob.glob(os.path.join(DATA_DIR_NOISE, "*.npy")):
@@ -180,7 +184,7 @@ def _measure(output):
             f"Refusing to measure: real noise files in {DATA_DIR_NOISE} would change the values."
         )
 
-    time = np.linspace(0, 4.0, 16384)
+    time = time_axis(4096, 4.0)
     # Everything except the PyCBC section passes backend="newton", the numpy-only path.
     measured = {
         "newton": _measure_newton(time, waveforms),
