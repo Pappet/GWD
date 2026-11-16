@@ -1,10 +1,8 @@
 """Time domain simulation of a chirp and the detector response, for the waveform explorer."""
 
-import numpy as np
-
 from . import waveforms
-from .constants import LASER_WAVELENGTH
-from .noise import generate_colored_noise
+from .constants import LIGO_ARM_LENGTH
+from .noise import colored_noise_from_psd
 from .timebase import time_axis
 
 
@@ -14,14 +12,17 @@ class TimeDomainSimulator:
     Uses the shared physics modules of gwd.core.
     """
 
-    def __init__(self, duration=0.5, sample_rate=4096, *, backend, rng):
+    def __init__(self, duration=0.5, sample_rate=4096, *, backend, rng, noise_psd):
         # The waveform backend, 'pycbc' or 'newton'. The caller chooses it (P5.2).
         waveforms.check_backend(backend)
         self.backend = backend
         # The noise is drawn from rng, a numpy Generator or RandomState (P5.3).
         self.rng = rng
-        self.arm_length = 4000
-        self.laser_wavelength = LASER_WAVELENGTH
+        # The one-sided PSD of the detector noise in strain^2 / Hz, a function of the
+        # frequency as colored_noise_from_psd takes it, for example
+        # gwd.core.interferometer.reference_psd (P5.4).
+        self.noise_psd = noise_psd
+        self.arm_length = LIGO_ARM_LENGTH
 
         self.duration = duration
         self.sample_rate = sample_rate
@@ -43,25 +44,23 @@ class TimeDomainSimulator:
         )
         return strain, freq
 
-    def add_detector_noise(self, signal, noise_level_slider):
-        """
-        Adds colored detector noise to the signal.
-        """
-        # The slider (0.1 - 5.0) is scaled to a physical noise amplitude (~1e-22)
-        phys_noise_level = noise_level_slider * 1e-22
+    def add_detector_noise(self, signal, noise_scale=1.0):
+        """Return signal plus noise_scale times noise drawn from self.noise_psd.
 
-        # Colored noise from gwd.core.noise
-        noise = generate_colored_noise(
-            len(signal), self.sample_rate, phys_noise_level, rng=self.rng
+        noise_scale multiplies the amplitude: 1 is the PSD itself, 2 four times its
+        power. Before P5.4 a slider value times 1e-22 went into generate_colored_noise,
+        whose standard deviation depended on the length and the sampling rate (CORE-9,
+        CORE-12).
+        """
+        noise = colored_noise_from_psd(
+            len(signal), self.sample_rate, self.noise_psd, rng=self.rng
         )
+        return signal + noise_scale * noise
 
-        return signal + noise
+    def arm_length_change(self, strain):
+        """The change of the arm length in metres: strain times the arm length.
 
-    def calculate_response(self, strain):
+        Before P5.4 this was calculate_response, which also returned an intensity
+        sin^2(4 pi dL / lambda) that nothing used (CORE-12, APP-17).
         """
-        Computes the interferometer response: (arm length change, intensity).
-        """
-        delta_L = strain * self.arm_length
-        phase_shift = 4 * np.pi * delta_L / self.laser_wavelength
-        intensity = np.sin(phase_shift) ** 2
-        return delta_L, intensity
+        return strain * self.arm_length

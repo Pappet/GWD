@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from gwd.core.noise import generate_colored_noise, generate_gaussian_noise
+from gwd.core.noise import colored_noise_from_psd, pink_psd, white_noise
 from gwd.core.population import random_bbh_params
 from gwd.core.simulation import TimeDomainSimulator
 
@@ -19,11 +19,11 @@ CORE = Path(__file__).resolve().parents[2] / "src" / "gwd" / "core"
 
 
 def draw_everything(rng, backend="newton"):
-    sim = TimeDomainSimulator(backend=backend, rng=rng)
+    sim = TimeDomainSimulator(backend=backend, rng=rng, noise_psd=pink_psd)
     signal, _ = sim.generate_chirp(30, 30, 400)
     return [
-        generate_gaussian_noise(4096, 1.0, rng=rng),
-        generate_colored_noise(4096, 4096, 1.0, rng=rng),
+        white_noise(4096, 1.0, rng=rng),
+        colored_noise_from_psd(4096, 4096, pink_psd, rng=rng),
         np.array(list(random_bbh_params(rng).values())),
         sim.add_detector_noise(signal, 1.0),
     ]
@@ -68,6 +68,6 @@ def test_the_core_sources_do_not_call_the_global_numpy_rng():
 
 def test_the_rng_is_required():
     with pytest.raises(TypeError, match="rng"):
-        generate_gaussian_noise(10)
+        white_noise(10)
     with pytest.raises(TypeError, match="rng"):
-        TimeDomainSimulator(backend="newton")
+        TimeDomainSimulator(backend="newton", noise_psd=pink_psd)

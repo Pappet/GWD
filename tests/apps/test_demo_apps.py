@@ -59,6 +59,9 @@ def test_without_pycbc_the_explorer_uses_newton_and_says_so(monkeypatch):
     assert "Newton" in state.backend_text.get_text()
     assert "physically inaccurate" in state.backend_text.get_text()
     assert state.backend_text in fig.texts
+    # P5.4: the noise comes from the 1/f stand-in, and the noise plot says so.
+    assert state.sim.noise_psd is waveform_explorer.STAND_IN_PSD
+    assert "stand-in" in state.ax_noise.get_title()
     state.s_mass1.set_val(50)
     assert np.all(np.isfinite(state.line_strain.get_ydata()))
     assert draw_without_warnings(fig) == []
@@ -69,6 +72,23 @@ def test_with_pycbc_the_explorer_uses_pycbc():
     fig, state = waveform_explorer.build_figure()
     assert state.backend == "pycbc"
     assert state.backend_text.get_text().startswith("Waveforms: pycbc ")
+
+
+def test_with_pycbc_the_explorer_draws_noise_from_the_aligo_psd():
+    """P5.4: the noise has the aLIGO design PSD above 10 Hz, times the noise slider."""
+    pytest.importorskip("pycbc")
+    from gwd.core.interferometer import reference_psd
+
+    fig, state = waveform_explorer.build_figure(rng=np.random.default_rng(2))
+    assert "aLIGO design PSD (aLIGOZeroDetHighPower)" in state.ax_noise.get_title()
+    freqs = np.array([5.0, 10.0, 100.0])
+    np.testing.assert_array_equal(
+        state.sim.noise_psd(freqs), reference_psd(freqs, low_freq_cutoff=10.0)
+    )
+    # The default noise is of the order of the aLIGO strain noise, below the chirp.
+    noise = state.line_noise.get_ydata() - state.line_clean_ref.get_ydata()
+    chirp_peak = np.max(np.abs(state.line_clean_ref.get_ydata()))
+    assert 1e-23 < np.std(noise) < chirp_peak
 
 
 def test_the_finesse_follows_the_mirror_slider():
@@ -90,6 +110,37 @@ def test_the_curve_does_not_jump_when_the_mirror_slider_keeps_its_value():
 
     assert state.sim.finesse == finesse
     np.testing.assert_array_equal(state.ax_sensitivity.lines[0].get_ydata(), before)
+
+
+def test_the_designer_shows_the_aligo_reference_curve():
+    """P5.4: PyCBC's aLIGOZeroDetHighPower replaces the invented 'LIGO Design' curve."""
+    pytest.importorskip("pycbc")
+    from gwd.core.interferometer import reference_asd
+
+    fig, state = interferometer_designer.build_figure()
+    lines = {line.get_label(): line for line in state.ax_sensitivity.lines}
+    assert "LIGO Design" not in lines
+    reference = lines[interferometer_designer.REFERENCE_LABEL]
+    np.testing.assert_array_equal(reference.get_ydata(), reference_asd(state.sim.freq))
+    info = state.ax_info.texts[0].get_text()
+    assert "ASD / aLIGO @100 Hz: 270" in info
+    # The reference stays when a slider moves.
+    state.slider_laser.set_val(400)
+    labels = [line.get_label() for line in state.ax_sensitivity.lines]
+    assert interferometer_designer.REFERENCE_LABEL in labels
+
+
+def test_without_pycbc_the_designer_has_no_reference_and_says_so(monkeypatch):
+    monkeypatch.setitem(sys.modules, "pycbc", None)
+    fig, state = interferometer_designer.build_figure()
+    assert state.reference is None
+    assert [line.get_label() for line in state.ax_sensitivity.lines] == [
+        "Your detector"
+    ]
+    texts = [text.get_text() for text in state.ax_sensitivity.texts]
+    assert interferometer_designer.NO_REFERENCE_NOTE in texts
+    assert "needs PyCBC" in state.ax_info.texts[0].get_text()
+    assert draw_without_warnings(fig) == []
 
 
 def draw_without_warnings(fig):

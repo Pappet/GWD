@@ -40,7 +40,7 @@ from gwd.config import (
     SAMPLE_RATE,
     WAVEFORM_BACKEND,
 )
-from gwd.core.noise import generate_gaussian_noise
+from gwd.core import noise as core_noise
 from gwd.core.population import random_bbh_params
 from gwd.core.timebase import time_axis
 from gwd.core.waveforms import generate_chirp
@@ -81,8 +81,8 @@ def _rng(rng):
 
 
 def white_noise(length, rng=None):
-    """Unit white noise from gwd.core.noise.generate_gaussian_noise."""
-    return generate_gaussian_noise(length, 1.0, rng=_rng(rng))
+    """Unit white noise from gwd.core.noise.white_noise."""
+    return core_noise.white_noise(length, 1.0, rng=_rng(rng))
 
 
 def scale_signal_to_snr(signal, noise, target_snr, reference="noise_std"):

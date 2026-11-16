@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
 Interferometer designer: GUI for the sensitivity curve of
-gwd.core.interferometer.InterferometerModel, a simple learning model (D6).
+gwd.core.interferometer.InterferometerModel, a qualitative learning model (D6).
+
+The dashed reference is the aLIGO design curve of PyCBC (aLIGOZeroDetHighPower,
+gwd.core.interferometer.reference_asd), which replaced an invented 'LIGO Design' curve
+in P5.4 (CORE-11, APP-13). Without PyCBC the plot has no reference and says so.
 
 build_figure() builds the figure and its widgets without showing it, so tests can move
 the sliders under Agg. main() shows it.
@@ -15,15 +19,29 @@ from matplotlib.patches import Circle, FancyBboxPatch, Rectangle
 from matplotlib.widgets import CheckButtons, Slider
 
 from gwd.apps._backend import require_interactive_backend
-from gwd.core.interferometer import InterferometerModel
+from gwd.core.interferometer import (
+    REFERENCE_PSD_NAME,
+    InterferometerModel,
+    ReferencePSDError,
+    reference_asd,
+)
+
+REFERENCE_LABEL = f"aLIGO design ({REFERENCE_PSD_NAME})"
+NO_REFERENCE_NOTE = "No aLIGO reference: it needs PyCBC"
 
 
 def build_figure():
     """Return (fig, state): the figure with schema, curve, info box, and widgets, not shown.
 
-    state holds the model, the three axes, the sliders, and the check buttons.
+    state holds the model, the three axes, the sliders, the check buttons, and the
+    aLIGO reference ASD on sim.freq (None without PyCBC).
     """
     sim = InterferometerModel()
+    try:
+        # The frequencies do not change, so the reference is computed once.
+        reference = reference_asd(sim.freq)
+    except ReferencePSDError:
+        reference = None
 
     fig = plt.figure(figsize=(16, 9))
     fig.canvas.manager.set_window_title("Interferometer Designer")
@@ -55,7 +73,7 @@ def build_figure():
         ax_schema.text(
             1.5, 5, "LASER", ha="center", va="center", fontweight="bold", fontsize=9
         )
-        ax_schema.text(1.5, 4.2, f"{sim.laser_power}W", ha="center", fontsize=7)
+        ax_schema.text(1.5, 4.2, f"{sim.laser_power:.0f}W", ha="center", fontsize=7)
 
         # Beam to the beam splitter
         ax_schema.arrow(
@@ -83,7 +101,7 @@ def build_figure():
         ax_schema.text(
             6.25,
             5.3,
-            f"X-Arm: {sim.arm_length}m",
+            f"X-Arm: {sim.arm_length:.0f}m",
             ha="center",
             fontsize=8,
             color="green",
@@ -112,7 +130,7 @@ def build_figure():
         ax_schema.text(
             4.2,
             7.25,
-            f"Y-Arm:\n{sim.arm_length}m",
+            f"Y-Arm:\n{sim.arm_length:.0f}m",
             ha="center",
             fontsize=8,
             color="green",
@@ -166,22 +184,40 @@ def build_figure():
 
         ax_sensitivity.loglog(sim.freq, sensitivity, "b-", lw=3, label="Your detector")
 
-        # Reference line (LIGO Design)
-        ligo_ref = 1e-23 * (sim.freq / 100) ** (-0.5)
-        ligo_ref = np.where(sim.freq < 40, ligo_ref * 5, ligo_ref)
-        ax_sensitivity.loglog(
-            sim.freq, ligo_ref, "k--", lw=1.5, alpha=0.5, label="LIGO Design"
-        )
+        if reference is not None:
+            ax_sensitivity.loglog(
+                sim.freq, reference, "k--", lw=1.5, alpha=0.5, label=REFERENCE_LABEL
+            )
+        else:
+            ax_sensitivity.text(
+                0.02,
+                0.04,
+                NO_REFERENCE_NOTE,
+                transform=ax_sensitivity.transAxes,
+                fontsize=9,
+                color="red",
+            )
 
         ax_sensitivity.set_xlabel("Frequency (Hz)", fontsize=12, fontweight="bold")
         ax_sensitivity.set_ylabel(
             "Strain Sensitivity [1/√Hz]", fontsize=12, fontweight="bold"
         )
-        ax_sensitivity.set_title("Detector sensitivity", fontsize=13, fontweight="bold")
+        ax_sensitivity.set_title(
+            "Detector sensitivity (qualitative learning model)",
+            fontsize=13,
+            fontweight="bold",
+        )
         ax_sensitivity.grid(True, which="both", alpha=0.3, ls=":")
         ax_sensitivity.legend(loc="upper right")
         ax_sensitivity.set_xlim(10, 3000)
         ax_sensitivity.set_ylim(1e-25, 1e-20)
+
+    def versus_reference():
+        """The info line: the model's ASD over the reference at 100 Hz."""
+        if reference is None:
+            return "ASD / aLIGO @100 Hz: needs PyCBC"
+        ratio = np.interp(100, sim.freq, sim.calculate_total_sensitivity() / reference)
+        return f"ASD / aLIGO @100 Hz: {ratio:.3g}"
 
     def update_info():
         ax_info.clear()
@@ -196,6 +232,7 @@ def build_figure():
             f"Power Recycling:    {'✓ ON' if sim.power_recycling else '✗ OFF'}",
             f"Signal Recycling:   {'✓ ON' if sim.signal_recycling else '✗ OFF'}",
             f"Squeezed Light:     {'✓ ON' if sim.squeezed_light else '✗ OFF'}",
+            versus_reference(),
         ]
         ax_info.text(
             0.02,
@@ -296,6 +333,7 @@ def build_figure():
         slider_arm=slider_arm,
         slider_bs=slider_bs,
         checks=checks,
+        reference=reference,
     )
     return fig, state
 

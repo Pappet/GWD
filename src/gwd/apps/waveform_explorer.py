@@ -9,9 +9,14 @@ the sliders under Agg. main() shows it.
 The chirps come from PyCBC if it can be imported. Without it, for example on native
 Windows, the explorer chooses the Newtonian approximation on purpose and says so in its
 window (P5.2, default of D1); the pipeline has no such fallback.
+
+The noise is drawn from the aLIGO design PSD above 10 Hz (gwd.core.interferometer,
+P5.4); the noise slider multiplies its amplitude. Without PyCBC a 1/f stand-in with the
+aLIGO level at 100 Hz takes its place, and the noise plot says so.
 """
 
 import sys
+from functools import partial
 from types import SimpleNamespace
 
 import matplotlib.pyplot as plt
@@ -20,6 +25,12 @@ from matplotlib.widgets import Button, Slider
 
 from gwd.apps._backend import require_interactive_backend
 from gwd.config import SAMPLE_RATE
+from gwd.core.interferometer import (
+    REFERENCE_PSD_NAME,
+    reference_available,
+    reference_psd,
+)
+from gwd.core.noise import pink_psd
 from gwd.core.simulation import TimeDomainSimulator
 from gwd.core.waveforms import backend_label, pycbc_available
 
@@ -27,6 +38,13 @@ NEWTON_NOTE = (
     "Newton approximation, physically inaccurate: PyCBC is not installed. "
     "Install it on Linux or WSL with pip install -e '.[physics]'."
 )
+
+# The noise starts at 10 Hz: below, the aLIGO design PSD rises so steeply that its
+# noise (std ~6e-21 in 0.5 s instead of ~3e-22) would hide the chirp.
+NOISE_LOW_FREQ_CUTOFF = 10.0
+# Without PyCBC: a 1/f stand-in at the aLIGO design level at 100 Hz (3.9e-24 / sqrt(Hz)).
+# Only the level is taken from aLIGO; the shape is not a detector's.
+STAND_IN_PSD = partial(pink_psd, psd_at_f_ref=3.9e-24**2, f_ref=100.0)
 
 # Start values of the sliders
 START_PARAMS = {"mass1": 30, "mass2": 30, "distance": 400, "noise_level": 1.0}
@@ -39,19 +57,32 @@ def choose_backend():
     return "newton", NEWTON_NOTE
 
 
+def choose_noise_psd():
+    """The noise PSD and its label: the aLIGO design PSD, or the 1/f stand-in."""
+    if reference_available():
+        return (
+            partial(reference_psd, low_freq_cutoff=NOISE_LOW_FREQ_CUTOFF),
+            f"aLIGO design PSD ({REFERENCE_PSD_NAME}) above 10 Hz",
+        )
+    return STAND_IN_PSD, "1/f stand-in, not a detector PSD (PyCBC is missing)"
+
+
 def build_figure(rng=None):
     """Return (fig, state): the figure with plots, sliders, and button, not shown.
 
     state holds the simulator, the current parameters, the four plot axes, their lines,
-    the sliders, the reset button, the waveform backend, and the text that names it.
+    the sliders, the reset button, the waveform backend, the text that names it, and
+    the label of the noise PSD.
     rng is the numpy Generator the noise is drawn from; None takes an unseeded one.
     """
     backend, note = choose_backend()
+    noise_psd, noise_label = choose_noise_psd()
     sim = TimeDomainSimulator(
         duration=0.5,
         sample_rate=SAMPLE_RATE,
         backend=backend,
         rng=np.random.default_rng() if rng is None else rng,
+        noise_psd=noise_psd,
     )
     gui_params = dict(START_PARAMS)
 
@@ -86,7 +117,7 @@ def build_figure(rng=None):
         # 2. Add noise (gwd.core)
         strain_noisy = sim.add_detector_noise(strain, gui_params["noise_level"])
         # 3. Compute the response (gwd.core)
-        delta_L, _ = sim.calculate_response(strain_noisy)
+        delta_L = sim.arm_length_change(strain_noisy)
         return strain, freq, strain_noisy, delta_L
 
     strain, freq, strain_noisy, delta_L = calculate_model()
@@ -109,7 +140,7 @@ def build_figure(rng=None):
         sim.t, strain_noisy, "orange", lw=0.8, alpha=0.7, label="Signal + noise"
     )
     (line_clean_ref,) = ax_noise.plot(sim.t, strain, "b-", lw=1.5, alpha=0.5)
-    ax_noise.set_title("Detector signal with noise")
+    ax_noise.set_title(f"Detector signal with noise: {noise_label}")
     ax_noise.legend()
 
     # --- Sliders ---
@@ -137,7 +168,7 @@ def build_figure(rng=None):
     )
     s_noise = Slider(
         ax_s_noise,
-        "Noise level",
+        "Noise (x ASD)",
         0.1,
         5,
         valinit=gui_params["noise_level"],
@@ -200,6 +231,7 @@ def build_figure(rng=None):
         btn_reset=btn_reset,
         backend=backend,
         backend_text=backend_text,
+        noise_label=noise_label,
     )
     return fig, state
 
