@@ -418,20 +418,3 @@ def make_conditioned_sample(
         backend,
         float(params.snr),
     )
-
-
-def make_test_set(
-    scenario, n_samples, rng=None, noise_provider=None, backend=WAVEFORM_BACKEND
-):
-    """n_samples samples with drawn labels, normalized, as (X, y).
-
-    X has the shape (n_samples, N_SAMPLES, 1) the CNN takes, y holds 0 and 1.
-    """
-    X, y = [], []
-    for _ in range(n_samples):
-        sample = make_sample(
-            scenario, rng, noise_provider=noise_provider, backend=backend
-        )
-        X.append(normalize(sample.data))
-        y.append(1 if sample.has_signal else 0)
-    return np.array(X).reshape(n_samples, N_SAMPLES, 1), np.array(y)

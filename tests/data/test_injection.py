@@ -48,14 +48,6 @@ def test_the_same_seed_gives_bit_identical_samples(scenario, noise_folder):
     assert_same(batch(scenario, 3, provider), batch(scenario, 3, provider))
 
 
-def test_the_same_seed_gives_bit_identical_test_sets():
-    X1, y1 = injection.make_test_set(EVAL_V1, 10, np.random.RandomState(4))
-    X2, y2 = injection.make_test_set(EVAL_V1, 10, np.random.RandomState(4))
-    assert X1.shape == (10, N_SAMPLES, 1)
-    assert X1.tobytes() == X2.tobytes()
-    assert y1.tolist() == y2.tolist()
-
-
 def test_the_chunk_does_not_depend_on_the_file_order(noise_folder, monkeypatch):
     provider = injection.real_noise_provider(noise_folder)
     expected = batch(TRAIN_V1, 8, provider)
