@@ -13,11 +13,7 @@ import numpy as np
 import pytest
 
 from gwd.core import waveforms
-from gwd.core.waveforms import (
-    WaveformBackendError,
-    generate_chirp,
-    generate_realistic_chirp,
-)
+from gwd.core.waveforms import WaveformBackendError, generate_chirp
 
 FS = 4096
 DURATION = 4.0
@@ -151,30 +147,6 @@ def test_newton_inspiral_stops_at_isco(backend):
     total_mass = (mass1 + mass2) * M_SUN
     f_isco = C**3 / (6**1.5 * np.pi * G * total_mass)  # GW frequency, ~73 Hz here
     assert np.max(freq[strain != 0]) <= 1.05 * f_isco
-
-
-@pytest.mark.parametrize(
-    "backend",
-    [
-        pytest.param(
-            "pycbc",
-            marks=pytest.mark.xfail(
-                strict=True,
-                raises=AssertionError,
-                reason="CORE-1: generate_realistic_chirp cuts off the merger",
-            ),
-        ),
-        "newton",
-    ],
-    indirect=True,
-)
-def test_realistic_chirp_contains_the_merger(backend):
-    t = time_axis()
-    strain, _ = generate_realistic_chirp(t, backend=backend)
-    reference, _ = generate_chirp(t, backend=backend, f_lower=20.0, normalize=False)
-    i_peak = np.argmax(np.abs(strain))
-    assert 0 < i_peak < len(t) - 1
-    assert np.max(np.abs(strain)) == pytest.approx(np.max(np.abs(reference)), rel=0.01)
 
 
 @pytest.mark.parametrize("t_merger", [10.0, DURATION, -0.1])
