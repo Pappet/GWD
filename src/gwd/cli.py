@@ -53,16 +53,21 @@ def _fetch_noise(args):
 
 def _generate(args):
     from gwd.config import DATA_DIR_TRAIN, SAMPLES_FOR_TRAINING
-    from gwd.data.generate import generate_dataset
+    from gwd.data.generate import OutputFolderError, generate_dataset
     from gwd.data.scenarios import SCENARIOS
 
     # generate_dataset seeds its own RNG and records the seed in manifest.json.
-    generate_dataset(
-        num_samples=SAMPLES_FOR_TRAINING if args.n is None else args.n,
-        output_folder=args.out or DATA_DIR_TRAIN,
-        scenario=SCENARIOS[args.scenario.upper()],
-        seed=args.seed,
-    )
+    try:
+        generate_dataset(
+            num_samples=SAMPLES_FOR_TRAINING if args.n is None else args.n,
+            output_folder=args.out or DATA_DIR_TRAIN,
+            scenario=SCENARIOS[args.scenario.upper()],
+            seed=args.seed,
+            overwrite=args.overwrite,
+        )
+    except OutputFolderError as error:
+        print(f"❌ {error}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -70,11 +75,11 @@ def _validate(args):
     from gwd.config import DATA_DIR_TRAIN, VALIDATION_DATASET_PLOTS_DIR
     from gwd.data import validate
 
-    return validate.run(
-        data_folder=args.data or DATA_DIR_TRAIN,
-        output_folder=args.plots or VALIDATION_DATASET_PLOTS_DIR,
-        plots=not args.no_plots,
-    )
+    # --plots without a folder is the empty string; no --plots means no plots.
+    plots = args.plots
+    if plots == "":
+        plots = VALIDATION_DATASET_PLOTS_DIR
+    return validate.run(data_folder=args.data or DATA_DIR_TRAIN, output_folder=plots)
 
 
 def _train(args):
@@ -93,6 +98,7 @@ def _train(args):
     # Read by TensorFlow when it is imported; values the caller has set win.
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")  # hide info and warnings
     os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")  # oneDNN off, as before
+    from gwd.data.validate import InvalidDatasetError
     from gwd.training.train import TrainConfig, train
 
     overrides = {
@@ -108,7 +114,12 @@ def _train(args):
     cfg = TrainConfig(
         **{name: value for name, value in overrides.items() if value is not None}
     )
-    train(cfg)
+    try:
+        train(cfg)
+    except InvalidDatasetError as error:
+        # The dataset is checked before training; its findings name the files.
+        print(f"❌ {error}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -216,8 +227,9 @@ def build_parser():
     generate = data_commands.add_parser(
         "generate",
         help="Generate a training dataset.",
-        description="Write samples, labels.csv, and manifest.json. Real noise chunks "
-        "are used where the scenario and data/noise_background/ allow it.",
+        description="Write samples, labels.csv, and manifest.json into an empty or "
+        "new folder. Real noise chunks are used where the scenario and "
+        "data/noise_background/ allow it.",
     )
     generate.add_argument(
         "--n",
@@ -226,6 +238,12 @@ def build_parser():
     )
     _add_seed(generate, "the drawn samples")
     generate.add_argument("--out", help="Output folder. Default: data/training/.")
+    generate.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Write into a folder that is not empty: first remove its sample_*.npy "
+        "and labels.csv (nothing else). Default: stop with exit code 1.",
+    )
     generate.add_argument(
         "--scenario",
         type=str.lower,
@@ -237,15 +255,19 @@ def build_parser():
 
     validate = data_commands.add_parser(
         "validate",
-        help="Check a dataset and plot its distributions.",
-        description="Check a dataset; exit code 1 if it is not fit for training.",
+        help="Check a dataset: every sample, orphans, manifest, scenario ranges.",
+        description="Check every sample that labels.csv lists, sample files it does "
+        "not list, manifest.json, and, if the manifest names its scenario, the signal "
+        "parameter ranges and the class balance. Exit code 1 if there is any finding.",
     )
     validate.add_argument("--data", help="Dataset folder. Default: data/training/.")
     validate.add_argument(
-        "--plots", help="Plot folder. Default: plots/validation_dataset/."
-    )
-    validate.add_argument(
-        "--no-plots", action="store_true", help="Statistics only, no plots."
+        "--plots",
+        nargs="?",
+        const="",
+        metavar="FOLDER",
+        help="Also write the report plots, to FOLDER or, without one, to "
+        "plots/validation_dataset/. Default: no plots.",
     )
     validate.set_defaults(handler=_validate)
 

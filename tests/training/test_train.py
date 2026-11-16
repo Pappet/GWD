@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 
+import numpy as np
 import pytest
 
 tf = pytest.importorskip("tensorflow")
@@ -141,3 +142,67 @@ def test_the_provenance_comes_from_the_manifest(tmp_path):
 def test_load_data_without_labels_names_the_fix(tmp_path):
     with pytest.raises(FileNotFoundError, match="Run 'gwd data generate' first"):
         train.load_data(str(tmp_path))
+
+
+@pytest.fixture
+def small_dataset(tmp_path):
+    from gwd.data.generate import generate_dataset
+    from gwd.data.scenarios import EVAL_V1
+
+    data = tmp_path / "data"
+    generate_dataset(8, str(data), EVAL_V1, seed=2, noise_dir=str(tmp_path))
+    return data
+
+
+def test_load_data_loads_every_sample_in_order(small_dataset):
+    from gwd.data.preprocessing import normalize
+
+    X, y = train.load_data(str(small_dataset))
+    assert X.shape == (8, 16384, 1)
+    assert list(y) == [1, 0] * 4
+    np.testing.assert_array_equal(
+        X[5, :, 0], normalize(np.load(small_dataset / "sample_00005.npy"))
+    )
+
+
+@pytest.mark.parametrize(
+    "damage, check",
+    [
+        (lambda d: (d / "sample_00003.npy").unlink(), "missing"),
+        (lambda d: np.save(d / "sample_00003.npy", np.ones(100)), "shape"),
+        (lambda d: np.save(d / "sample_00003.npy", np.ones(20000)), "shape"),
+    ],
+    ids=["missing", "short", "long"],
+)
+def test_load_data_stops_instead_of_skipping_or_padding(small_dataset, damage, check):
+    """LOAD-SILENT: a bad file used to be skipped, cut, or zero-padded."""
+    from gwd.data.validate import InvalidDatasetError
+
+    damage(small_dataset)
+    with pytest.raises(InvalidDatasetError, match="sample_00003.npy") as error:
+        train.load_data(str(small_dataset))
+    assert [f.check for f in error.value.findings] == [check]
+
+
+def test_load_data_stops_on_an_unreadable_labels_file(small_dataset):
+    from gwd.data.validate import InvalidDatasetError
+
+    (small_dataset / "labels.csv").write_bytes(b"\xff\xfe\x00broken")
+    with pytest.raises(InvalidDatasetError, match="cannot be read"):
+        train.load_data(str(small_dataset))
+
+
+def test_gwd_train_reports_a_broken_dataset_without_traceback(small_dataset, tmp_path):
+    (small_dataset / "sample_00003.npy").unlink()
+    env = {**os.environ, "GWD_HOME": str(tmp_path), "CUDA_VISIBLE_DEVICES": ""}
+    result = subprocess.run(
+        [sys.executable, "-m", "gwd.cli", "train", "--data", str(small_dataset)],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert "sample_00003.npy: listed in labels.csv, but missing" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert not (tmp_path / "models_registry").exists()

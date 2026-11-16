@@ -1,6 +1,9 @@
 """gwd.data.generate writes the backend and noise source of every sample (P4.1)."""
 
 import json
+import os
+import subprocess
+import sys
 
 import numpy as np
 import pandas as pd
@@ -9,7 +12,7 @@ import pytest
 from gwd.config import N_SAMPLES
 from gwd.core import waveforms
 from gwd.data import provenance
-from gwd.data.generate import generate_dataset
+from gwd.data.generate import OutputFolderError, generate_dataset
 from gwd.data.scenarios import EVAL_V1, TRAIN_V1
 
 OLD_COLUMNS = [
@@ -137,3 +140,91 @@ def test_newton_gets_a_loud_warning(tmp_path, noise_dir, capsys, monkeypatch):
     assert manifest["waveform_backend"] == "newton"
     assert manifest["signal_backends"] == {"newton": 2}
     assert set(labels.loc[labels["has_signal"] == 1, "waveform_backend"]) == {"newton"}
+
+
+# --- the output folder (P4.6) ---
+
+
+def test_a_folder_that_is_not_empty_is_refused(tmp_path, noise_dir):
+    out, _, _ = generate(tmp_path, noise_dir, n=4)
+    before = sorted(p.name for p in out.iterdir())
+    with pytest.raises(OutputFolderError, match="--overwrite"):
+        generate_dataset(2, str(out), seed=1, noise_dir=str(noise_dir))
+    assert sorted(p.name for p in out.iterdir()) == before
+
+
+def test_overwrite_removes_only_samples_and_labels(tmp_path, noise_dir):
+    out, _, _ = generate(tmp_path, noise_dir, n=6)
+    (out / "notes.txt").write_text("mine")
+    (out / "sub").mkdir()
+    np.save(out / "sub" / "sample_00000.npy", np.ones(3))
+    np.save(out / "other.npy", np.ones(3))
+
+    generate_dataset(2, str(out), seed=1, noise_dir=str(noise_dir), overwrite=True)
+
+    assert sorted(p.name for p in out.iterdir()) == [
+        "labels.csv",
+        "manifest.json",
+        "notes.txt",
+        "other.npy",
+        "sample_00000.npy",
+        "sample_00001.npy",
+        "sub",
+    ]
+    assert (out / "sub" / "sample_00000.npy").exists()
+    assert len(pd.read_csv(out / "labels.csv")) == 2
+    assert json.loads((out / "manifest.json").read_text())["n"] == 2
+
+
+def test_overwrite_in_a_parent_never_touches_the_noise_folder(tmp_path, noise_dir):
+    chunks = sorted(p.name for p in noise_dir.iterdir())
+    # tmp_path holds the noise folder; overwrite does not descend into it.
+    generate_dataset(2, str(tmp_path), seed=1, noise_dir=str(noise_dir), overwrite=True)
+    assert sorted(p.name for p in noise_dir.iterdir()) == chunks
+
+
+def test_the_noise_folder_itself_is_refused(noise_dir):
+    chunks = sorted(p.name for p in noise_dir.iterdir())
+    with pytest.raises(OutputFolderError, match="noise folder"):
+        generate_dataset(
+            2, str(noise_dir), seed=1, noise_dir=str(noise_dir), overwrite=True
+        )
+    assert sorted(p.name for p in noise_dir.iterdir()) == chunks
+
+
+def test_an_empty_or_new_folder_needs_no_overwrite(tmp_path, noise_dir):
+    (tmp_path / "empty").mkdir()
+    generate_dataset(2, str(tmp_path / "empty"), seed=1, noise_dir=str(noise_dir))
+    generate_dataset(
+        2, str(tmp_path / "new" / "deep"), seed=1, noise_dir=str(noise_dir)
+    )
+    assert (tmp_path / "new" / "deep" / "labels.csv").exists()
+
+
+def test_the_command_stops_with_rc_1_without_overwrite(tmp_path):
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "keep.txt").write_text("mine")
+    env = {**os.environ, "GWD_HOME": str(tmp_path)}
+    args = ["data", "generate", "--n", "8", "--out", str(out)]
+    result = subprocess.run(
+        [sys.executable, "-m", "gwd.cli", *args],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert "is not empty" in result.stderr and "--overwrite" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert [p.name for p in out.iterdir()] == ["keep.txt"]
+
+    result = subprocess.run(
+        [sys.executable, "-m", "gwd.cli", *args, "--overwrite"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert len(list(out.glob("sample_*.npy"))) == 8

@@ -115,3 +115,54 @@ def test_menu_reports_the_exit_code_of_a_failed_entry(tmp_path):
     assert result.stdout.index("Starting: gwd data validate") < result.stdout.index(
         "Dataset folder:"
     )
+
+
+def test_only_generate_asks_and_its_answer_parses():
+    menu = load_main()
+    assert list(menu.CONFIRM) == [("data", "generate")]
+    for args, (question, extra) in menu.CONFIRM.items():
+        assert question.rstrip().endswith("[y/N]")
+        parsed = build_parser().parse_args([*args, *extra])
+        assert parsed.overwrite is True
+
+
+@pytest.mark.parametrize(
+    "answer, expected",
+    [
+        ("y", ["data", "generate", "--overwrite"]),
+        ("YES ", ["data", "generate", "--overwrite"]),
+        ("n", ["data", "generate"]),
+        ("", ["data", "generate"]),
+        (None, None),
+    ],
+)
+def test_confirm_adds_overwrite_only_on_yes(monkeypatch, answer, expected):
+    menu = load_main()
+    monkeypatch.setattr(menu, "ask", lambda prompt: answer)
+    assert menu.confirm(["data", "generate"]) == expected
+    # Entries without a question run as they are, without asking.
+    monkeypatch.setattr(menu, "ask", lambda prompt: pytest.fail("asked"))
+    assert menu.confirm(["data", "validate"]) == ["data", "validate"]
+
+
+def test_no_to_the_question_keeps_an_existing_dataset(tmp_path):
+    training = tmp_path / "data" / "training"
+    training.mkdir(parents=True)
+    (training / "labels.csv").write_text("filename,has_signal\n")
+    choice = next(
+        i for i, (_, args) in enumerate(MENU, 1) if args == ["data", "generate"]
+    )
+    env = {**os.environ, "TERM": "dumb", "GWD_HOME": str(tmp_path)}
+    result = subprocess.run(
+        [sys.executable, MAIN],
+        input=f"{choice}\nn\n",
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert "Replace an existing dataset" in result.stdout
+    assert "Starting: gwd data generate\n" in result.stdout
+    assert "Failed with exit code 1." in result.stdout
+    assert "--overwrite" in result.stderr
+    assert [p.name for p in training.iterdir()] == ["labels.csv"]

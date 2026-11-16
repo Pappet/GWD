@@ -7,7 +7,7 @@ moves only change this file.
 from dataclasses import dataclass
 from typing import Optional
 
-SEED = "1"  # Chosen so the old validator does not report 'KRITISCH' by chance.
+SEED = "1"
 NUM_SAMPLES = 64
 
 

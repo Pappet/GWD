@@ -107,7 +107,7 @@ def test_invalid_arguments_exit_with_two(args, capsys):
         ["eval", "thresholds", "--model", UNKNOWN_MODEL],
         ["eval", "compare", "--model", UNKNOWN_MODEL],
         ["eval", "compare"],
-        ["data", "validate", "--no-plots"],
+        ["data", "validate"],
     ],
     ids=" ".join,
 )

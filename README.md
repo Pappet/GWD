@@ -102,14 +102,16 @@ Every step is a `gwd` command; `gwd --help` and `gwd <command> --help` list the 
 # Overwrites chunks of the same name in data/noise_background/ and keeps all others.
 gwd data fetch-noise
 
-# Generate training data (--seed makes it reproducible, --n sets the number of samples)
+# Generate training data (--seed makes it reproducible, --n sets the number of samples).
+# The folder must be empty; --overwrite first removes its sample_*.npy and labels.csv.
 gwd data generate --seed 1
 
-# Check the dataset and plot its distributions
+# Check every sample and the scenario ranges; --plots also writes the report plots
 gwd data validate
+gwd data validate --plots
 ```
 
-`gwd data generate` and `gwd eval run` start with a line `Backend: ... | Noise: ...` that names the waveform backend (`pycbc <version>` or `newton`) and the noise. Without PyCBC, or without real noise chunks in `data/noise_background/`, they print a warning on stderr. The dataset folder gets a `manifest.json` with the scenario, seed, backend, package versions, Git commit, and the share of real noise; `labels.csv` names the backend, the noise source (`real` or `gaussian`), and the noise chunk of every sample. `gwd data validate` exits with code 1 if the dataset is not fit for training. `gwd data fetch-noise` conditions its segment in one piece and writes every 4 s chunk except the first and the last, which hold the ringing of the filters at the ends of the segment; `NNNN` in the file name is the chunk's position in the segment. Files already in the folder are kept, and the files that are not from the new download are named on stderr.
+`gwd data generate` and `gwd eval run` start with a line `Backend: ... | Noise: ...` that names the waveform backend (`pycbc <version>` or `newton`) and the noise. Without PyCBC, or without real noise chunks in `data/noise_background/`, they print a warning on stderr. The dataset folder gets a `manifest.json` with the scenario, seed, backend, package versions, Git commit, and the share of real noise; `labels.csv` names the backend, the noise source (`real` or `gaussian`), and the noise chunk of every sample. `gwd data generate` writes only into a new or empty folder and otherwise exits with code 1; with `--overwrite` it first removes the folder's `sample_*.npy` files and `labels.csv` and nothing else (other files, subfolders, and `data/noise_background/` stay). `gwd data validate` loads every sample that `labels.csv` lists and checks that it exists, has 16384 float values, and has no NaN or Inf; it also reports `sample_*.npy` files that `labels.csv` does not list, and a `manifest.json` that does not match `labels.csv` or its scenario. If the manifest names a scenario, every signal sample must lie in that scenario's SNR, mass, and merger time ranges, and the classes must be balanced to 50% ± 5%. A dataset without a manifest (written before P4.1) is reported as `unknown (v1)` and checked for integrity only. The command lists every finding and exits with code 1 if there is one. The plots go to `plots/validation_dataset/` only with `--plots` (or to the folder given after it). `gwd data fetch-noise` conditions its segment in one piece and writes every 4 s chunk except the first and the last, which hold the ringing of the filters at the ends of the segment; `NNNN` in the file name is the chunk's position in the segment. Files already in the folder are kept, and the files that are not from the new download are named on stderr.
 
 ### 2. Training
 
@@ -118,7 +120,7 @@ gwd train
 gwd train --epochs 10 --seed 1
 ```
 
-`gwd train` takes the defaults `EPOCHS`, `BATCH_SIZE`, `LEARNING_RATE`, and `EARLY_STOPPING_PATIENCE` from `src/gwd/config.py`; `--epochs`, `--batch-size`, `--lr`, and `--patience` override them for one run. It trains with mixed precision (`mixed_float16`) only if TensorFlow finds a GPU, otherwise in float32; `--mixed-precision` forces it. It prints the precision it chose in a `Precision:` line. The model goes to `models_registry/gwd_model_YYYYMMDD-HHMMSS.keras`, with a `.json` next to it that records the epochs it really trained, the seed, and the SHA-256, backend, and real noise share of the dataset's `manifest.json`; a dataset without a manifest is recorded as `unknown (v1)`. Without a dataset, `gwd train` exits with code 1 and tells you to run `gwd data generate` first.
+`gwd train` takes the defaults `EPOCHS`, `BATCH_SIZE`, `LEARNING_RATE`, and `EARLY_STOPPING_PATIENCE` from `src/gwd/config.py`; `--epochs`, `--batch-size`, `--lr`, and `--patience` override them for one run. It trains with mixed precision (`mixed_float16`) only if TensorFlow finds a GPU, otherwise in float32; `--mixed-precision` forces it. It prints the precision it chose in a `Precision:` line. The model goes to `models_registry/gwd_model_YYYYMMDD-HHMMSS.keras`, with a `.json` next to it that records the epochs it really trained, the seed, and the SHA-256, backend, and real noise share of the dataset's `manifest.json`; a dataset without a manifest is recorded as `unknown (v1)`. Without a dataset, `gwd train` exits with code 1 and tells you to run `gwd data generate` first. It checks the dataset as `gwd data validate` does for integrity (not for the scenario ranges) and exits with code 1, naming the files, if a sample is missing, unreadable, of the wrong length, or not finite; it no longer skips, cuts, or pads such samples.
 
 ### 3. Evaluation
 
@@ -165,7 +167,7 @@ The interferometer designer is a learning model, not a calibrated detector model
 
 ### 5. Menu
 
-`python main.py` opens a menu with the data, training, and evaluation steps, the leaderboard, the three apps, and `gwd env`. Each entry runs the `gwd` command with its defaults; one extra entry runs `gwd eval run --real`, the evaluation with the field test. It works from any folder: each entry runs in the project folder with the same Python, and the menu shows the exit code when a step fails.
+`python main.py` opens a menu with the data, training, and evaluation steps, the leaderboard, the three apps, and `gwd env`. Each entry runs the `gwd` command with its defaults; one extra entry runs `gwd eval run --real`, the evaluation with the field test. Before "Generate training data" the menu asks whether an existing dataset in `data/training/` may be replaced and adds `--overwrite` on a yes. It works from any folder: each entry runs in the project folder with the same Python, and the menu shows the exit code when a step fails.
 
 ## Data and paths
 
