@@ -8,6 +8,11 @@ Since P5.7 every model is scored on the part 'test' of one fixed, hashed test se
 model's curve also marks its operating point at its own threshold
 (gwd.registry.get_threshold), and the ranking, by ROC AUC, lists the TPR there with the
 FPR it reached.
+
+Since V3 every model sees data with its own preprocessing
+(gwd.evaluation.testsets.set_for_model): with --testset indist_v2, a whitening model is
+scored on indist_v3, which holds the same events and noise, whitened; the labels are
+the same, so all curves still describe the same physical samples.
 """
 
 import datetime
@@ -16,6 +21,7 @@ import sys
 from typing import NamedTuple
 
 import matplotlib
+import numpy as np
 
 from gwd.config import (
     DEFAULT_TESTSET,
@@ -49,13 +55,16 @@ class Curve(NamedTuple):
     op_fpr: float
 
 
-def score_models(paths, X_test, y_true):
+def score_models(paths, X_test, y_true, inputs=None):
     """Load the models one after another and compute each ROC curve once.
 
     Only one model is in memory at a time. Returns a Curve per model that loads, in the
     order of paths (oldest first when they come from list_models()); its operating point
-    is at the model's threshold from gwd.registry.get_threshold.
+    is at the model's threshold from gwd.registry.get_threshold. inputs maps a path to
+    the samples of that model, if they are not X_test (another preprocessing of the
+    same samples, with the same labels y_true).
     """
+    inputs = inputs or {}
     curves = []
     for path in paths:
         try:
@@ -65,7 +74,7 @@ def score_models(paths, X_test, y_true):
             continue
         name = model_name(path)
         print(f"✓ Loaded: {name}")
-        y_scores = model.predict(X_test, verbose=0).flatten()
+        y_scores = model.predict(inputs.get(path, X_test), verbose=0).flatten()
         del model
         fpr, tpr, _ = roc_curve(y_true, y_scores)
         threshold = registry.get_threshold(path)
@@ -248,17 +257,34 @@ def run(models=None, testset=DEFAULT_TESTSET, seed=TESTSET_SEED, n=TESTSET_SIZE)
         print("\n⚠️ Only one model found. Train more models to compare them.")
         return 0
 
-    # 2. The test set, before any model loads (drawing it needs PyCBC)
+    # 2. The test sets, before any model loads (drawing them needs PyCBC): the named
+    # one, and its counterpart for models with another preprocessing (V3).
+    chosen = {path: testsets.set_for_model(testset, path) for path in paths}
     try:
         built = testsets.build(testset, n, seed)
+        others = {
+            name: testsets.build(name, n, seed)
+            for name, _, _ in chosen.values()
+            if name != testset
+        }
     except testsets.InvalidTestsetError as error:
         print(f"❌ {error}", file=sys.stderr)
         return 1
     print("\n".join(testsets.describe(built)))
+    for other in others.values():
+        print("\n".join(testsets.describe(other)))
     X_test, y_true = built.X, built.y
+    inputs = {}
+    for path, (name, preprocessing, note) in chosen.items():
+        if note:
+            print(f"{model_name(path)}: {note}")
+        if name != testset:
+            if not np.array_equal(others[name].y, y_true):
+                raise ValueError(f"{name} does not have the labels of {testset}")
+            inputs[path] = others[name].X
 
     # 3. Load each model in turn and score it once
-    curves = score_models(paths, X_test, y_true)
+    curves = score_models(paths, X_test, y_true, inputs)
 
     if len(curves) == 0:
         print("\n❌ No models to compare.")
@@ -272,9 +298,13 @@ def run(models=None, testset=DEFAULT_TESTSET, seed=TESTSET_SEED, n=TESTSET_SIZE)
     colors = model_colors([curve.name for curve in curves])
 
     # 4. Compare
-    rankings = compare_models_roc(
-        curves, colors, f"ROC curves on {built.label()}, SHA-256 {built.short_hash()}"
-    )
+    title = f"ROC curves on {built.label()}, SHA-256 {built.short_hash()}"
+    for other in others.values():
+        title += (
+            f"\nmodels with {other.spec.preprocessing} on {other.spec.name}, "
+            f"SHA-256 {other.short_hash()}"
+        )
+    rankings = compare_models_roc(curves, colors, title)
 
     # 5. Print the ranking
     print("\n" + "=" * 70)

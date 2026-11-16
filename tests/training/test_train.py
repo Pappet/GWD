@@ -169,6 +169,7 @@ def test_a_dataset_without_manifest_is_recorded_as_unknown(tmp_path):
         "dataset_scenario": "unknown (v1)",
         "waveform_backend": "unknown (v1)",
         "real_noise_fraction": "unknown (v1)",
+        "preprocessing": "bandpass",
     }
 
 
@@ -184,7 +185,26 @@ def test_the_provenance_comes_from_the_manifest(tmp_path):
         "dataset_scenario": "TRAIN_V1",
         "waveform_backend": "pycbc 2.10.0",
         "real_noise_fraction": 0.75,
+        "preprocessing": "bandpass",
     }
+
+
+@pytest.mark.parametrize(
+    "scenario, expected",
+    [("TRAIN_V2", "bandpass"), ("TRAIN_V3", "whiten_bandpass"), ("OTHER", "bandpass")],
+)
+def test_the_metadata_records_the_preprocessing_of_the_scenario(
+    tmp_path, scenario, expected
+):
+    """V3: the model's metadata says what its input went through, so evaluation and
+    the Glitch Hunter preprocess real data the same way."""
+    manifest = {
+        "scenario": scenario,
+        "waveform_backend": "pycbc",
+        "real_noise_fraction": 0,
+    }
+    provenance.write_manifest(str(tmp_path), manifest)
+    assert train.dataset_provenance(str(tmp_path))["preprocessing"] == expected
 
 
 def test_load_data_without_labels_names_the_fix(tmp_path):

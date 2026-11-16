@@ -20,6 +20,11 @@ of the bin's samples (P5.5); SNR50 and SNR90 are reported both ways, interpolate
 between the bins (P5.8). The metrics are also reported per peak SNR bin, optimal SNR
 bin, total mass bin, and noise source; a bin whose signal samples all lie outside the
 training ranges is marked 'Extrapolation'.
+
+Since V3 the data get the preprocessing the model was trained with (its metadata,
+gwd.evaluation.testsets.set_for_model): a whitening model asked for indist_v2 or
+stress_v2 is scored on indist_v3 or stress_v3, the same events whitened, and the field
+test whitens the real data for it; the run says so.
 """
 
 import datetime
@@ -554,11 +559,15 @@ def run(
     except FileNotFoundError as error:
         print(f"❌ {error}")
         return 1
+    testset, preprocessing, note = testsets.set_for_model(testset, model_path)
     spec = testsets.get(testset)
 
     print("=" * 70)
     print(f"🤖 COMPREHENSIVE EVALUATION: {os.path.basename(model_path)}")
     announce(noise_description(spec, real))
+    print(f"Preprocessing of the model: {preprocessing}")
+    if note:
+        print(note)
 
     # The set first: drawing it needs PyCBC, so a missing backend stops before the model.
     try:
@@ -579,7 +588,7 @@ def run(
 
     # 2. Real Data
     if real:
-        real_res = run_field_test(loaded, threshold)
+        real_res = run_field_test(loaded, threshold, preprocessing=preprocessing)
     else:
         print("\nField test skipped; gwd eval run --real runs it (network).")
         real_res = NO_FIELD_TEST
