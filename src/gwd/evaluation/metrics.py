@@ -8,6 +8,7 @@ import numpy as np
 from sklearn.metrics import (
     confusion_matrix,
     precision_recall_curve,
+    roc_auc_score,
     roc_curve,
 )
 
@@ -45,6 +46,96 @@ def snr_at_rate(snr_levels, rates, level):
 def format_snr(snr):
     """An SNR from snr_at_rate for display: two decimals, or N/A for None."""
     return "N/A" if snr is None else f"{snr:.2f}"
+
+
+def auc_or_none(y_true, y_scores):
+    """The ROC AUC, or None if y_true lacks a class."""
+    y_true = np.asarray(y_true)
+    if len(np.unique(y_true)) < 2:
+        return None
+    return float(roc_auc_score(y_true, y_scores))
+
+
+def bin_index(values, edges):
+    """The bin of each value: i for edges[i] <= v < edges[i+1], -1 outside.
+
+    The last bin includes its upper edge. Two equal edges make one bin that holds
+    exactly that value (a fixed mass).
+    """
+    values = np.asarray(values, dtype=float)
+    edges = np.asarray(edges, dtype=float)
+    if len(edges) == 2 and edges[0] == edges[1]:
+        return np.where(values == edges[0], 0, -1)
+    index = np.searchsorted(edges, values, side="right") - 1
+    index[values == edges[-1]] = len(edges) - 2
+    index[(values < edges[0]) | (values > edges[-1])] = -1
+    return index
+
+
+def signal_bin_metrics(values, edges, signal_scores, noise_scores, threshold, flags):
+    """One row per bin of the signal samples' values.
+
+    values, signal_scores, and flags (True: outside the training ranges) belong to the
+    signal samples; noise_scores to all noise-only samples. Each row has the bin edges
+    (low, high), n, tpr (the detection rate at threshold), auc (the bin's signal
+    samples against all noise samples), and outside (the share of flagged samples);
+    tpr, auc, and outside are None for an empty bin.
+    """
+    signal_scores = np.asarray(signal_scores)
+    noise_scores = np.asarray(noise_scores)
+    flags = np.asarray(flags, dtype=bool)
+    index = bin_index(values, edges)
+    rows = []
+    for b in range(len(edges) - 1):
+        mask = index == b
+        n = int(mask.sum())
+        scores = signal_scores[mask]
+        labels = np.r_[np.ones(n), np.zeros(len(noise_scores))]
+        rows.append(
+            {
+                "low": float(edges[b]),
+                "high": float(edges[b + 1]),
+                "n": n,
+                "tpr": detection_rate(scores, threshold) if n else None,
+                "auc": auc_or_none(labels, np.r_[scores, noise_scores]) if n else None,
+                "outside": float(flags[mask].mean()) if n else None,
+            }
+        )
+    return rows
+
+
+def group_metrics(groups, y_true, y_scores, threshold, flags):
+    """One row per group (for example the noise source) of a labelled set.
+
+    Each row has the group, n_signal, n_noise, tpr and fpr at threshold, the auc of
+    the group alone, and outside (the share of its signal samples that flags marks).
+    A rate or AUC whose class is missing in the group is None.
+    """
+    groups = np.asarray(groups)
+    y_true = np.asarray(y_true)
+    y_scores = np.asarray(y_scores)
+    flags = np.asarray(flags, dtype=bool)
+    rows = []
+    for group in sorted(set(groups.tolist())):
+        mask = groups == group
+        signal = mask & (y_true == 1)
+        noise = mask & (y_true == 0)
+        rows.append(
+            {
+                "group": str(group),
+                "n_signal": int(signal.sum()),
+                "n_noise": int(noise.sum()),
+                "tpr": detection_rate(y_scores[signal], threshold)
+                if signal.any()
+                else None,
+                "fpr": detection_rate(y_scores[noise], threshold)
+                if noise.any()
+                else None,
+                "auc": auc_or_none(y_true[mask], y_scores[mask]),
+                "outside": float(flags[signal].mean()) if signal.any() else None,
+            }
+        )
+    return rows
 
 
 def calculate_operating_point(y_true, y_scores, threshold):

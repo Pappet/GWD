@@ -166,3 +166,56 @@ def test_import_loads_no_plotting_and_no_tensorflow():
         [sys.executable, "-c", code], capture_output=True, text=True, check=True
     )
     assert result.stdout.strip() == "False False"
+
+
+# --- per-bin metrics (P5.7) ---
+
+
+def test_bin_index_closes_the_last_bin_and_marks_values_outside():
+    edges = [1.0, 2.0, 3.0]
+    index = metrics.bin_index([0.5, 1.0, 1.99, 2.0, 3.0, 3.5], edges)
+    assert list(index) == [-1, 0, 0, 1, 1, -1]
+
+
+def test_two_equal_edges_are_one_bin_of_that_value():
+    assert list(metrics.bin_index([60.0, 60.0, 59.0], [60.0, 60.0])) == [0, 0, -1]
+
+
+def test_signal_bin_metrics_counts_rates_and_auc_per_bin():
+    values = np.array([1.5, 1.6, 2.5, 2.6])
+    signal_scores = np.array([0.1, 0.9, 0.9, 0.95])
+    noise_scores = np.array([0.0, 0.2])
+    flags = np.array([True, True, False, True])
+    rows = metrics.signal_bin_metrics(
+        values, [1.0, 2.0, 3.0, 4.0], signal_scores, noise_scores, 0.5, flags
+    )
+    assert [row["n"] for row in rows] == [2, 2, 0]
+    assert [row["tpr"] for row in rows] == [0.5, 1.0, None]
+    # Bin 0: 0.1 and 0.9 against 0.0 and 0.2 -> 3 of 4 pairs ordered right.
+    assert rows[0]["auc"] == pytest.approx(0.75)
+    assert rows[1]["auc"] == 1.0
+    assert [row["outside"] for row in rows] == [1.0, 0.5, None]
+    assert rows[2]["auc"] is None
+    assert (rows[0]["low"], rows[0]["high"]) == (1.0, 2.0)
+
+
+def test_group_metrics_per_noise_source():
+    groups = np.array(["real", "real", "gaussian", "gaussian", "gaussian"])
+    y_true = np.array([1, 0, 1, 0, 0])
+    y_scores = np.array([0.9, 0.6, 0.4, 0.1, 0.7])
+    rows = metrics.group_metrics(groups, y_true, y_scores, 0.5, np.zeros(5, bool))
+    by_group = {row["group"]: row for row in rows}
+    assert [row["group"] for row in rows] == ["gaussian", "real"]
+    assert by_group["real"]["tpr"] == 1.0 and by_group["real"]["fpr"] == 1.0
+    assert by_group["real"]["auc"] == 1.0
+    assert by_group["gaussian"]["tpr"] == 0.0
+    assert by_group["gaussian"]["fpr"] == 0.5
+    assert by_group["gaussian"]["auc"] == 0.5
+    assert by_group["gaussian"]["outside"] == 0.0
+
+
+def test_a_group_without_noise_has_no_fpr_or_auc():
+    rows = metrics.group_metrics(
+        np.array(["real"]), np.array([1]), np.array([0.9]), 0.5, np.array([False])
+    )
+    assert (rows[0]["fpr"], rows[0]["auc"], rows[0]["tpr"]) == (None, None, 1.0)
