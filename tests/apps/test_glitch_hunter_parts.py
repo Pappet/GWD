@@ -9,9 +9,10 @@ import os
 import numpy as np
 import pytest
 
+from gwd import registry
 from gwd.apps.glitch_hunter import app as app_module
 from gwd.apps.glitch_hunter import audio, sources
-from gwd.config import N_SAMPLES, SAMPLE_RATE
+from gwd.config import N_SAMPLES, SAMPLE_RATE, THRESHOLD_FALLBACK
 from gwd.data.gwosc import EVENTS, StrainError, event
 from gwd.data.scenarios import APP_V1, TRAIN_V1
 
@@ -154,14 +155,32 @@ def test_gwpy_available_does_not_import_gwpy(monkeypatch):
 # --- rating ---
 
 
-def test_the_start_threshold_lies_inside_the_slider_range():
-    """APP-4: the slider started at 0.50 while the decision used 0.46."""
-    assert app_module.DEFAULT_THRESHOLD == 0.46
-    assert (
-        app_module.THRESHOLD_MIN
-        <= app_module.DEFAULT_THRESHOLD
-        <= app_module.THRESHOLD_MAX
-    )
+def test_the_start_threshold_comes_from_the_registry(monkeypatch):
+    """P5.8: the named constant 0.46 (P4.4) became the model's registry threshold."""
+    assert not hasattr(app_module, "DEFAULT_THRESHOLD")
+    asked = []
+
+    def get_threshold(path):
+        asked.append(path)
+        return 0.123
+
+    monkeypatch.setattr(registry, "get_threshold", get_threshold)
+    assert app_module.start_threshold("m.keras") == 0.123
+    assert asked == ["m.keras"]
+    # Without a model there is nothing to ask: the fallback, without a warning.
+    assert app_module.start_threshold(None) == THRESHOLD_FALLBACK == 0.5
+    assert asked == ["m.keras"]
+
+
+def test_a_model_without_a_threshold_starts_at_the_fallback_with_a_warning(tmp_path):
+    model = tmp_path / "gwd_model_20260101-000000.keras"
+    with pytest.warns(registry.MissingThresholdWarning):
+        assert app_module.start_threshold(str(model)) == THRESHOLD_FALLBACK
+
+
+def test_the_slider_range_holds_every_score():
+    """APP-4: the slider must show the threshold that decides."""
+    assert (app_module.THRESHOLD_MIN, app_module.THRESHOLD_MAX) == (0.0, 1.0)
 
 
 @pytest.mark.parametrize(

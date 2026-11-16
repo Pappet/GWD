@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
+from gwd import registry
 from gwd.apps.glitch_hunter import app as app_module
 from gwd.apps.glitch_hunter import sources
 from gwd.apps.glitch_hunter.audio import Player
@@ -95,7 +96,7 @@ def gwosc(monkeypatch):
     return state
 
 
-def make_app(model="dummy", sim=True, picks=None, tmp_path=None):
+def make_app(model="dummy", sim=True, picks=None, tmp_path=None, threshold=None):
     if model == "dummy":
         model = DummyModel()
     sim_source = (
@@ -106,8 +107,9 @@ def make_app(model="dummy", sim=True, picks=None, tmp_path=None):
     real = sources.GwoscSource(rng=picks or Picks())
     popen = FakePopen()
     player = Player(system="Linux", popen=popen, which=lambda name: True)
+    extra = {} if threshold is None else {"threshold": threshold}
     app = app_module.GlitchHunterApp(
-        model=model, metadata=None, sim=sim_source, real=real, player=player
+        model=model, metadata=None, sim=sim_source, real=real, player=player, **extra
     )
     app.popen = popen
     return app
@@ -275,7 +277,7 @@ def test_each_mode_shows_its_peak_snr(mode, low, high):
 def test_the_slider_starts_at_the_threshold_and_rejudges_the_truth():
     """APP-4: the slider showed 0.50 while 0.46 decided; the box kept its color."""
     app = make_app(model=DummyModel(score=0.6))
-    assert app.slider_thresh.val == app_module.DEFAULT_THRESHOLD == app.threshold
+    assert app.slider_thresh.val == app_module.THRESHOLD_FALLBACK == app.threshold
     assert app.slider_thresh.valmin <= app.threshold <= app.slider_thresh.valmax
     while not app.sample.has_signal:
         app.generate_new_sample(None)
@@ -313,3 +315,40 @@ def test_play_sound_creates_nothing_in_the_working_directory(tmp_path, monkeypat
     assert os.path.isfile(app.player.path)
     app.close()
     assert not os.path.exists(app.player.path)
+
+
+def test_the_glitch_hunter_uses_the_registry_threshold(monkeypatch):
+    """P5.8: main() starts the app at exactly registry.get_threshold of its model."""
+    monkeypatch.setattr(registry, "get_threshold", lambda path: 0.123)
+    monkeypatch.setattr(
+        app_module,
+        "load_optional_model",
+        lambda model: (DummyModel(score=0.2), "gwd_model_x.keras", None),
+    )
+    monkeypatch.setattr(app_module, "read_metadata", lambda path: None)
+    monkeypatch.setattr(app_module, "require_interactive_backend", lambda name: None)
+    monkeypatch.setattr(app_module, "GwoscSource", lambda: None)
+    monkeypatch.setattr(app_module, "gwpy_available", lambda: False)
+    monkeypatch.setattr(
+        app_module,
+        "SimSource",
+        lambda: sources.SimSource(noise_provider=None, rng=np.random.RandomState(1)),
+    )
+    started = []
+    real_app = app_module.GlitchHunterApp
+
+    def record(**kwargs):
+        app = real_app(**kwargs)
+        started.append(app)
+        return app
+
+    monkeypatch.setattr(app_module, "GlitchHunterApp", record)
+    monkeypatch.setattr(app_module.plt, "show", lambda: None)
+    assert app_module.main("latest") == 0
+    (app,) = started
+    assert app.threshold == 0.123
+    assert app.slider_thresh.val == 0.123
+    app.ask_ai(None)
+    texts = [t.get_text() for t in app.ax_confidence.texts]
+    assert "12.3%" in texts
+    assert app_module.decision(0.123, app.threshold)[1] == "red"

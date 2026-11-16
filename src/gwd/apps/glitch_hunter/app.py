@@ -14,6 +14,10 @@ was shown is dropped (APP-5, APP-6).
 The model is optional: without one, 'Ask AI' is off. TensorFlow loads only when a model
 is loaded (gwd.registry.load_model). Without PyCBC the simulation is off and the app
 shows real data only; without gwpy it shows simulated data only.
+
+The alarm threshold starts at the model's own threshold (gwd.registry.get_threshold,
+calibrated by gwd eval thresholds at FPR 1 %, P5.8); a model without one starts at
+THRESHOLD_FALLBACK, with a warning, and so does the app without a model.
 """
 
 import queue
@@ -24,6 +28,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.widgets import Button, RadioButtons, Slider
 
+from gwd import registry
 from gwd.apps._backend import require_interactive_backend
 from gwd.apps.glitch_hunter.audio import Player
 from gwd.apps.glitch_hunter.sources import (
@@ -34,19 +39,23 @@ from gwd.apps.glitch_hunter.sources import (
     SimSource,
     gwpy_available,
 )
-from gwd.config import DURATION, N_SAMPLES, SAMPLE_RATE, WAVEFORM_BACKEND
+from gwd.config import (
+    DURATION,
+    N_SAMPLES,
+    SAMPLE_RATE,
+    THRESHOLD_FALLBACK,
+    WAVEFORM_BACKEND,
+)
 from gwd.core.timebase import time_axis
 from gwd.core.waveforms import WaveformBackendError, check_backend
 from gwd.data.preprocessing import normalize
 from gwd.data.provenance import UNKNOWN_V1
 from gwd.registry import load_model, model_name, read_metadata, resolve
 
-# The alarm threshold at the start. From P5.8 on it comes from the model's entry in the
-# registry (decision D10); until then it is this constant.
-DEFAULT_THRESHOLD = 0.46
-# The slider's range; it contains DEFAULT_THRESHOLD (APP-4).
-THRESHOLD_MIN = 0.01
-THRESHOLD_MAX = 0.99
+# The slider's range. The start threshold comes from the registry (start_threshold);
+# the whole score range fits, so the slider shows the threshold that decides (APP-4).
+THRESHOLD_MIN = 0.0
+THRESHOLD_MAX = 1.0
 # A score at most this far below the threshold reads 'UNSURE'.
 UNSURE_BAND = 0.10
 # How often the GUI thread looks for a finished download, in milliseconds.
@@ -115,6 +124,17 @@ def is_correct(score, threshold, has_signal):
     return (score >= threshold) == has_signal
 
 
+def start_threshold(path):
+    """The alarm threshold at the start: the model's own from the registry (P5.8).
+
+    Without a model (path None) it is THRESHOLD_FALLBACK; a model without a calibrated
+    threshold also gets it, and gwd.registry.get_threshold warns.
+    """
+    if path is None:
+        return float(THRESHOLD_FALLBACK)
+    return registry.get_threshold(path)
+
+
 def load_optional_model(model="latest"):
     """Load a model for 'Ask AI'. Returns (model, path, note); model is None if off.
 
@@ -137,7 +157,15 @@ def load_optional_model(model="latest"):
 class GlitchHunterApp:
     """The GUI. sim and real are the sources; None turns that kind of sample off."""
 
-    def __init__(self, model=None, metadata=None, sim=None, real=None, player=None):
+    def __init__(
+        self,
+        model=None,
+        metadata=None,
+        sim=None,
+        real=None,
+        player=None,
+        threshold=THRESHOLD_FALLBACK,
+    ):
         self.model = model
         self.noise_warning = (
             training_noise_warning(metadata) if model is not None else None
@@ -147,7 +175,7 @@ class GlitchHunterApp:
         self.player = player or Player()
 
         self.time = time_axis(SAMPLE_RATE, DURATION)
-        self.threshold = DEFAULT_THRESHOLD
+        self.threshold = threshold
         self.sample = None
         self.prediction = None
         self.truth_artist = None
@@ -191,7 +219,9 @@ class GlitchHunterApp:
             "Alarm threshold",
             THRESHOLD_MIN,
             THRESHOLD_MAX,
-            valinit=self.threshold,
+            # A threshold above every score (it detects nothing) shows as the maximum.
+            valinit=float(np.clip(self.threshold, THRESHOLD_MIN, THRESHOLD_MAX)),
+            valfmt="%.3f",
             color="orange",
         )
         self.slider_thresh.on_changed(self.update_threshold)
@@ -413,7 +443,7 @@ class GlitchHunterApp:
 
         self.ax_confidence.axvline(threshold, color="black", linestyle="--", alpha=0.5)
         self.ax_confidence.text(
-            threshold, -0.6, f"{threshold:.0%}", ha="center", fontsize=8
+            threshold, -0.6, f"{threshold:.1%}", ha="center", fontsize=8
         )
         self.ax_confidence.barh([0], [score], color=bar_color, height=0.5, alpha=0.8)
         self.ax_confidence.barh([0], [1.0], color="gray", height=0.5, alpha=0.1)
@@ -511,15 +541,20 @@ def main(model="latest"):
     metadata = None
     if loaded is None:
         print(f"Note: {note}", file=sys.stderr)
+        threshold = start_threshold(None)
     else:
         print(f"Model: {model_name(path)}")
         metadata = read_metadata(path)
         warning = training_noise_warning(metadata)
         if warning:
             print(warning)
+        threshold = start_threshold(path)
+        print(f"Alarm threshold: {threshold:.4g}")
     print(">>> Ready to hunt!")
 
-    app = GlitchHunterApp(model=loaded, metadata=metadata, sim=sim, real=real)
+    app = GlitchHunterApp(
+        model=loaded, metadata=metadata, sim=sim, real=real, threshold=threshold
+    )
     plt.show()
     app.close()
     return 0
