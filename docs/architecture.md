@@ -320,7 +320,7 @@ Each step PR ticks its own step, so a tick takes effect when that PR is merged.
 | [x] | P5.7 | Fixed, hashed test sets; metrics per SNR bin, mass bin, and noise type | #44 |
 | [x] | P5.8 | Per-model threshold at fixed FPR; leaderboard v2 with raw numbers | #45 |
 | [ ] | P6.1 | Delete or correct the Newton backend (D1) | |
-| [ ] | P6.2 | Scenario V2: inject first, then condition together | |
+| [x] | P6.2 | Scenario V2: inject first, then condition together | #46 |
 | [ ] | P6.3 | Real noise for V2 (D3) | |
 | [ ] | P6.4 | Rewrite the Matched Filter baseline (D5) | |
 | [ ] | P6.5 | Retrain and re-evaluate, switch to V2, archive old artifacts | |
