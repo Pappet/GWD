@@ -1,7 +1,6 @@
 import os
 
 import numpy as np
-from gwpy.timeseries import TimeSeries
 
 from gwd.config import (
     DATA_DIR_NOISE,
@@ -10,6 +9,7 @@ from gwd.config import (
     SAMPLE_RATE,
     ensure_dirs,
 )
+from gwd.data.gwosc import fetch_strain
 from gwd.data.preprocessing import condition_strain
 
 # Output Ordner für das echte Rauschen
@@ -28,8 +28,8 @@ def fetch_and_slice():
     print(f"🌊 Loading {NOISE_FETCH_SECONDS} seconds of real LIGO noise (H1)...")
 
     try:
-        # 1. Download am Stück
-        strain = TimeSeries.fetch_open_data(
+        # 1. One download, checked for length and NaN
+        strain = fetch_strain(
             "H1", START_GPS, START_GPS + NOISE_FETCH_SECONDS, verbose=True
         )
 

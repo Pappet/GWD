@@ -49,7 +49,7 @@ RULES = {
         **dict.fromkeys(["gwd.apps", "gwd.core", "gwd.data", "gwd.config"], TOP),
         "gwd.registry": TOP,
         **dict.fromkeys(["matplotlib", "numpy", "scipy.io.wavfile"], TOP),
-        **dict.fromkeys(["tensorflow", "gwpy"], LAZY),
+        "tensorflow": LAZY,
     },
     "cli": {ANY: LAZY},
     "main": {},
@@ -69,14 +69,8 @@ ALLOWLIST = {
     ("src/gwd/core/waveforms.py", "pycbc"),
     # CORE-17: print in library code (P4.1).
     ("src/gwd/core/waveforms.py", "print"),
-    # DATA-25: the noise download imports gwpy at module level (P3.4, gwd.data.gwosc).
-    ("src/gwd/data/fetch_noise.py", "gwpy"),
     # DATA-13: module-level side effects in training, matplotlib on top (P3.7).
     ("src/gwd/training/train.py", "matplotlib"),
-    # EVAL-24: gwpy is imported directly instead of through gwd.data.gwosc (P3.4).
-    ("src/gwd/evaluation/evaluate.py", "gwpy"),
-    # APP-7: gwpy at module level in the Glitch Hunter (P3.4).
-    ("src/gwd/apps/glitch_hunter/app.py", "gwpy"),
     # HYG-16: the dependency check imports pycbc and gwd.core on top (P3.6, gwd env).
     ("src/gwd/env.py", "pycbc"),
     ("src/gwd/env.py", "gwd.core"),
@@ -173,6 +167,19 @@ def test_allowlist_only_shrinks():
     assert not stale, "Fixed; remove from ALLOWLIST:\n" + "\n".join(
         f"  {path}: {name}" for path, name in sorted(stale)
     )
+
+
+def test_gwpy_is_imported_only_in_gwosc_and_preprocessing():
+    # Also closes the cli rule, which allows any lazy import (P3.4). env.py checks
+    # packages with __import__, which this test does not see.
+    allowed_files = {"src/gwd/data/gwosc.py", "src/gwd/data/preprocessing.py"}
+    found = {
+        path.relative_to(ROOT).as_posix()
+        for path in python_files()
+        for module, _ in imports(path)
+        if module.split(".")[0] == "gwpy"
+    }
+    assert found <= allowed_files, f"gwpy imported in {sorted(found - allowed_files)}"
 
 
 def test_rules_cover_every_component():

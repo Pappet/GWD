@@ -18,7 +18,6 @@ from gwd.config import (
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from gwpy.timeseries import TimeSeries
 from sklearn.metrics import (
     ConfusionMatrixDisplay,
     auc,
@@ -30,6 +29,7 @@ from sklearn.metrics import (
 
 from gwd.core.noise import generate_gaussian_noise
 from gwd.core.waveforms import generate_astrophysical_chirp
+from gwd.data.gwosc import event, fetch_strain
 from gwd.data.preprocessing import condition_strain, normalize
 from gwd.evaluation.leaderboard import update_leaderboard_roc
 from gwd.registry import MODEL_HELP, load_model, resolve
@@ -43,14 +43,10 @@ TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 # Parameter für die Tests
 THRESHOLD = 0.15  # Nur für Vergleich, ROC ist threshold-unabhängig
 
-# Echte Events für den "Feld-Test"
-REAL_EVENTS = {
-    "GW150914": 1126259462.4,
-    "GW170817": 1187008882.4,
-    "GW190521": 1242442967.4,
-    "GW170104": 1167559936.6,
-    "GW151226": 1135136350.6,
-}
+# Field test events from gwd.data.gwosc.EVENTS, in the order they are reported
+FIELD_TEST_EVENTS = tuple(
+    event(name) for name in ("GW150914", "GW170817", "GW190521", "GW170104", "GW151226")
+)
 
 # Ein Stück echtes Rauschen (Hanford, O3 Run)
 REAL_NOISE_START = 1253326755
@@ -308,17 +304,17 @@ def evaluate_real_world(model):
     event_scores = {}
 
     print("   Suche bekannte Events...", end=" ")
-    for name, gps in REAL_EVENTS.items():
+    for ev in FIELD_TEST_EVENTS:
+        name = ev.name
         try:
-            t_start = int(gps - 2.0)
-            t_end = int(gps + 2.0)
+            t_start = int(ev.gps - 2.0)
+            t_end = int(ev.gps + 2.0)
 
-            strain = TimeSeries.fetch_open_data("H1", t_start, t_end, verbose=False)
+            # fetch_strain raises on a wrong length or NaN; the except reports it
+            strain = fetch_strain("H1", t_start, t_end)
             data = condition_strain(strain, SAMPLE_RATE)
 
             expected = N_SAMPLES
-            if len(data) != expected:
-                data = np.resize(data, expected)
             # eps=0: the conditioned strain has a std near 1e-21, eps would dominate
             data = normalize(data, eps=0.0)
 
@@ -331,7 +327,7 @@ def evaluate_real_world(model):
             print(f"\n⚠️ Fehler bei {name}: {e}")
             event_scores[name] = None
 
-    print(f"-> {found_events}/{len(REAL_EVENTS)} gefunden.")
+    print(f"-> {found_events}/{len(FIELD_TEST_EVENTS)} gefunden.")
 
     # Ausgabe der Scores
     print("\n   Event Detection Scores:")
@@ -347,8 +343,8 @@ def evaluate_real_world(model):
     far_text = "N/A"
 
     try:
-        long_strain = TimeSeries.fetch_open_data(
-            "H1", REAL_NOISE_START, REAL_NOISE_START + REAL_NOISE_DUR, verbose=False
+        long_strain = fetch_strain(
+            "H1", REAL_NOISE_START, REAL_NOISE_START + REAL_NOISE_DUR
         )
         clean_data = condition_strain(long_strain, SAMPLE_RATE)
 
@@ -379,7 +375,7 @@ def evaluate_real_world(model):
 
     return {
         "found": found_events,
-        "total": len(REAL_EVENTS),
+        "total": len(FIELD_TEST_EVENTS),
         "far_text": far_text,
         "event_scores": event_scores,
     }
