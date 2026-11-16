@@ -1,9 +1,6 @@
 import os
 import subprocess
 import sys
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parent.parent
 
 HEADER = "Model,Date,ROC_AUC,Physik_Gap\n"
 ANALYSIS_CSV = HEADER + "from_analysis.keras,2025-12-05 23:36,0.9092,+0.67\n"
@@ -45,9 +42,7 @@ def target(home):
 
 
 def test_import_config_does_not_create_results(tmp_path):
-    result = run_python(
-        tmp_path, "-c", f"import sys; sys.path.insert(0, {str(ROOT)!r}); import config"
-    )
+    result = run_python(tmp_path, "-c", "import gwd.config")
     assert result.returncode == 0, result.stderr
     assert not (tmp_path / "results").exists()
 

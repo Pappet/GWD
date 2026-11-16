@@ -1,4 +1,4 @@
-"""Importing config, or a script that imports it, creates nothing (P2.3, DATA-7)."""
+"""Importing gwd.config, or a module that imports it, creates nothing (P2.3, DATA-7)."""
 
 import os
 import subprocess
@@ -6,11 +6,8 @@ import sys
 
 import pytest
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
 # Modules without TensorFlow, so the fast CI job can import them.
 LIGHT_MODULES = [
-    "config",
     "gwd.config",
     "gwd.data.generate",
     "gwd.data.validate",
@@ -31,13 +28,7 @@ TF_MODULES = [
 
 
 def import_in_empty_home(home, modules):
-    code = "\n".join(
-        [
-            "import sys",
-            f"sys.path.insert(0, {ROOT!r})",
-            *(f"import {module}" for module in modules),
-        ]
-    )
+    code = "\n".join(f"import {module}" for module in modules)
     env = {
         **os.environ,
         "GWD_HOME": str(home),

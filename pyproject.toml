@@ -36,8 +36,6 @@ include = ["gwd", "gwd.*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
-# Transition until P2.6: lets tests import the scripts in src/ and the root config.py.
-pythonpath = ["src", "."]
 markers = [
     "slow: runs the full pipeline, takes minutes on CPU",
     "apps: starts the apps without an interactive backend",
