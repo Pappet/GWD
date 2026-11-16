@@ -60,11 +60,21 @@ def report_path(model_path):
     return os.path.join(THRESHOLD_REPORTS_DIR, model_name(model_path) + ".json")
 
 
-def visualize_thresholds(y_true, y_scores, optimal_thresholds, roc_data, calibrated):
+def plot_path(model_path):
+    """The plot of one run: plot_optimize_threshold_<model name>_<timestamp>.png."""
+    return os.path.join(
+        EVALUATION_MODELS_PLOTS_DIR,
+        f"plot_optimize_threshold_{model_name(model_path)}_{TIMESTAMP}.png",
+    )
+
+
+def visualize_thresholds(
+    y_true, y_scores, optimal_thresholds, roc_data, calibrated, model_path
+):
     """Plot the calibrated threshold and the reference strategies on the ROC curve.
 
     calibrated is the result of calibrate(): its point is the TPR and FPR of the
-    calib_bg threshold on the part test.
+    calib_bg threshold on the part test. model_path names the plot file (plot_path).
     """
 
     fpr, tpr, thresholds = roc_data
@@ -184,17 +194,15 @@ def visualize_thresholds(y_true, y_scores, optimal_thresholds, roc_data, calibra
         bbox=dict(boxstyle="round", facecolor="lightblue", alpha=0.3),
     )
 
-    plt.suptitle("Threshold Optimization Analysis", fontsize=16, fontweight="bold")
-    ensure_dirs(EVALUATION_MODELS_PLOTS_DIR)
-    plt.savefig(
-        os.path.join(
-            EVALUATION_MODELS_PLOTS_DIR, f"plot_optimize_threshold_{TIMESTAMP}.png"
-        ),
-        dpi=150,
+    plt.suptitle(
+        f"Threshold Optimization Analysis: {model_name(model_path)}",
+        fontsize=16,
+        fontweight="bold",
     )
-    print(
-        f"📊 Plot: {os.path.join(EVALUATION_MODELS_PLOTS_DIR, f'plot_optimize_threshold_{TIMESTAMP}.png')}"
-    )
+    path = plot_path(model_path)
+    ensure_dirs(os.path.dirname(path))
+    plt.savefig(path, dpi=150)
+    print(f"📊 Plot: {path}")
     plt.close()
 
 
@@ -352,7 +360,9 @@ def run(
     # 5. Reference strategies on test, and the plot
     optimal_thresholds, roc_data = find_optimal_thresholds(y_true, y_scores)
     print("\n📈 Creating the plot...")
-    visualize_thresholds(y_true, y_scores, optimal_thresholds, roc_data, calibrated)
+    visualize_thresholds(
+        y_true, y_scores, optimal_thresholds, roc_data, calibrated, model_path
+    )
     recommend_threshold(optimal_thresholds)
 
     # 6. Save (default; --no-save skips it)

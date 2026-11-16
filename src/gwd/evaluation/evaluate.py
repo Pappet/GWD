@@ -67,7 +67,7 @@ from gwd.evaluation.metrics import (
     snr_at_rate,
 )
 from gwd.evaluation.real_data import NO_FIELD_TEST, run_field_test
-from gwd.registry import load_model, resolve
+from gwd.registry import load_model, model_name, resolve
 
 # ==========================================
 # CONFIGURATION
@@ -213,12 +213,21 @@ def optimal_per_peak(snr_levels, optimal_snrs):
 # ==========================================
 # TEST 1: SIMULATION WITH ROC ANALYSIS
 # ==========================================
-def evaluate_simulation_with_roc(model, built, threshold):
+def plot_path(model_path):
+    """The plot of one run: plot_evaluate_model_with_roc_<model name>_<timestamp>.png."""
+    return os.path.join(
+        EVALUATION_MODELS_PLOTS_DIR,
+        f"plot_evaluate_model_with_roc_{model_name(model_path)}_{TIMESTAMP}.png",
+    )
+
+
+def evaluate_simulation_with_roc(model, built, threshold, model_path):
     """ROC, precision-recall, efficiency curve, confusion matrix, and the binned
     metrics on the part 'test' of a test set (gwd.evaluation.testsets); one plot.
 
     threshold is the model's threshold (gwd.registry.get_threshold); the operating
-    point, the efficiency curve, and SNR50/90 use it."""
+    point, the efficiency curve, and SNR50/90 use it. model_path names the plot file
+    (plot_path)."""
     print(f"\n🧪 [LAB] Starting the ROC analysis on the test set {built.label()}...")
 
     # --- A. ROC curve (independent of the threshold) ---
@@ -422,20 +431,15 @@ def evaluate_simulation_with_roc(model, built, threshold):
     )
 
     plt.suptitle(
-        f"Comprehensive Model Evaluation: {built.label()}, SHA-256 {built.short_hash()}",
+        f"Comprehensive Model Evaluation: {model_name(model_path)} on "
+        f"{built.label()}, SHA-256 {built.short_hash()}",
         fontsize=14,
         fontweight="bold",
     )
-    ensure_dirs(EVALUATION_MODELS_PLOTS_DIR)
-    plt.savefig(
-        os.path.join(
-            EVALUATION_MODELS_PLOTS_DIR, f"plot_evaluate_model_with_roc_{TIMESTAMP}.png"
-        ),
-        dpi=150,
-    )
-    print(
-        f"📊 Plot: {os.path.join(EVALUATION_MODELS_PLOTS_DIR, f'plot_evaluate_model_with_roc_{TIMESTAMP}.png')}"
-    )
+    path = plot_path(model_path)
+    ensure_dirs(os.path.dirname(path))
+    plt.savefig(path, dpi=150)
+    print(f"📊 Plot: {path}")
     plt.close()
 
     return {
@@ -571,7 +575,7 @@ def run(
     loaded = load_model(model_path)
 
     # 1. Simulation with ROC
-    sim_res = evaluate_simulation_with_roc(loaded, built, threshold)
+    sim_res = evaluate_simulation_with_roc(loaded, built, threshold, model_path)
 
     # 2. Real Data
     if real:

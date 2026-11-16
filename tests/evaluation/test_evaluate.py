@@ -65,7 +65,9 @@ def stubbed(monkeypatch, tmp_path, small_sets):
     monkeypatch.setattr(evaluate, "resolve", lambda model: str(tmp_path / "m.keras"))
     monkeypatch.setattr(evaluate, "load_model", lambda path: object())
     monkeypatch.setattr(
-        evaluate, "evaluate_simulation_with_roc", lambda m, built, threshold: SIM_RESULT
+        evaluate,
+        "evaluate_simulation_with_roc",
+        lambda m, built, threshold, path: SIM_RESULT,
     )
     monkeypatch.setattr(evaluate, "add_row", lambda *args: None)
     monkeypatch.setattr(registry, "get_threshold", lambda path: THRESHOLD)
@@ -288,6 +290,24 @@ def test_evaluate_uses_the_registry_threshold(small_sets, monkeypatch, tmp_path)
     }
     assert {value for _, value in used} == {0.123}
     assert rows[0][4]["threshold"] == 0.123
+
+
+def test_the_plot_names_the_model(small_sets, monkeypatch, tmp_path, capsys):
+    """A loop over models leaves one plot per model, each named by its model."""
+    plots = tmp_path / "plots"
+    model = tmp_path / "models_registry" / "gwd_model_20260101-000000.keras"
+    monkeypatch.setattr(registry, "get_threshold", lambda path: 0.5)
+    monkeypatch.setattr(evaluate, "resolve", lambda name: str(model))
+    monkeypatch.setattr(evaluate, "load_model", lambda path: PeakModel())
+    monkeypatch.setattr(evaluate.testsets, "build", lambda name, n, s: small_sets[name])
+    monkeypatch.setattr(evaluate, "EVALUATION_MODELS_PLOTS_DIR", str(plots))
+    monkeypatch.setattr(evaluate, "add_row", lambda *a: None)
+    assert evaluate.run() == 0
+    (plot,) = plots.iterdir()
+    assert plot.name == (
+        f"plot_evaluate_model_with_roc_gwd_model_20260101-000000_{evaluate.TIMESTAMP}.png"
+    )
+    assert f"Plot: {plot}" in capsys.readouterr().out
 
 
 def test_a_model_without_a_threshold_is_evaluated_at_the_fallback(

@@ -91,7 +91,7 @@ Because of the padding, the `>=` rule, and the new texts, field test results sin
 
 ## Plots
 
-`gwd eval run` writes `plot_evaluate_model_with_roc_<timestamp>.png` with six panels; its title names the test set and the first 12 characters of its SHA-256:
+The plots go to `plots/evaluation_models/`, and every command prints the path of each one. `gwd eval run` writes `plot_evaluate_model_with_roc_<model name>_<timestamp>.png` with six panels, so a loop over the models leaves one plot per model; its title names the model, the test set, and the first 12 characters of the set's SHA-256:
 
 1. ROC curve with the AUC, the chance diagonal, and the operating point at the model's threshold.
 2. Precision-recall curve with the AP.
@@ -100,7 +100,7 @@ Because of the padding, the `>=` rule, and the new texts, field test results sin
 5. Score distributions of the signal and noise samples, with the threshold.
 6. A table of ROC AUC, AP, the threshold, accuracy, TPR, FPR, and SNR50 and SNR90 as peak and as optimal SNR.
 
-`gwd eval thresholds` writes `plot_optimize_threshold_<timestamp>.png`: the ROC curve on `test` with a star at the calibrated threshold and the point of every reference strategy, TPR, FPR, and Youden's J against the threshold, and a table of the calibrated threshold and the strategies.
+`gwd eval thresholds` writes `plot_optimize_threshold_<model name>_<timestamp>.png`, titled with the model: the ROC curve on `test` with a star at the calibrated threshold and the point of every reference strategy, TPR, FPR, and Youden's J against the threshold, and a table of the calibrated threshold and the strategies.
 
 `gwd eval compare` writes `plot_compare_roc_<timestamp>.png` with the ROC curves of all models, titled with the test set, each with a star at its operating point at its own threshold, and a bar chart of their AUCs, and `plot_compare_roc_<timestamp>_zoom.png` with the region FPR ≤ 0.1. Each model has the same color in both plots. The printed ranking, by ROC AUC, lists the TPR of each model at its threshold with the FPR it reached.
 

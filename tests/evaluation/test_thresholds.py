@@ -175,6 +175,14 @@ def test_each_model_gets_its_own_report(stubbed, tmp_path, capsys):
     assert not (tmp_path / "results" / "optimal_thresholds.json").exists()
 
 
+def test_the_plot_names_the_model(stubbed, tmp_path, capsys):
+    assert thresholds.run(save=False) == 0
+    (plot,) = (tmp_path / "plots").iterdir()
+    assert plot.name.startswith("plot_optimize_threshold_gwd_model_20260101-000000_")
+    assert plot.name.endswith(f"_{thresholds.TIMESTAMP}.png")
+    assert f"Plot: {plot}" in capsys.readouterr().out
+
+
 def test_no_save_writes_nothing(stubbed, tmp_path):
     assert thresholds.run(save=False) == 0
     assert registry.read_metadata(stubbed["path"]) is None

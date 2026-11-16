@@ -305,6 +305,15 @@ def test_the_comparison_plot_exists(e2e):
     assert sorted(plots.glob("plot_compare_roc_*.png")) == sorted([comparison, zoom])
 
 
+def test_the_plots_of_thresholds_and_run_name_the_model(e2e):
+    home = e2e[0]
+    plots = home / "plots" / "evaluation_models"
+    (model,) = (home / "models_registry").glob("*.keras")
+    for prefix in ("plot_optimize_threshold", "plot_evaluate_model_with_roc"):
+        assert len(list(plots.glob(f"{prefix}_{model.stem}_*.png"))) == 1, prefix
+        assert len(list(plots.glob(f"{prefix}_*.png"))) == 1, prefix
+
+
 def test_the_glitch_hunter_rates_with_the_model_and_its_saved_threshold(e2e):
     home, hunter = e2e[0], e2e[2]
     metadata = metadata_of(home)
