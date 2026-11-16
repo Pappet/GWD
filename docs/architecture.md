@@ -276,7 +276,7 @@ Each step PR ticks its own step, so a tick takes effect when that PR is merged.
 | [x] | P4.1 | Make silent switches visible: logging, manifest, metadata, exit codes | #32 |
 | [x] | P4.2 | Simulation evaluation fixes, `metrics.py` as pure functions | #33 |
 | [x] | P4.3 | Real data field test: padding, honest counting, only with `--real` | #36 |
-| [ ] | P4.4 | Untangle Glitch Hunter: GUI, sources, audio; fix threading; modes | |
+| [x] | P4.4 | Untangle Glitch Hunter: GUI, sources, audio; fix threading; modes | #39 |
 | [x] | P4.5 | Testable demo apps | #34 |
 | [x] | P4.6 | Validator and loading: full integrity and range checks | #37 |
 | [x] | P5.1 | Physics tests with real asserts | #26 |
