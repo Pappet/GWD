@@ -4,24 +4,20 @@ ROC Comparison Tool - Vergleicht mehrere Modelle in einer ROC-Kurve
 Nützlich um zu sehen, welches Modell threshold-unabhängig besser ist.
 """
 
-import os
-import sys
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import datetime
 import glob
+import os
 
 import matplotlib
 import numpy as np
 
-from config import EVALUATION_MODELS_PLOTS_DIR, MODELS_DIR, ensure_dirs
+from gwd.config import EVALUATION_MODELS_PLOTS_DIR, MODELS_DIR, ensure_dirs
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from sklearn.metrics import auc, roc_curve
 
-sys.path.append(os.path.dirname(__file__))
 from gwd.core.noise import generate_gaussian_noise
 from gwd.core.waveforms import generate_astrophysical_chirp
 

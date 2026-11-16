@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
-import os
-import sys
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import datetime
+import os
 
 import matplotlib
 import numpy as np
 
-from config import (
+from gwd.config import (
     EVALUATION_MODELS_PLOTS_DIR,
     LEADERBOARD_FILE,
     MODELS_DIR,
@@ -28,12 +25,11 @@ from sklearn.metrics import (
     roc_curve,
 )
 
-# Imports aus dem Core
-sys.path.append(os.path.dirname(__file__))
 from gwd.core.noise import generate_gaussian_noise
 from gwd.core.waveforms import generate_astrophysical_chirp
-from utils.data_processing import preprocess_real_data
-from utils.evaluation import get_latest_model, update_leaderboard_roc
+from gwd.data.preprocessing import preprocess_real_data
+from gwd.evaluation.leaderboard import update_leaderboard_roc
+from gwd.registry import get_latest_model
 
 # ==========================================
 # KONFIGURATION

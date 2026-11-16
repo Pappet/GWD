@@ -9,16 +9,13 @@ Verschiedene Optimierungs-Strategien:
 4. Fixed FPR: Maximiert TPR bei gegebenem FPR-Limit
 """
 
-import os
-import sys
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import datetime
+import os
 
 import matplotlib
 import numpy as np
 
-from config import (
+from gwd.config import (
     EVALUATION_MODELS_PLOTS_DIR,
     MODELS_DIR,
     OPTIMAL_THRESHOLDS_FILE,
@@ -30,7 +27,6 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 from sklearn.metrics import f1_score, precision_recall_curve, roc_curve
 
-sys.path.append(os.path.dirname(__file__))
 from gwd.core.noise import generate_gaussian_noise
 from gwd.core.waveforms import generate_astrophysical_chirp
 

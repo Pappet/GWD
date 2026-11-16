@@ -1,4 +1,4 @@
-"""The menu in main.py lists only runnable entries and works from any folder (P2.4)."""
+"""The menu in main.py lists only runnable entries and works from any folder (P2.4, P2.5)."""
 
 import importlib.util
 import os
@@ -27,34 +27,37 @@ def test_menu_choices_are_unique_and_do_not_use_exit():
     assert "0" not in choices
 
 
+def test_menu_lists_every_entry_point_as_a_module():
+    assert len(MENU) == 11
+    assert all(kind == "module" for _, _, kind, _ in MENU)
+
+
 @pytest.mark.parametrize("entry", MENU, ids=lambda entry: entry[3])
 def test_menu_entry_is_runnable(entry):
     _, _, kind, target = entry
-    assert kind in ("module", "path")
-    if kind == "module":
-        # Only gwd modules: the editable install also makes the scripts in src/ importable.
-        assert target.startswith("gwd.")
-        assert importlib.util.find_spec(target) is not None
-    else:
-        assert os.path.isfile(os.path.join(ROOT, target))
+    assert kind == "module"
+    assert target.startswith("gwd.")
+    assert importlib.util.find_spec(target) is not None
 
 
-def test_path_commands_do_not_depend_on_the_working_directory(tmp_path, monkeypatch):
+def test_commands_do_not_depend_on_the_working_directory(tmp_path, monkeypatch):
     menu = load_main()
     monkeypatch.chdir(tmp_path)
     for _, _, kind, target in menu.MENU:
-        args = menu.command(kind, target)
-        assert args[0] == sys.executable
-        if kind == "path":
-            assert os.path.isabs(args[1]) and os.path.isfile(args[1])
+        assert menu.command(kind, target) == [sys.executable, "-m", target]
+
+
+def test_unknown_entry_kind_is_rejected():
+    with pytest.raises(ValueError):
+        load_main().command("path", "src/script.py")
 
 
 def test_run_script_returns_the_real_exit_code(tmp_path, monkeypatch, capsys):
     menu = load_main()
-    script = tmp_path / "fails.py"
-    script.write_text("raise SystemExit(3)\n")
+    (tmp_path / "gwd_menu_fails.py").write_text("raise SystemExit(3)\n")
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path))
     monkeypatch.setattr("builtins.input", lambda prompt="": "")
-    assert menu.run_script("path", str(script)) == 3
+    assert menu.run_script("module", "gwd_menu_fails") == 3
     assert "exit code 3" in capsys.readouterr().out
 
 

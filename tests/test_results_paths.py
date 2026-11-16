@@ -4,7 +4,6 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SHOW_LEADERBOARD = ROOT / "src" / "show_leaderboard.py"
 
 HEADER = "Model,Date,ROC_AUC,Physik_Gap\n"
 ANALYSIS_CSV = HEADER + "from_analysis.keras,2025-12-05 23:36,0.9092,+0.67\n"
@@ -23,7 +22,7 @@ def run_python(home, *args):
 
 
 def show(home):
-    result = run_python(home, str(SHOW_LEADERBOARD))
+    result = run_python(home, "-m", "gwd.evaluation.leaderboard")
     assert result.returncode == 0, result.stderr
     return result.stdout
 
@@ -100,10 +99,8 @@ def test_analysis_csv_wins_over_root_leaderboard(tmp_path):
 
 def write_row(home, destination):
     code = f"""
-import sys
-sys.path[:0] = [{str(ROOT)!r}, {str(ROOT / "src")!r}]
-import config
-from utils.evaluation import update_leaderboard_roc
+from gwd import config
+from gwd.evaluation.leaderboard import update_leaderboard_roc
 destination = {destination}
 sim = dict(roc_auc=0.9, avg_precision=0.8, acc=0.7, tpr=0.6, fpr=0.01, snr50=1.0, snr90=2.0)
 real = dict(found=0, total=0, far_text="n/a")

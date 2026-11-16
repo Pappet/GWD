@@ -4,17 +4,13 @@ import os
 import subprocess
 import sys
 import warnings
-from pathlib import Path
 
 import pytest
 
-from utils.evaluation import update_leaderboard_roc
+from gwd.evaluation.leaderboard import update_leaderboard_roc
 
 pytestmark = pytest.mark.filterwarnings("ignore:Physics baseline currently invalid")
 
-SHOW_LEADERBOARD = (
-    Path(__file__).resolve().parent.parent / "src" / "show_leaderboard.py"
-)
 COLUMNS = [
     "Model",
     "Date",
@@ -65,8 +61,8 @@ def write_row(tmp_path, **overrides):
 
 
 def run_show(tmp_path, code=None):
-    """Run show_leaderboard with GWD_HOME in tmp_path, so the real leaderboard is never read."""
-    args = ["-c", code] if code else [str(SHOW_LEADERBOARD)]
+    """Run the leaderboard's show() with GWD_HOME in tmp_path, so the real leaderboard is never read."""
+    args = ["-c", code] if code else ["-m", "gwd.evaluation.leaderboard"]
     return subprocess.run(
         [sys.executable, *args],
         env={**os.environ, "GWD_HOME": str(tmp_path)},
@@ -163,9 +159,7 @@ def test_show_reads_a_leaderboard_migrated_from_analysis(tmp_path):
 
 def test_show_has_main_guard(tmp_path):
     write_show_csv(tmp_path, ["0.80"])
-    code = (
-        f"import runpy; runpy.run_path({str(SHOW_LEADERBOARD)!r}, run_name='imported')"
-    )
+    code = "import runpy; runpy.run_module('gwd.evaluation.leaderboard', run_name='imported')"
     result = run_show(tmp_path, code)
     assert result.returncode == 0
     assert result.stdout == ""

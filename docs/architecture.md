@@ -42,9 +42,9 @@ The target is one installable package, `gwd`, in `src/gwd/` (D8).
 
 `core/interferometer.py` and `core/simulation.py` stay in core on purpose. Whether app-specific physics belongs there is a design question (`APP-14`), and the import rules below keep the boundary.
 
-Today, the scripts still in `src/` find each other through `sys.path` edits with generic top-level names such as `config` and `utils` (`hygiene:HYG-M5`). Since P2.1, tests and scripts both import `gwd.core` (`CORE-5`). Since P2.3, the root `config.py` is only a shim for `gwd.config`. Since P2.4, `gwd.data` and `gwd.training` use absolute imports without `sys.path` edits and run with `python -m`, for example `python -m gwd.data.generate`. The rest of the move below removes the remaining edits.
+Before the cleanup, the scripts in `src/` found each other through `sys.path` edits with generic top-level names such as `config` and `utils` (`hygiene:HYG-M5`). Since P2.1, tests and scripts both import `gwd.core` (`CORE-5`). Since P2.3, the root `config.py` is only a shim for `gwd.config`. Since P2.4, `gwd.data` and `gwd.training` use absolute imports without `sys.path` edits and run with `python -m`, for example `python -m gwd.data.generate`. Since P2.5, all code is in `src/gwd/`: evaluation, apps, and `gwd.data.preprocessing` import absolutely, `src/utils/` is gone, and `src/gwd` has no `sys.path` edits. `gwd.registry` so far only holds `get_latest_model`, unchanged; P3.3 makes it the one model search. The root `config.py` shim and the pytest `pythonpath` entries remain until P2.6.
 
-**Menu (since P2.4).** `main.py` reads a `MENU` table. Moved modules are `('module', 'gwd....')` entries and run as `python -m`; the other scripts are `('path', 'src/....py')` entries relative to `main.py`. Each entry runs with `subprocess.run([sys.executable, ...])` in the project folder, so the menu works from any working directory and reports the real exit code (`tests/test_menu.py`).
+**Menu (since P2.4).** `main.py` reads a `MENU` table. Since P2.5 all 11 entries are `('module', 'gwd....')` and run as `python -m`, including the leaderboard (`gwd.evaluation.leaderboard`) and the interferometer designer. Each entry runs with `subprocess.run([sys.executable, ...])` in the project folder, so the menu works from any working directory and reports the real exit code (`tests/test_menu.py`).
 
 **Project root (since P2.3).** `gwd.config` takes `GWD_HOME` if it is set and not blank, and then warns once (`Using GWD_HOME=...`). Otherwise it takes the nearest folder above `src/gwd/config.py` that contains a `pyproject.toml`, which is the repo root in the editable install. If there is none, the import fails and asks for `GWD_HOME`. Without `GWD_HOME`, all paths are the same as before P2.3 (`tests/test_config_paths.py`).
 
@@ -209,7 +209,7 @@ Each step PR ticks its own step, so a tick takes effect when that PR is merged.
 | [x] | P2.2 | ruff baseline, format commit, lean CI | #18 |
 | [x] | P2.3 | `config` → `gwd/config.py`, `ensure_dirs()` instead of folders on import | #20 |
 | [x] | P2.4 | Move data and training scripts, menu independent of working directory | #21 |
-| [ ] | P2.5 | Move evaluation, utils, and apps; start of the registry | |
+| [x] | P2.5 | Move evaluation, utils, and apps; start of the registry | #22 |
 | [ ] | P2.6 | Remove the shim and last `sys.path` edits; architecture test | |
 | [ ] | P3.1 | Central constants instead of hard-coded values | |
 | [ ] | P3.2 | One conditioning and one normalization function | |
