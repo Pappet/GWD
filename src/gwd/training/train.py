@@ -13,7 +13,6 @@ from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
-import pandas as pd
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
 from tensorflow.keras import callbacks, models
@@ -34,6 +33,12 @@ from gwd.config import (
 )
 from gwd.data.preprocessing import normalize
 from gwd.data.provenance import UNKNOWN_V1, read_manifest
+from gwd.data.validate import (
+    LABELS_READ_ERRORS,
+    InvalidDatasetError,
+    check_integrity,
+    read_labels,
+)
 from gwd.registry import (
     MODEL_EXTENSION,
     TIMESTAMP_FORMAT,
@@ -135,11 +140,16 @@ def load_data(data_folder=DATA_DIR_TRAIN):
     """
     Load the training dataset from the .npy files listed in labels.csv.
 
+    gwd.data.validate.check_integrity checks the dataset first and loads the samples
+    in the same pass. Any finding (a missing or unreadable file, a wrong length or
+    dtype, NaN or Inf, an orphan, a manifest that does not match) stops the run with
+    InvalidDatasetError, which names the files. Nothing is skipped, cut, or padded.
+
     Args:
         data_folder: Dataset folder with labels.csv.
 
     Returns:
-        X: array of shape (n_samples, n_timesteps, 1)
+        X: array of shape (n_samples, n_timesteps, 1), each sample z-scored
         y: array of labels (0 or 1)
     """
     print("📂 Loading dataset...")
@@ -147,32 +157,21 @@ def load_data(data_folder=DATA_DIR_TRAIN):
     if not os.path.exists(csv_path):
         raise FileNotFoundError(missing_dataset_message(data_folder))
 
-    df = pd.read_csv(csv_path)
-    signals = []
-    labels = []
+    try:
+        labels = read_labels(data_folder)
+    except LABELS_READ_ERRORS:
+        raise InvalidDatasetError(data_folder, check_integrity(data_folder)) from None
+    X = np.empty((len(labels), N_SAMPLES))
 
-    for index, row in df.iterrows():
-        try:
-            file_path = os.path.join(data_folder, row["filename"])
-            data = np.load(file_path)
+    def keep(position, data):
+        # Z-score with the default eps, as before
+        X[position] = normalize(data)
 
-            # Z-score with the default eps, as before
-            data = normalize(data)
+    findings = check_integrity(data_folder, on_sample=keep)
+    if findings:
+        raise InvalidDatasetError(data_folder, findings)
 
-            # Clip or pad to the expected length
-            TARGET_LEN = N_SAMPLES
-            if len(data) > TARGET_LEN:
-                data = data[:TARGET_LEN]
-            elif len(data) < TARGET_LEN:
-                data = np.pad(data, (0, TARGET_LEN - len(data)))
-
-            signals.append(data)
-            labels.append(row["has_signal"])
-        except Exception as e:
-            print(f"⚠️ Error loading {row['filename']}: {e}")
-
-    X = np.array(signals)
-    y = np.array(labels)
+    y = labels["has_signal"].to_numpy(dtype=int)
     X = X.reshape(X.shape[0], X.shape[1], 1)
 
     print(f"✅ Data loaded: {len(X)} samples. Shape: {X.shape}")

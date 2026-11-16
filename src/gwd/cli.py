@@ -93,6 +93,7 @@ def _train(args):
     # Read by TensorFlow when it is imported; values the caller has set win.
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")  # hide info and warnings
     os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")  # oneDNN off, as before
+    from gwd.data.validate import InvalidDatasetError
     from gwd.training.train import TrainConfig, train
 
     overrides = {
@@ -108,7 +109,12 @@ def _train(args):
     cfg = TrainConfig(
         **{name: value for name, value in overrides.items() if value is not None}
     )
-    train(cfg)
+    try:
+        train(cfg)
+    except InvalidDatasetError as error:
+        # The dataset is checked before training; its findings name the files.
+        print(f"❌ {error}", file=sys.stderr)
+        return 1
     return 0
 
 

@@ -91,6 +91,14 @@ def format_findings(findings, limit=20):
     return "\n".join(lines)
 
 
+# What pandas raises for a labels.csv it cannot read.
+LABELS_READ_ERRORS = (
+    pd.errors.ParserError,
+    pd.errors.EmptyDataError,
+    UnicodeDecodeError,
+)
+
+
 def read_labels(folder):
     """labels.csv of a dataset. Empty cells stay '' (no backend, no chunk)."""
     return pd.read_csv(os.path.join(folder, LABELS_FILE), keep_default_na=False)
@@ -217,7 +225,7 @@ def check_integrity(folder, on_sample=None):
         return [Finding("labels", f"{LABELS_FILE} is missing in '{folder}'")]
     try:
         labels = read_labels(folder)
-    except (pd.errors.ParserError, pd.errors.EmptyDataError, UnicodeDecodeError) as e:
+    except LABELS_READ_ERRORS as e:
         return [Finding("labels", f"{LABELS_FILE} cannot be read ({e})")]
 
     findings = check_labels(labels)
