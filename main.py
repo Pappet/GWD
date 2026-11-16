@@ -3,6 +3,9 @@
 Each entry is an argument list for gwd and runs as ``python -m gwd.cli ...`` in a
 subprocess. tests/test_menu.py parses every list with gwd.cli.build_parser(), so the
 menu and the CLI cannot drift apart. Exits with 0 on '0' or end of input.
+
+The CLI never asks questions; the menu may. Before 'Generate training data' it asks
+whether an existing dataset may be replaced, and passes --overwrite on a yes.
 """
 
 import os
@@ -31,6 +34,15 @@ MENU = [
     ("[INFO]   Show environment", ["env"]),
 ]
 
+# Entries that ask first: gwd arguments -> (question, options added on a yes).
+CONFIRM = {
+    ("data", "generate"): (
+        "Replace an existing dataset in data/training/? This removes its sample_*.npy "
+        "and labels.csv. [y/N] ",
+        ["--overwrite"],
+    ),
+}
+
 
 def command(args):
     """The command line for one menu entry, independent of the working directory."""
@@ -44,6 +56,25 @@ def ask(prompt):
     except EOFError:
         print()
         return None
+
+
+def confirm(args):
+    """The arguments to run for a menu entry, after its question if it has one.
+
+    A yes adds the entry's options; anything else runs it as it is, so generate still
+    works on an empty folder and stops with an error on a full one. Returns None at
+    the end of input.
+    """
+    question = CONFIRM.get(tuple(args))
+    if question is None:
+        return list(args)
+    text, extra = question
+    answer = ask(text)
+    if answer is None:
+        return None
+    if answer.strip().lower() in ("y", "yes"):
+        return [*args, *extra]
+    return list(args)
 
 
 def clear_screen():
@@ -90,7 +121,10 @@ def main_menu():
         choice = choice.strip()
 
         if choice.isdigit() and 1 <= int(choice) <= len(MENU):
-            returncode = run_entry(MENU[int(choice) - 1][1])
+            args = confirm(MENU[int(choice) - 1][1])
+            if args is None:
+                return 0
+            returncode = run_entry(args)
         else:
             print(f"Invalid choice: {choice!r}")
             returncode = 0
