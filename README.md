@@ -227,12 +227,12 @@ python -m pytest
 
 | Marker | Tests |
 |---|---|
-| `slow` | The full pipeline as `gwd` commands, and a few TensorFlow tests; minutes on a CPU |
+| `slow` | The end-to-end test `tests/test_e2e.py` (the full pipeline as `gwd` commands, then the Glitch Hunter with the trained model and its saved threshold), and a few TensorFlow tests; minutes on a CPU |
 | `apps` | The apps under the Agg backend, without a window |
 | `golden` | Stored golden values of the waveforms (Newton and PyCBC), the noise, the SNR scaling, a small dataset, and the interferometer |
 | `network` | A real download from GWOSC |
 
-The smoke and golden tests run in a temporary `GWD_HOME`. Tests that need TensorFlow or gwpy are skipped without them. `GWD_REQUIRE_PYCBC=1` makes a missing PyCBC fail the PyCBC tests in `tests/core/` and `tests/golden/` instead of skipping them. The tests that generate datasets or test sets need PyCBC, as the pipeline does. `tests/test_docs_commands.py` checks that every `gwd` command in this README and in `docs/` parses, and that every relative link works.
+The end-to-end, smoke, and golden tests run in a temporary `GWD_HOME`. Tests that need TensorFlow or gwpy are skipped without them. `GWD_REQUIRE_PYCBC=1` makes a missing PyCBC fail the PyCBC tests in `tests/core/` and `tests/golden/` instead of skipping them. The tests that generate datasets or test sets need PyCBC, as the pipeline does. `tests/test_docs_commands.py` checks that every `gwd` command in this README and in `docs/` parses, and that every relative link works.
 
 CI (`.github/workflows/ci.yml`) runs on every push and pull request: the lockfile check, `ruff format --check . && ruff check .`, and `pytest -m 'not slow and not network and not apps'` with PyCBC but without TensorFlow. The slow, app, and golden tests run in a second job that is started by hand.
 
