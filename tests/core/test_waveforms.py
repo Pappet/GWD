@@ -199,6 +199,40 @@ def test_the_default_merger_time_counts_from_the_start_of_the_axis(backend):
     assert abs(t_peak - (t[0] + 0.9 * (t[-1] - t[0]))) <= 1e-3
 
 
+def test_the_frequency_is_nan_outside_the_signal(backend):
+    """CORE-14: before P5.3 the frequency was 0 where the chirp had no signal."""
+    t = time_axis()
+    # 100 + 90 Msun from 25 Hz: about 3 s before the peak, so on 'pycbc' the waveform
+    # starts inside the window; 'newton' has no signal after the merger.
+    strain, freq = generate_chirp(
+        t, t_merger=T_MERGER, backend=backend, mass1=100, mass2=90, normalize=False
+    )
+    in_signal = np.isfinite(freq)
+    assert in_signal[np.argmax(np.abs(strain))]
+    assert 0 < np.count_nonzero(~in_signal) < len(t)
+    assert np.all(strain[~in_signal] == 0)
+    assert np.all(freq[in_signal] >= 0)
+
+
+def test_a_cut_waveform_is_faded_over_taper_seconds(needs_pycbc, monkeypatch):
+    """CORE-14: a Tukey taper of fixed duration where the window cuts the waveform.
+
+    30 + 30 Msun from 25 Hz starts about 11 s before the peak and ends 5 s after it,
+    so a 4 s window cuts both ends. Before P5.3 the start had a 50-sample ramp.
+    """
+    t = time_axis()
+    tapered, _ = generate_chirp(t, t_merger=T_MERGER, backend="pycbc", normalize=False)
+    monkeypatch.setattr(waveforms, "TAPER_SECONDS", 0.0)
+    raw, _ = generate_chirp(t, t_merger=T_MERGER, backend="pycbc", normalize=False)
+
+    n = round(0.05 * FS)
+    ramp = 0.5 * (1 - np.cos(np.pi * np.arange(n) / n))
+    np.testing.assert_allclose(tapered[:n], raw[:n] * ramp, rtol=1e-12, atol=0)
+    np.testing.assert_allclose(tapered[-n:], raw[-n:] * ramp[::-1], rtol=1e-12, atol=0)
+    np.testing.assert_array_equal(tapered[n:-n], raw[n:-n])
+    assert tapered[0] == 0
+
+
 def test_importing_the_module_prints_nothing_and_imports_no_pycbc():
     """CORE-17: no print on import, and PyCBC is imported only when a chirp needs it."""
     result = subprocess.run(

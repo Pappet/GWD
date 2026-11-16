@@ -21,6 +21,10 @@ from .constants import M_SUN, MPC, C, G
 
 BACKENDS = ("pycbc", "newton")
 
+# Where the time axis cuts a PyCBC waveform, the cut edge is faded with the cosine half
+# of a Tukey window of this duration, so the cut does not click (CORE-14).
+TAPER_SECONDS = 0.05
+
 PYCBC_INSTALL_HINT = (
     "Install PyCBC on Linux or in WSL with the physics extra:\n"
     "    pip install -e '.[physics]'\n"
@@ -121,8 +125,17 @@ def generate_chirp(
 
     Returns:
         tuple: (strain, frequency)
-            - strain: np.array with the gravitational wave amplitude
-            - frequency: np.array with the instantaneous frequency over time
+            - strain: np.array with the gravitational wave amplitude, 0 where the
+              chirp has no signal
+            - frequency: np.array with the instantaneous frequency in Hz, NaN where
+              the chirp has no signal (before P5.3: 0, CORE-14). On 'pycbc' it is
+              taken from the phase of h_plus - i h_cross, so it is only meaningful
+              where h_cross is not zero, that is not for an edge-on inclination of
+              pi/2. The pipeline draws face-on chirps (inclination 0).
+
+    On 'pycbc', the waveform is shifted so its peak lies at t_merger. Where time_array
+    cuts it off, at the start or the end, the cut edge is faded over TAPER_SECONDS; a
+    merger within TAPER_SECONDS of such an edge is damped by it.
 
     Raises:
         ValueError: backend is not 'pycbc' or 'newton', or t_merger lies outside
@@ -219,9 +232,9 @@ def _pycbc_chirp(
     # 3. Compute the shift
     shift = target_idx - peak_idx
 
-    # Empty arrays for the result
-    strain_out = np.zeros_like(time_array)
-    freq_out = np.zeros_like(time_array)
+    # Empty arrays for the result: no strain, and no frequency, outside the signal
+    strain_out = np.zeros_like(time_array, dtype=float)
+    freq_out = np.full_like(time_array, np.nan, dtype=float)
 
     # Copy the overlapping part
     start_src = max(0, -shift)
@@ -234,12 +247,15 @@ def _pycbc_chirp(
         strain_out[start_dst:end_dst] = waveform[start_src:end_src]
         freq_out[start_dst:end_dst] = raw_freq[start_src:end_src]
 
-    # Taper the start of the window to avoid clicks
-    taper_len = min(int(0.05 / dt), start_dst + 50)  # 50 ms taper
-    if start_dst < taper_len and start_dst < len(strain_out):
-        # Soft fade in
-        window = np.linspace(0, 1, taper_len - start_dst)
-        strain_out[start_dst:taper_len] *= window
+        # Fade the edges that time_array cuts off, over TAPER_SECONDS each. Where the
+        # waveform starts inside the window, PyCBC's own taper is kept. PyCBC returns
+        # about 5 s after the peak, so the end is nearly always cut, long after the
+        # ringdown has decayed.
+        ramp = _tukey_ramp(min(int(round(TAPER_SECONDS / dt)), end_dst - start_dst))
+        if start_src > 0:
+            strain_out[start_dst : start_dst + len(ramp)] *= ramp
+        if end_src < len(waveform):
+            strain_out[end_dst - len(ramp) : end_dst] *= ramp[::-1]
 
     # Normalization for machine learning
     if normalize:
@@ -248,6 +264,13 @@ def _pycbc_chirp(
             strain_out /= m
 
     return strain_out, freq_out
+
+
+def _tukey_ramp(n):
+    """The rising cosine half of a Tukey window, n samples from 0 towards 1."""
+    if n <= 0:
+        return np.ones(0)
+    return 0.5 * (1 - np.cos(np.pi * np.arange(n) / n))
 
 
 def _newton_chirp(time_array, t_merger, mass1, mass2, distance_mpc, normalize):
@@ -283,7 +306,7 @@ def _newton_chirp(time_array, t_merger, mass1, mass2, distance_mpc, normalize):
     # Cut everything after the merger (the approximation has no ringdown)
     mask_post_merger = time_array > t_merger
     strain_out[mask_post_merger] = 0
-    freq_newton[mask_post_merger] = 0
+    freq_newton[mask_post_merger] = np.nan
 
     # Fade-in taper to avoid an abrupt start
     strain_out *= 1 - np.exp(-10 * (time_array - time_array[0]))
