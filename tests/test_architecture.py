@@ -67,8 +67,6 @@ FILE_RULES = {
 ALLOWLIST = {
     # CORE-17: pycbc is imported at module level in a try block (P5.2).
     ("src/gwd/core/waveforms.py", "pycbc"),
-    # CORE-17: print in library code (P4.1).
-    ("src/gwd/core/waveforms.py", "print"),
 }
 
 

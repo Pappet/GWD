@@ -7,10 +7,10 @@ gwd.config, and gwd train overrides them.
 """
 
 import datetime
-import json
 import os
 import sys
 from dataclasses import dataclass
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -33,7 +33,13 @@ from gwd.config import (
     ensure_dirs,
 )
 from gwd.data.preprocessing import normalize
-from gwd.registry import MODEL_EXTENSION, TIMESTAMP_FORMAT, metadata_path
+from gwd.data.provenance import UNKNOWN_V1, read_manifest
+from gwd.registry import (
+    MODEL_EXTENSION,
+    TIMESTAMP_FORMAT,
+    metadata_path,
+    write_metadata,
+)
 from gwd.training.model import ARCHITECTURE, build_model
 
 
@@ -50,6 +56,8 @@ class TrainConfig:
     patience: int = EARLY_STOPPING_PATIENCE
     # True forces mixed_float16; otherwise only a GPU turns it on (D7).
     mixed_precision: bool = False
+    # Seeds Python, numpy, and TensorFlow when train() starts; None leaves them alone.
+    seed: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -90,6 +98,39 @@ def choose_precision(mixed_precision=False, gpus=None):
     return "float32", "no GPU found"
 
 
+def missing_dataset_message(data_folder):
+    """The error for a dataset folder without labels.csv."""
+    return (
+        f"No dataset in '{data_folder}': {LABELS_FILE} is missing. "
+        "Run 'gwd data generate' first."
+    )
+
+
+def dataset_provenance(data_folder):
+    """What the model's metadata records about its dataset, from manifest.json.
+
+    A dataset without a manifest was written before P4.1; every field is then
+    UNKNOWN_V1.
+    """
+    manifest, digest = read_manifest(data_folder)
+    if manifest is None:
+        return dict.fromkeys(
+            (
+                "dataset_manifest_sha256",
+                "dataset_scenario",
+                "waveform_backend",
+                "real_noise_fraction",
+            ),
+            UNKNOWN_V1,
+        )
+    return {
+        "dataset_manifest_sha256": digest,
+        "dataset_scenario": manifest["scenario"],
+        "waveform_backend": manifest["waveform_backend"],
+        "real_noise_fraction": manifest["real_noise_fraction"],
+    }
+
+
 def load_data(data_folder=DATA_DIR_TRAIN):
     """
     Load the training dataset from the .npy files listed in labels.csv.
@@ -104,7 +145,7 @@ def load_data(data_folder=DATA_DIR_TRAIN):
     print("📂 Loading dataset...")
     csv_path = os.path.join(data_folder, LABELS_FILE)
     if not os.path.exists(csv_path):
-        raise FileNotFoundError(f"Cannot find {csv_path}.")
+        raise FileNotFoundError(missing_dataset_message(data_folder))
 
     df = pd.read_csv(csv_path)
     signals = []
@@ -154,17 +195,24 @@ def save_experiment_config(history_obj, final_acc, cfg, run, policy):
         run: Run with the name and the .json path
         policy: Name of the Keras precision policy the model was trained with
     """
+    history = history_obj.history
     # The values of the last epoch
-    final_train_acc = history_obj.history["accuracy"][-1]
-    final_val_acc = history_obj.history["val_accuracy"][-1]
-    final_train_loss = history_obj.history["loss"][-1]
-    final_val_loss = history_obj.history["val_loss"][-1]
+    final_train_acc = history["accuracy"][-1]
+    final_val_acc = history["val_accuracy"][-1]
+    final_train_loss = history["loss"][-1]
+    final_val_loss = history["val_loss"][-1]
 
     config = {
         "model_name": run.name,
         "timestamp": run.timestamp,
         "dataset_folder": cfg.data_folder,
+        **dataset_provenance(cfg.data_folder),
+        "seed": cfg.seed,
+        # epochs is the maximum; early stopping can end the run before it.
         "epochs": cfg.epochs,
+        "epochs_trained": len(history["loss"]),
+        # The saved weights are those of this epoch (1-based, lowest val_loss).
+        "best_epoch": int(np.argmin(history["val_loss"])) + 1,
         "batch_size": cfg.batch_size,
         "learning_rate": cfg.learning_rate,
         "early_stopping_patience": cfg.patience,
@@ -181,9 +229,8 @@ def save_experiment_config(history_obj, final_acc, cfg, run, policy):
         "note": "Training with automatic versioning",
     }
 
-    with open(run.config_path, "w") as f:
-        json.dump(config, f, indent=4)
-    print(f"📋 Experiment config saved: {run.config_path}")
+    path = write_metadata(run.model_path, config)
+    print(f"📋 Experiment config saved: {path}")
 
 
 def plot_history(history, plot_path):
@@ -251,6 +298,9 @@ def train(cfg=None):
         The Run with the name and the paths of the saved model and its .json.
     """
     cfg = cfg or TrainConfig()
+    if cfg.seed is not None:
+        # Seeds Python's random, numpy, and TensorFlow.
+        tf.keras.utils.set_random_seed(cfg.seed)
     policy, reason = choose_precision(cfg.mixed_precision)
     print(f"Precision: {policy} ({reason})")
     previous = tf.keras.mixed_precision.global_policy()
@@ -267,6 +317,18 @@ def _train_and_save(cfg, policy):
 
     # Load and split the data
     X, y = load_data(cfg.data_folder)
+    provenance = dataset_provenance(cfg.data_folder)
+    if provenance["dataset_scenario"] == UNKNOWN_V1:
+        print(
+            "⚠️ The dataset has no manifest.json (written before P4.1); the model's "
+            f"metadata records its backend and noise as '{UNKNOWN_V1}'."
+        )
+    else:
+        print(
+            f"Dataset: {provenance['dataset_scenario']}, backend "
+            f"{provenance['waveform_backend']}, real noise "
+            f"{provenance['real_noise_fraction']:.0%}"
+        )
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=TEST_SPLIT, random_state=42, stratify=y
     )

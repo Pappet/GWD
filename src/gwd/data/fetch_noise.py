@@ -1,3 +1,9 @@
+"""Download real detector noise from GWOSC and cut it into training chunks.
+
+gwd data fetch-noise runs fetch_and_slice(). Any error ends it with exit code 1 and a
+message on stderr (DATA-6), and the menu reports that exit code.
+"""
+
 import os
 import sys
 
@@ -13,11 +19,11 @@ from gwd.config import (
 from gwd.data.gwosc import fetch_strain
 from gwd.data.preprocessing import condition_strain
 
-# Output Ordner für das echte Rauschen
+# Output folder for the real noise chunks
 OUTPUT_DIR = DATA_DIR_NOISE
 
-# Ein Zeitraum im O3b Run, wo definitiv keine Events waren
-# GPS 1262304018 = Jan 2020
+# A stretch of the O3b run assumed to be free of events (not verified, DATA-25).
+# GPS 1262304018 = January 2020
 START_GPS = 1262304018
 
 
@@ -36,24 +42,23 @@ def fetch_and_slice(detector="H1", start_gps=START_GPS, duration=NOISE_FETCH_SEC
         # 2. Conditioning, the same chain as the field test and the Glitch Hunter
         data = condition_strain(strain, SAMPLE_RATE)
 
-        # 3. Zerschneiden in 4s Stücke
+        # 3. Cut into chunks of N_SAMPLES (4 s)
         chunk_len = N_SAMPLES
         num_chunks = len(data) // chunk_len
 
-        print(f"✂️ Schneide in {num_chunks} Trainings-Schnipsel...")
+        print(f"✂️ Cutting into {num_chunks} training chunks...")
 
         ensure_dirs(OUTPUT_DIR)
         for i in range(num_chunks):
             chunk = data[i * chunk_len : (i + 1) * chunk_len]
 
-            # Speichern
             filename = os.path.join(OUTPUT_DIR, f"real_noise_{i:04d}.npy")
             np.save(filename, chunk)
 
         print(f"✅ Done: {num_chunks} files saved in '{OUTPUT_DIR}'.")
 
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"❌ Error: {e}", file=sys.stderr)
         return 1
     return 0
 

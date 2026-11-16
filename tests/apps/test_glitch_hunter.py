@@ -71,3 +71,19 @@ def test_the_simulation_mode_draws_from_app_v1():
         else:
             assert app.true_snr == 0.0 and not app.pure_signal.any()
     assert seen == {True, False}
+
+
+@pytest.mark.parametrize(
+    "metadata, expected",
+    [
+        ({"real_noise_fraction": 0.0}, app_module.NO_REAL_NOISE_WARNING),
+        ({"real_noise_fraction": 0.79}, None),
+        ({"real_noise_fraction": "unknown (v1)"}, app_module.UNKNOWN_NOISE_NOTE),
+        ({"model_name": "gwd_model_20251205-232013"}, app_module.UNKNOWN_NOISE_NOTE),
+        (None, app_module.UNKNOWN_NOISE_NOTE),
+    ],
+    ids=["gaussian only", "real noise", "unknown v1", "old metadata", "no metadata"],
+)
+def test_the_training_noise_warning_follows_the_metadata(metadata, expected):
+    """APPX-1: a model trained without real noise is warned about."""
+    assert app_module.training_noise_warning(metadata) == expected

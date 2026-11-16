@@ -22,13 +22,14 @@ gwd.core.waveforms.generate_random_bbh_parameters.
 
 import glob
 import os
+import warnings
 from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
 
 from gwd.config import DATA_DIR_NOISE, DURATION, N_SAMPLES
-from gwd.core.waveforms import generate_astrophysical_chirp
+from gwd.core.waveforms import chirp_and_backend
 from gwd.data.preprocessing import normalize
 
 # Distance of the fixed-mass scenarios: the default of generate_astrophysical_chirp.
@@ -58,6 +59,8 @@ class Sample:
     params: Optional[InjectionParams]
     snr: float  # the SNR the signal was scaled to; 0.0 without signal
     noise_kind: str  # "real" or "white"
+    noise_file: Optional[str] = None  # file name of the real chunk, None for white
+    waveform_backend: Optional[str] = None  # "pycbc" or "newton"; None without signal
 
 
 def _rng(rng):
@@ -102,16 +105,26 @@ def real_noise_files(folder=DATA_DIR_NOISE):
 def load_random_real_noise(length, files, rng=None):
     """Load a random chunk from files, crop it to length, and normalize it.
 
+    The array of draw_real_noise(), without the file name.
+    """
+    return draw_real_noise(length, files, rng)[0]
+
+
+def draw_real_noise(length, files, rng=None):
+    """Return (noise, file name) for a random chunk from files, cropped and normalized.
+
     Falls back to white noise if files is empty, the chunk is too short, or it cannot
-    be read. normalize keeps its default eps: on raw strain (std near 1e-21) the eps
+    be read; the file name is then None, and a chunk that is too short or unreadable
+    warns. normalize keeps its default eps: on raw strain (std near 1e-21) the eps
     dominates, so the chunk ends up with a std near 1e-11, not 1. This is the V1
     behaviour, kept as is (see the P3.2 PR and docs/architecture.md).
     """
     rng = _rng(rng)
     if not files:
-        return white_noise(length, rng)
+        return white_noise(length, rng), None
 
     path = files[rng.randint(len(files))]
+    name = os.path.basename(path)
     try:
         data = np.load(path)
         if len(data) != length:
@@ -119,21 +132,35 @@ def load_random_real_noise(length, files, rng=None):
                 start = rng.randint(0, len(data) - length)
                 data = data[start : start + length]
             else:
-                return white_noise(length, rng)
-        return normalize(data)
-    except Exception:
-        return white_noise(length, rng)
+                warnings.warn(
+                    f"Noise chunk {name} has {len(data)} samples, fewer than "
+                    f"{length}; using white noise instead.",
+                    stacklevel=2,
+                )
+                return white_noise(length, rng), None
+        return normalize(data), name
+    except Exception as error:
+        warnings.warn(
+            f"Cannot read noise chunk {name} ({error}); using white noise instead.",
+            stacklevel=2,
+        )
+        return white_noise(length, rng), None
 
 
 def real_noise_provider(folder=DATA_DIR_NOISE):
-    """A noise_provider for make_sample, or None if folder has no chunks."""
+    """A noise_provider for make_sample, or None if folder has no chunks.
+
+    The provider returns (noise, file name), see draw_real_noise(). Its attribute
+    files lists the chunks it draws from.
+    """
     files = real_noise_files(folder)
     if not files:
         return None
 
     def provider(length, rng=None):
-        return load_random_real_noise(length, files, rng)
+        return draw_real_noise(length, files, rng)
 
+    provider.files = files
     return provider
 
 
@@ -171,8 +198,9 @@ def make_sample(scenario, rng=None, has_signal=None, snr=None, noise_provider=No
 
     has_signal: None draws the label (50/50); True or False sets it.
     snr: fixes the SNR of a signal sample instead of drawing it.
-    noise_provider: callable (length, rng) -> real noise, see real_noise_provider.
-        None means no real noise, so every sample gets white noise.
+    noise_provider: callable (length, rng) -> (real noise, file name), see
+        real_noise_provider. A file name of None means the provider fell back to white
+        noise. None means no real noise, so every sample gets white noise.
     """
     if scenario.condition_signal:
         raise NotImplementedError("Conditioning the signal comes with V2 (P6.2)")
@@ -188,17 +216,19 @@ def make_sample(scenario, rng=None, has_signal=None, snr=None, noise_provider=No
         # on whether real noise exists.
         dice = rng.rand()
         use_real = noise_provider is not None and dice < scenario.real_noise_fraction
+    noise_file = None
     if use_real:
-        noise = noise_provider(len(time), rng)
+        noise, noise_file = noise_provider(len(time), rng)
     else:
         noise = white_noise(len(time), rng)
-    noise_kind = "real" if use_real else "white"
+    # A provider that fell back to white noise gives no file name.
+    noise_kind = "white" if noise_file is None else "real"
 
     if not has_signal:
-        return Sample(noise, noise, None, False, None, 0.0, noise_kind)
+        return Sample(noise, noise, None, False, None, 0.0, noise_kind, noise_file)
 
     params = draw_params(scenario, rng, snr)
-    chirp, _ = generate_astrophysical_chirp(
+    chirp, _, backend = chirp_and_backend(
         time,
         t_merger=params.t_merger,
         mass1=params.mass1,
@@ -209,7 +239,17 @@ def make_sample(scenario, rng=None, has_signal=None, snr=None, noise_provider=No
     signal, actual_snr = scale_signal_to_snr(
         chirp, noise, params.snr, scenario.peak_reference
     )
-    return Sample(noise + signal, noise, signal, True, params, actual_snr, noise_kind)
+    return Sample(
+        noise + signal,
+        noise,
+        signal,
+        True,
+        params,
+        actual_snr,
+        noise_kind,
+        noise_file,
+        backend,
+    )
 
 
 def make_test_set(scenario, n_samples, rng=None, noise_provider=None):

@@ -5,11 +5,19 @@ depends on the pycbc version. Known bugs are strict xfails with their finding ID
 docs/aufraeumen/BEFUNDE.md: once a fix makes one pass, strict forces removing the mark.
 """
 
+import subprocess
+import sys
+
 import numpy as np
 import pytest
 
 from gwd.core import waveforms
-from gwd.core.waveforms import generate_astrophysical_chirp, generate_realistic_chirp
+from gwd.core.waveforms import (
+    WaveformFallbackWarning,
+    chirp_and_backend,
+    generate_astrophysical_chirp,
+    generate_realistic_chirp,
+)
 
 FS = 4096
 DURATION = 4.0
@@ -154,7 +162,11 @@ def test_newton_inspiral_stops_at_isco(backend):
 )
 def test_realistic_chirp_contains_the_merger(backend):
     t = time_axis()
-    strain, _ = generate_realistic_chirp(t)
+    if backend == "newton":
+        with pytest.warns(WaveformFallbackWarning, match="not available"):
+            strain, _ = generate_realistic_chirp(t)
+    else:
+        strain, _ = generate_realistic_chirp(t)
     reference, _ = generate_astrophysical_chirp(t, f_lower=20.0, normalize=False)
     i_peak = np.argmax(np.abs(strain))
     assert 0 < i_peak < len(t) - 1
@@ -172,3 +184,46 @@ def test_t_merger_outside_the_window_raises(backend):
     except ValueError:
         return
     raise AssertionError("t_merger=10 s in a 4 s window gave no ValueError")
+
+
+def test_importing_the_module_prints_nothing():
+    """CORE-17: the backend is logged and reported by active_backend(), not printed."""
+    result = subprocess.run(
+        [sys.executable, "-c", "import gwd.core.waveforms"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == ""
+
+
+def test_chirp_and_backend_names_the_backend(backend):
+    strain, freq, name = chirp_and_backend(time_axis(), t_merger=T_MERGER)
+    assert name == backend
+    assert strain.shape == freq.shape == time_axis().shape
+
+
+def test_active_backend_names_newton_without_pycbc(monkeypatch):
+    monkeypatch.setattr(waveforms, "HAS_PYCBC", False)
+    assert waveforms.active_backend() == "newton"
+
+
+def test_active_backend_names_the_pycbc_version(needs_pycbc, monkeypatch):
+    import importlib.metadata
+
+    monkeypatch.setattr(waveforms, "HAS_PYCBC", True)
+    version = importlib.metadata.version("pycbc")
+    assert waveforms.active_backend() == f"pycbc {version}"
+
+
+def test_a_pycbc_error_falls_back_to_newton_with_a_warning(needs_pycbc, monkeypatch):
+    """CORE-4: the fallback stays (P5.2 removes it), but it warns and names itself."""
+
+    def failing(**kwargs):
+        raise ValueError("mass out of range")
+
+    monkeypatch.setattr(waveforms, "HAS_PYCBC", True)
+    monkeypatch.setattr(waveforms, "get_td_waveform", failing)
+    with pytest.warns(WaveformFallbackWarning, match="mass out of range"):
+        _, _, name = chirp_and_backend(time_axis(), t_merger=T_MERGER)
+    assert name == "newton"

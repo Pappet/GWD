@@ -79,7 +79,9 @@ gwd data validate
 gwd train
 ```
 
-`gwd train` takes the defaults `EPOCHS`, `BATCH_SIZE`, `LEARNING_RATE`, and `EARLY_STOPPING_PATIENCE` from `src/gwd/config.py`; `--epochs`, `--batch-size`, `--lr`, and `--patience` override them for one run. It trains with mixed precision (`mixed_float16`) only if TensorFlow finds a GPU, otherwise in float32; `--mixed-precision` forces it. It prints the precision it chose in a `Precision:` line.
+`gwd data generate` and `gwd eval run` start with a line `Backend: ... | Noise: ...` that names the waveform backend (`pycbc <version>` or `newton`) and the noise. Without PyCBC, or without real noise chunks in `data/noise_background/` (download them with `gwd data fetch-noise`), they print a warning on stderr. The dataset folder gets a `manifest.json` with the scenario, seed, backend, package versions, Git commit, and the share of real noise; `labels.csv` names the backend, the noise source (`real` or `gaussian`), and the noise chunk of every sample.
+
+`gwd train` takes the defaults `EPOCHS`, `BATCH_SIZE`, `LEARNING_RATE`, and `EARLY_STOPPING_PATIENCE` from `src/gwd/config.py`; `--epochs`, `--batch-size`, `--lr`, and `--patience` override them for one run. It trains with mixed precision (`mixed_float16`) only if TensorFlow finds a GPU, otherwise in float32; `--mixed-precision` forces it. It prints the precision it chose in a `Precision:` line. The model's `.json` records the epochs it really trained, the seed, and the SHA-256, backend, and real noise share of the dataset's `manifest.json`; a dataset without a manifest (generated before this change) is recorded as `unknown (v1)`. Without a dataset, `gwd train` exits with code 1 and tells you to run `gwd data generate` first.
 
 ### 3. Evaluate Results
 ```bash

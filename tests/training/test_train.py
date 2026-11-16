@@ -11,6 +11,7 @@ import pytest
 tf = pytest.importorskip("tensorflow")
 
 from gwd import registry  # noqa: E402
+from gwd.data import provenance  # noqa: E402
 from gwd.training import train  # noqa: E402
 
 
@@ -77,6 +78,7 @@ def test_train_restores_the_policy_and_records_it(tmp_path, monkeypatch):
     # EVAL_V1 has white noise only, so the test does not read data/noise_background/.
     data = tmp_path / "data"
     generate_dataset(16, str(data), EVAL_V1, rng=np.random.RandomState(1))
+    manifest = json.loads((data / "manifest.json").read_text())
     cfg = train.TrainConfig(
         data_folder=str(data),
         models_dir=str(tmp_path / "models"),
@@ -85,6 +87,7 @@ def test_train_restores_the_policy_and_records_it(tmp_path, monkeypatch):
         batch_size=8,
         learning_rate=1e-3,
         patience=2,
+        seed=3,
     )
     # Without a GPU on purpose, so the run takes float32 on any machine.
     monkeypatch.setattr(tf.config, "list_physical_devices", lambda kind=None: [])
@@ -100,3 +103,41 @@ def test_train_restores_the_policy_and_records_it(tmp_path, monkeypatch):
     assert (metadata["epochs"], metadata["batch_size"]) == (1, 8)
     assert metadata["learning_rate"] == 1e-3
     assert metadata["early_stopping_patience"] == 2
+    # P4.1: what was trained on, and how long.
+    assert (metadata["epochs_trained"], metadata["best_epoch"]) == (1, 1)
+    assert metadata["seed"] == 3
+    assert metadata["dataset_scenario"] == "EVAL_V1"
+    assert metadata["waveform_backend"] == manifest["waveform_backend"]
+    assert metadata["real_noise_fraction"] == 0.0
+    digest = provenance.sha256_file(data / "manifest.json")
+    assert metadata["dataset_manifest_sha256"] == digest
+    assert registry.read_metadata(run.model_path) == metadata
+
+
+def test_a_dataset_without_manifest_is_recorded_as_unknown(tmp_path):
+    assert train.dataset_provenance(str(tmp_path)) == {
+        "dataset_manifest_sha256": "unknown (v1)",
+        "dataset_scenario": "unknown (v1)",
+        "waveform_backend": "unknown (v1)",
+        "real_noise_fraction": "unknown (v1)",
+    }
+
+
+def test_the_provenance_comes_from_the_manifest(tmp_path):
+    manifest = {
+        "scenario": "TRAIN_V1",
+        "waveform_backend": "pycbc 2.10.0",
+        "real_noise_fraction": 0.75,
+    }
+    provenance.write_manifest(str(tmp_path), manifest)
+    assert train.dataset_provenance(str(tmp_path)) == {
+        "dataset_manifest_sha256": provenance.sha256_file(tmp_path / "manifest.json"),
+        "dataset_scenario": "TRAIN_V1",
+        "waveform_backend": "pycbc 2.10.0",
+        "real_noise_fraction": 0.75,
+    }
+
+
+def test_load_data_without_labels_names_the_fix(tmp_path):
+    with pytest.raises(FileNotFoundError, match="Run 'gwd data generate' first"):
+        train.load_data(str(tmp_path))

@@ -20,11 +20,37 @@ from gwd.config import (
 from gwd.data.gwosc import EVENTS, fetch_strain
 from gwd.data.injection import make_sample
 from gwd.data.preprocessing import condition_strain, normalize
+from gwd.data.provenance import UNKNOWN_V1
 from gwd.data.scenarios import APP_V1
-from gwd.registry import list_models, load_model
+from gwd.registry import list_models, load_model, read_metadata
 
 O3_START = 1238112018
 O3_END = 1253923218
+
+NO_REAL_NOISE_WARNING = (
+    "WARNING: this model was trained without real noise (Gaussian only). "
+    "Real LIGO data lies outside its training data, so its scores there mean little "
+    "(APPX-1)."
+)
+UNKNOWN_NOISE_NOTE = (
+    "Note: the model's metadata does not say whether it was trained with real noise "
+    f"('{UNKNOWN_V1}' or no metadata: trained before P4.1)."
+)
+
+
+def training_noise_warning(metadata):
+    """What to tell the player about the model's training noise (APPX-1).
+
+    NO_REAL_NOISE_WARNING if the metadata says the real noise share was 0,
+    UNKNOWN_NOISE_NOTE if it does not say (no metadata, or from before P4.1), and
+    None if the model saw real noise.
+    """
+    fraction = (metadata or {}).get("real_noise_fraction", UNKNOWN_V1)
+    if isinstance(fraction, bool) or not isinstance(fraction, (int, float)):
+        return UNKNOWN_NOISE_NOTE
+    if fraction == 0:
+        return NO_REAL_NOISE_WARNING
+    return None
 
 
 class GlitchHunterApp:
@@ -44,6 +70,9 @@ class GlitchHunterApp:
         print(f"Lade neuestes Modell: {os.path.basename(latest_model_path)}")
 
         self.model = load_model(latest_model_path)
+        self.noise_warning = training_noise_warning(read_metadata(latest_model_path))
+        if self.noise_warning:
+            print(self.noise_warning)
         print(">>> Bereit zum Jagen!")
 
         self.fs = SAMPLE_RATE
@@ -68,6 +97,11 @@ class GlitchHunterApp:
         self.fig.canvas.manager.set_window_title("Glitch Hunter - ULTIMATE Edition")
 
         gs = self.fig.add_gridspec(4, 1, height_ratios=[1.5, 1.5, 1, 0.5], hspace=0.4)
+        if self.noise_warning == NO_REAL_NOISE_WARNING:
+            # Above the plots, so it stays visible in every mode.
+            self.fig.text(
+                0.5, 0.985, self.noise_warning, ha="center", va="top", color="red"
+            )
 
         self.ax_signal = self.fig.add_subplot(gs[0])
         self.ax_spec = self.fig.add_subplot(gs[1], sharex=self.ax_signal)

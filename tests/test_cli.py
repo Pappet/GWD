@@ -233,9 +233,12 @@ class FakeTraining:
 
 
 @pytest.fixture
-def fake_training(monkeypatch):
+def fake_training(monkeypatch, tmp_path):
     fake = FakeTraining()
     monkeypatch.setitem(sys.modules, "gwd.training.train", fake)
+    # The handler checks for labels.csv in the default dataset folder first.
+    (tmp_path / "labels.csv").touch()
+    monkeypatch.setattr("gwd.config.DATA_DIR_TRAIN", str(tmp_path))
     for name in ("TF_CPP_MIN_LOG_LEVEL", "TF_ENABLE_ONEDNN_OPTS"):
         # setenv first, so monkeypatch also undoes what the handler sets.
         monkeypatch.setenv(name, "")
@@ -251,19 +254,44 @@ def test_train_without_options_uses_the_config_defaults(fake_training):
     assert os.environ["TF_ENABLE_ONEDNN_OPTS"] == "0"
 
 
-def test_train_passes_the_overrides(fake_training, monkeypatch):
+def test_train_passes_the_overrides(fake_training, monkeypatch, tmp_path):
     monkeypatch.setenv("TF_CPP_MIN_LOG_LEVEL", "0")
-    args = "train --data d --epochs 3 --batch-size 16 --lr 0.001 --patience 2"
-    args += " --mixed-precision"
+    args = f"train --data {tmp_path} --epochs 3 --batch-size 16 --lr 0.001"
+    args += " --patience 2 --mixed-precision --seed 5"
     assert cli.main(args.split()) == 0
     assert fake_training.calls == [
         {
-            "data_folder": "d",
+            "data_folder": str(tmp_path),
             "epochs": 3,
             "batch_size": 16,
             "learning_rate": 0.001,
             "patience": 2,
             "mixed_precision": True,
+            "seed": 5,
         }
     ]
     assert os.environ["TF_CPP_MIN_LOG_LEVEL"] == "0"
+
+
+def test_train_without_a_dataset_fails_cleanly_and_loads_no_tensorflow(tmp_path):
+    """P3.7 left a traceback here; now it is one message on stderr and rc 1."""
+    code = "\n".join(
+        [
+            "import sys",
+            "from gwd.cli import main",
+            "rc = main(['train', '--data', 'missing'])",
+            "print(rc, 'tensorflow' in sys.modules)",
+        ]
+    )
+    result = run_python(code, tmp_path)
+    assert result.stdout.splitlines()[-1] == "1 False"
+    assert "No dataset in 'missing': labels.csv is missing" in result.stderr
+    assert "gwd data generate" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_train_with_the_default_dataset_missing_exits_with_one(tmp_path):
+    result = run_gwd(["train"], tmp_path)
+    assert result.returncode == 1
+    assert "labels.csv is missing" in result.stderr
+    assert "Traceback" not in result.stderr

@@ -20,11 +20,12 @@ MODEL_HELP = (
 )
 
 
-def seed_everything(seed, tensorflow=False):
-    """Seed Python's random and the global numpy RNG, and TensorFlow if asked.
+def seed_everything(seed):
+    """Seed Python's random and the global numpy RNG, for the eval commands.
 
     A minimal stand-in until P5.3 and P5.6 pass an rng explicitly. seed=None changes
-    nothing, so runs stay unseeded as before.
+    nothing, so runs stay unseeded as before. gwd data generate and gwd train pass the
+    seed to their function instead, which also records it.
     """
     if seed is None:
         return
@@ -34,10 +35,6 @@ def seed_everything(seed, tensorflow=False):
 
     random.seed(seed)
     np.random.seed(seed)
-    if tensorflow:
-        import tensorflow as tf
-
-        tf.keras.utils.set_random_seed(seed)
 
 
 # --- handlers: each returns an exit code ---
@@ -59,11 +56,12 @@ def _generate(args):
     from gwd.data.generate import generate_dataset
     from gwd.data.scenarios import SCENARIOS
 
-    seed_everything(args.seed)
+    # generate_dataset seeds its own RNG and records the seed in manifest.json.
     generate_dataset(
         num_samples=SAMPLES_FOR_TRAINING if args.n is None else args.n,
         output_folder=args.out or DATA_DIR_TRAIN,
         scenario=SCENARIOS[args.scenario.upper()],
+        seed=args.seed,
     )
     return 0
 
@@ -80,6 +78,18 @@ def _validate(args):
 
 
 def _train(args):
+    from gwd.config import DATA_DIR_TRAIN, LABELS_FILE
+
+    # Checked before TensorFlow is imported, so a missing dataset fails at once.
+    data_folder = args.data or DATA_DIR_TRAIN
+    if not os.path.exists(os.path.join(data_folder, LABELS_FILE)):
+        print(
+            f"❌ No dataset in '{data_folder}': {LABELS_FILE} is missing. "
+            "Run 'gwd data generate' first.",
+            file=sys.stderr,
+        )
+        return 1
+
     # Read by TensorFlow when it is imported; values the caller has set win.
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")  # hide info and warnings
     os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")  # oneDNN off, as before
@@ -92,11 +102,12 @@ def _train(args):
         "learning_rate": args.lr,
         "patience": args.patience,
         "mixed_precision": args.mixed_precision or None,
+        # train() seeds Python, numpy, and TensorFlow and records the seed.
+        "seed": args.seed,
     }
     cfg = TrainConfig(
         **{name: value for name, value in overrides.items() if value is not None}
     )
-    seed_everything(args.seed, tensorflow=True)
     train(cfg)
     return 0
 
@@ -205,8 +216,8 @@ def build_parser():
     generate = data_commands.add_parser(
         "generate",
         help="Generate a training dataset.",
-        description="Write samples and labels.csv. Real noise chunks are used where the "
-        "scenario and data/noise_background/ allow it.",
+        description="Write samples, labels.csv, and manifest.json. Real noise chunks "
+        "are used where the scenario and data/noise_background/ allow it.",
     )
     generate.add_argument(
         "--n",
