@@ -118,7 +118,9 @@ These tracked files end without a move of their own:
 | current: src/utils/__init__.py → target: none | Removed | P2.5 |
 | current: docs/ROC_INTEGRATION_OVERVIEW.md → target: docs/evaluation.md | Useful parts merged, then removed | P7.1 |
 
-The unit tests in `tests/test_waveforms.py`, `tests/test_noise.py`, and `tests/test_interferometer.py` belong in `tests/core/` in the target structure.
+Since P5.1 the unit tests for `gwd.core` live in `tests/core/` (`test_waveforms.py`, `test_noise.py`, and `test_interferometer.py` moved there with `git mv`; `test_simulation.py` is new).
+
+**Physics tests (since P5.1).** `tests/core/conftest.py` seeds the global numpy RNG for every test, because `gwd.core` has no `rng` parameter yet (P5.3). The waveform and simulator tests run on both backends, `pycbc` and `newton`, by setting `waveforms.HAS_PYCBC`. On `pycbc`, a silent fallback to Newton fails the test, and with `GWD_REQUIRE_PYCBC=1` a missing pycbc fails instead of skipping. The tests check physical quantities only, never the length of the raw waveform, which depends on the pycbc version: peak at `t_merger` within 1 ms, monotonic frequency up to the merger, `h` proportional to 1/D, the output frequency against the zero-crossing frequency, white noise std, the colored noise spectrum, and the direction in which the interferometer ASD moves with arm length, laser power, and features. Known bugs are `xfail(strict=True, raises=AssertionError)` with the finding ID in the reason: `CORE-1`, `CORE-2`, `CORE-3`, `CORE-8`, `CORE-9`, and `CORE-15`, 10 xfails after parametrization. A fix that makes one pass turns it into a failure until its mark is removed. `pytest tests/core -q -rx` lists them.
 
 ## Functions to merge
 
@@ -239,7 +241,7 @@ Each step PR ticks its own step, so a tick takes effect when that PR is merged.
 | [ ] | P4.4 | Untangle Glitch Hunter: GUI, sources, audio; fix threading; modes | |
 | [ ] | P4.5 | Testable demo apps | |
 | [ ] | P4.6 | Validator and loading: full integrity and range checks | |
-| [ ] | P5.1 | Physics tests with real asserts | |
+| [x] | P5.1 | Physics tests with real asserts | #26 |
 | [ ] | P5.2 | Explicit waveform backend, no silent fallback in the pipeline | |
 | [ ] | P5.3 | Core details: `time_axis`, `rng`, `t_merger` check, constants, dead code | |
 | [ ] | P5.4 | Correct noise normalization; interferometer as an honest learning model | |
