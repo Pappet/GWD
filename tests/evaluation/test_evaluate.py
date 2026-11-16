@@ -2,6 +2,7 @@
 
 import sys
 
+import numpy as np
 import pytest
 
 from gwd.core import waveforms
@@ -11,6 +12,9 @@ SIM_RESULT = {
     "acc": 0.5,
     "snr50": None,
     "snr90": None,
+    "optimal_snr50": None,
+    "optimal_snr90": None,
+    "optimal_per_peak": None,
     "roc_auc": 0.5,
     "avg_precision": 0.5,
     "tpr": 0.5,
@@ -83,3 +87,25 @@ def test_the_metrics_box_has_rows_of_one_width():
     assert len({len(line) for line in lines}) == 1
     assert "║ SNR50:          0.00" in box
     assert "N/A" in box
+
+
+class FiringModel:
+    """Scores every sample 1.0, so every level is detected."""
+
+    def predict(self, X, verbose=0):
+        return np.ones((len(X), 1))
+
+
+def test_the_sensitivity_curve_records_the_optimal_snr_per_level():
+    """P5.5: each peak SNR level also gets the mean optimal SNR of its samples."""
+    if not waveforms.pycbc_available():
+        pytest.skip("pycbc missing")
+    levels = np.array([0.0, 1.0, 2.0])
+    rates, optimal = evaluate.sensitivity_curve(FiringModel(), levels, n_batch=2)
+    assert rates == [1.0, 1.0, 1.0]
+    assert optimal[0] == 0.0
+    # EVAL_V1 is 30/30 Msun in white noise: rho_opt is about 13.5 times the peak SNR.
+    assert optimal[1] == pytest.approx(13.5, rel=0.1)
+    assert optimal[2] == pytest.approx(2 * optimal[1], rel=1e-3)
+    assert evaluate.optimal_per_peak(levels, optimal) == pytest.approx(13.5, rel=0.1)
+    assert evaluate.optimal_per_peak(np.zeros(3), [0.0] * 3) is None
