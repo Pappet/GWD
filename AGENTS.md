@@ -14,7 +14,8 @@ Rules for AI assistants working in this repository.
 
 - One topic per commit, with a prefix: `chore`, `fix`, `refactor`, `test`,
   `docs`, or `golden` (see c54acd5).
-- Name the step ID from `docs/aufraeumen/PLAN.md` in the pull request.
+- Name the step ID from the step checklist in `docs/architecture.md` in the pull
+  request.
 - Each step PR ticks its own step in the checklist in `docs/architecture.md`.
 - Before every commit, run `pytest -m 'not slow and not network'`.
   Before opening a pull request, run all tests.
@@ -37,7 +38,6 @@ Rules for AI assistants working in this repository.
   translated completely, in its own `docs:` commit in the same pull request.
 - A German name that other code or stored data depends on, such as the leaderboard
   column `Physik_Gap`, is renamed only in the step that changes that schema.
-- Exception: `docs/aufraeumen/` stays German until P7.4 removes it.
 
 ## Documentation
 

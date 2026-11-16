@@ -2,7 +2,7 @@
 
 GWD trains a convolutional neural network (CNN) to detect gravitational wave chirps from binary black hole mergers in 4 s of detector noise, and evaluates it with ROC metrics on simulated data and on a few real events from GWOSC. It also has three interactive apps for learning: a waveform explorer, an interferometer designer, and the Glitch Hunter, in which the CNN rates simulated or real data.
 
-> **Status:** The project is being cleaned up. The simulated metrics are of limited significance: training and evaluation draw from different distributions, the SNR is a peak amplitude ratio, and there is no Matched Filter baseline. [docs/architecture.md](docs/architecture.md) describes the target structure, the open decisions, and the progress; the detailed plan is in [docs/aufraeumen/PLAN.md](docs/aufraeumen/PLAN.md) (in German).
+> **Status:** The project is being cleaned up. The simulated metrics are of limited significance: training and evaluation draw from different distributions, the SNR is a peak amplitude ratio, and there is no Matched Filter baseline. [docs/architecture.md](docs/architecture.md) describes the target structure, the open decisions, and the progress, with the steps that are still open.
 
 ## Components
 

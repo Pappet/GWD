@@ -1,8 +1,9 @@
 """Physics checks for gwd.core.waveforms on both backends, and the backend itself.
 
 Only physical quantities are checked, never the length of the raw waveform, because that
-depends on the pycbc version. Known bugs are strict xfails with their finding ID from
-docs/aufraeumen/BEFUNDE.md: once a fix makes one pass, strict forces removing the mark.
+depends on the pycbc version. Known bugs are strict xfails with their finding ID (the
+findings list docs/aufraeumen/BEFUNDE.md, removed in P7.4, is in the Git history): once
+a fix makes one pass, strict forces removing the mark.
 Every call names its backend (P5.2); none falls back to another.
 """
 
