@@ -17,7 +17,7 @@ apps: use core, data, and registry      cli: the gwd command      main.py: menu
 
 | Component | Folder | What it does |
 |---|---|---|
-| core | `src/gwd/core/` | Physics: waveforms (PyCBC, or a Newtonian approximation without it), noise, the interferometer learning model, a time domain simulator. No file or network access. |
+| core | `src/gwd/core/` | Physics: waveforms (PyCBC; a Newtonian approximation that only the waveform explorer uses without PyCBC), noise, the interferometer learning model, a time domain simulator. No file or network access. |
 | data | `src/gwd/data/` | Scenarios, signal injection, conditioning and normalization, GWOSC access, dataset generation with a manifest, validation, the noise download. |
 | training | `src/gwd/training/` | The CNN and its training. |
 | evaluation | `src/gwd/evaluation/` | ROC evaluation, threshold strategies, model comparison, the leaderboard. |
@@ -30,7 +30,7 @@ apps: use core, data, and registry      cli: the gwd command      main.py: menu
 
 ## Installation
 
-GWD needs Python 3.11 or newer. Use Linux or WSL: PyCBC, the waveform backend, is not available on Windows.
+GWD needs Python 3.11 or newer. Use Linux or WSL: PyCBC, the waveform backend, is not available on Windows. Without PyCBC, `gwd data generate`, `gwd eval run`, `gwd eval thresholds`, `gwd eval compare`, and `gwd app glitch-hunter` stop with exit code 1 and print how to install it; only the waveform explorer then runs, with a Newtonian approximation that it marks as physically inaccurate in its window.
 
 ```bash
 # A fresh virtual environment
@@ -48,7 +48,7 @@ The base install has numpy, scipy, pandas, matplotlib, scikit-learn, and tabulat
 
 | Extra | Installs | Needed for |
 |---|---|---|
-| `physics` | pycbc (not on Windows) | PyCBC waveforms. Without it, `gwd.core` uses a Newtonian approximation, and `gwd data generate` and `gwd eval run` warn about it. |
+| `physics` | pycbc (not on Windows) | PyCBC waveforms: `gwd data generate`, `gwd eval run`, `gwd eval thresholds`, `gwd eval compare`, and the Glitch Hunter. There is no fallback; only the waveform explorer uses a Newtonian approximation without it. |
 | `gwdata` | gwpy | `gwd data fetch-noise`, the field test of `gwd eval run`, and real data in the Glitch Hunter |
 | `ml` | tensorflow | `gwd train`, `gwd eval run`, `gwd eval thresholds`, `gwd eval compare`, and the Glitch Hunter |
 | `dev` | pytest, ruff | Tests and linting |
@@ -111,7 +111,7 @@ gwd data validate
 gwd data validate --plots
 ```
 
-`gwd data generate` and `gwd eval run` start with a line `Backend: ... | Noise: ...` that names the waveform backend (`pycbc <version>` or `newton`) and the noise. Without PyCBC, or without real noise chunks in `data/noise_background/`, they print a warning on stderr. The dataset folder gets a `manifest.json` with the scenario, seed, backend, package versions, Git commit, and the share of real noise; `labels.csv` names the backend, the noise source (`real` or `gaussian`), and the noise chunk of every sample. `gwd data generate` writes only into a new or empty folder and otherwise exits with code 1; with `--overwrite` it first removes the folder's `sample_*.npy` files and `labels.csv` and nothing else (other files, subfolders, and `data/noise_background/` stay). `gwd data validate` loads every sample that `labels.csv` lists and checks that it exists, has 16384 float values, and has no NaN or Inf; it also reports `sample_*.npy` files that `labels.csv` does not list, and a `manifest.json` that does not match `labels.csv` or its scenario. If the manifest names a scenario, every signal sample must lie in that scenario's SNR, mass, and merger time ranges, and the classes must be balanced to 50% ± 5%. A dataset without a manifest (written before P4.1) is reported as `unknown (v1)` and checked for integrity only. The command lists every finding and exits with code 1 if there is one. The plots go to `plots/validation_dataset/` only with `--plots` (or to the folder given after it). `gwd data fetch-noise` conditions its segment in one piece and writes every 4 s chunk except the first and the last, which hold the ringing of the filters at the ends of the segment; `NNNN` in the file name is the chunk's position in the segment. Files already in the folder are kept, and the files that are not from the new download are named on stderr.
+`gwd data generate` and `gwd eval run` start with a line `Backend: ... | Noise: ...` that names the waveform backend (`pycbc <version>`) and the noise. Without PyCBC they stop before they write, remove, or load anything, print the install hint on stderr, and exit with code 1. Without real noise chunks in `data/noise_background/`, `gwd data generate` prints a warning on stderr. The dataset folder gets a `manifest.json` with the scenario, seed, backend, package versions, Git commit, and the share of real noise; `labels.csv` names the backend, the noise source (`real` or `gaussian`), and the noise chunk of every sample. `gwd data generate` writes only into a new or empty folder and otherwise exits with code 1; with `--overwrite` it first removes the folder's `sample_*.npy` files and `labels.csv` and nothing else (other files, subfolders, and `data/noise_background/` stay). `gwd data validate` loads every sample that `labels.csv` lists and checks that it exists, has 16384 float values, and has no NaN or Inf; it also reports `sample_*.npy` files that `labels.csv` does not list, and a `manifest.json` that does not match `labels.csv` or its scenario. If the manifest names a scenario, every signal sample must lie in that scenario's SNR, mass, and merger time ranges, and the classes must be balanced to 50% ± 5%. A dataset without a manifest (written before P4.1) is reported as `unknown (v1)` and checked for integrity only. The command lists every finding and exits with code 1 if there is one. The plots go to `plots/validation_dataset/` only with `--plots` (or to the folder given after it). `gwd data fetch-noise` conditions its segment in one piece and writes every 4 s chunk except the first and the last, which hold the ringing of the filters at the ends of the segment; `NNNN` in the file name is the chunk's position in the segment. Files already in the folder are kept, and the files that are not from the new download are named on stderr.
 
 ### 2. Training
 
@@ -206,7 +206,7 @@ python -m pytest
 | `golden` | Stored golden values of the waveforms (Newton and PyCBC), the noise, the SNR scaling, a small dataset, and the interferometer |
 | `network` | A real download from GWOSC |
 
-The smoke and golden tests run in a temporary `GWD_HOME`. Tests that need TensorFlow or gwpy are skipped without them. `GWD_REQUIRE_PYCBC=1` makes a missing PyCBC fail the PyCBC tests instead of skipping them. `tests/test_docs_commands.py` checks that every `gwd` command in this README and in `docs/` parses, and that every relative link works.
+The smoke and golden tests run in a temporary `GWD_HOME`. Tests that need TensorFlow or gwpy are skipped without them. `GWD_REQUIRE_PYCBC=1` makes a missing PyCBC fail the PyCBC tests in `tests/core/` and `tests/golden/` instead of skipping them. The tests that generate datasets or test sets need PyCBC, as the pipeline does. `tests/test_docs_commands.py` checks that every `gwd` command in this README and in `docs/` parses, and that every relative link works.
 
 CI (`.github/workflows/ci.yml`) runs on every push and pull request: the lockfile check, `ruff format --check . && ruff check .`, and `pytest -m 'not slow and not network and not apps'` with PyCBC but without TensorFlow. The slow, app, and golden tests run in a second job that is started by hand.
 

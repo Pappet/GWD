@@ -64,10 +64,7 @@ FILE_RULES = {
 }
 
 # (file, import or 'print'). Each entry names the finding and the step that removes it.
-ALLOWLIST = {
-    # CORE-17: pycbc is imported at module level in a try block (P5.2).
-    ("src/gwd/core/waveforms.py", "pycbc"),
-}
+ALLOWLIST = set()  # empty since P5.2; it may only shrink, so it stays empty
 
 
 def component(path):

@@ -1,11 +1,12 @@
 """Where a dataset comes from: the manifest and the backend and noise line (P4.1).
 
-Two switches in the environment decide what the data contains (hygiene:HYG-M1):
-whether PyCBC can be imported (otherwise the Newtonian approximation draws the
-chirps), and whether real noise chunks exist (otherwise every sample gets Gaussian
-noise). generate and evaluate print both in one line when they start, with a loud
-warning on stderr for Newton. generate also writes them to <out>/manifest.json, and
-training copies them into the model's metadata.
+Two things decide what the data contains (hygiene:HYG-M1): the waveform backend, and
+whether real noise chunks exist (otherwise every sample gets Gaussian noise). Since
+P5.2 the backend is no longer a switch in the environment: the pipeline always uses
+gwd.config.WAVEFORM_BACKEND ('pycbc') and stops without PyCBC. generate and evaluate
+print both in one line when they start, with a loud warning on stderr if a caller
+chose Newton on purpose (only tests and the golden values do). generate also writes
+them to <out>/manifest.json, and training copies them into the model's metadata.
 """
 
 import hashlib
@@ -15,7 +16,8 @@ import os
 import subprocess
 import sys
 
-from gwd.core.waveforms import active_backend
+from gwd.config import WAVEFORM_BACKEND
+from gwd.core.waveforms import backend_label, check_backend
 
 MANIFEST_FILE = "manifest.json"
 MANIFEST_FORMAT = 1
@@ -82,8 +84,9 @@ def build_manifest(
     signal_backends,
     noise_chunks,
     noise_dir,
+    backend=WAVEFORM_BACKEND,
 ):
-    """The manifest of a dataset of n samples drawn from scenario.
+    """The manifest of a dataset of n samples drawn from scenario with backend.
 
     seed is the seed the samples were drawn with, None if unseeded.
     real_noise_samples counts the samples with a real chunk, signal_backends the signal
@@ -97,7 +100,7 @@ def build_manifest(
         "scenario_hash": scenario.hash(),
         "seed": seed,
         "n": n,
-        "waveform_backend": active_backend(),
+        "waveform_backend": backend_label(backend),
         "signal_backends": dict(sorted(signal_backends.items())),
         "real_noise_fraction": real_noise_samples / n if n else 0.0,
         "real_noise_samples": real_noise_samples,
@@ -132,23 +135,25 @@ def read_manifest(folder):
     return manifest, sha256_file(path)
 
 
-def source_line(noise):
-    """The one line that names both switches: 'Backend: ... | Noise: ...'."""
-    return f"Backend: {active_backend()} | Noise: {noise}"
+def source_line(noise, backend=WAVEFORM_BACKEND):
+    """The one line that names backend and noise: 'Backend: ... | Noise: ...'."""
+    return f"Backend: {backend_label(backend)} | Noise: {noise}"
 
 
-def announce(noise, notes=()):
-    """Print source_line(noise), framed, and the notes as warnings on stderr.
+def announce(noise, notes=(), backend=WAVEFORM_BACKEND):
+    """Print source_line(noise, backend), framed, and the notes as warnings on stderr.
 
-    The Newton warning is added by itself when PyCBC is not the backend.
+    The backend is checked first, so a missing PyCBC raises WaveformBackendError
+    before anything is printed. The Newton warning is added for backend 'newton'.
     """
+    check_backend(backend)
     print("=" * 70)
-    print(source_line(noise))
+    print(source_line(noise, backend))
     print("=" * 70)
     # Flush first, so the warnings follow the line when both streams share a terminal.
     sys.stdout.flush()
     messages = list(notes)
-    if active_backend() == "newton":
+    if backend == "newton":
         messages.insert(0, NEWTON_WARNING)
     for message in messages:
         print(message, file=sys.stderr)

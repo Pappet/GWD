@@ -18,6 +18,11 @@ The default is np.random, the global RNG, as before. gwd.core has no rng paramet
 until P5.3, so this module draws white noise and random masses itself, with the same
 calls as gwd.core.noise.generate_gaussian_noise and
 gwd.core.waveforms.generate_random_bbh_parameters.
+
+The chirps come from the backend gwd.config.WAVEFORM_BACKEND ('pycbc'). Without PyCBC,
+make_sample raises gwd.core.waveforms.WaveformBackendError (P5.2); there is no fallback
+to the Newtonian approximation. The backend argument exists so the golden values and
+tests can draw numpy-only Newton chirps on purpose.
 """
 
 import glob
@@ -28,11 +33,11 @@ from typing import Optional
 
 import numpy as np
 
-from gwd.config import DATA_DIR_NOISE, DURATION, N_SAMPLES
-from gwd.core.waveforms import chirp_and_backend
+from gwd.config import DATA_DIR_NOISE, DURATION, N_SAMPLES, WAVEFORM_BACKEND
+from gwd.core.waveforms import generate_chirp
 from gwd.data.preprocessing import normalize
 
-# Distance of the fixed-mass scenarios: the default of generate_astrophysical_chirp.
+# Distance of the fixed-mass scenarios: the default of generate_chirp.
 FIXED_DISTANCE_MPC = 400.0
 # Random masses: distance uniform in volume up to this value. It does not change the
 # sample, because the chirp is normalized to peak 1 before scaling (metadata only).
@@ -193,7 +198,14 @@ def draw_params(scenario, rng=None, snr=None):
     )
 
 
-def make_sample(scenario, rng=None, has_signal=None, snr=None, noise_provider=None):
+def make_sample(
+    scenario,
+    rng=None,
+    has_signal=None,
+    snr=None,
+    noise_provider=None,
+    backend=WAVEFORM_BACKEND,
+):
     """Draw one sample of N_SAMPLES points from scenario (draw order in the module doc).
 
     has_signal: None draws the label (50/50); True or False sets it.
@@ -201,6 +213,7 @@ def make_sample(scenario, rng=None, has_signal=None, snr=None, noise_provider=No
     noise_provider: callable (length, rng) -> (real noise, file name), see
         real_noise_provider. A file name of None means the provider fell back to white
         noise. None means no real noise, so every sample gets white noise.
+    backend: the waveform backend of the chirp; the pipeline keeps the default.
     """
     if scenario.condition_signal:
         raise NotImplementedError("Conditioning the signal comes with V2 (P6.2)")
@@ -228,8 +241,9 @@ def make_sample(scenario, rng=None, has_signal=None, snr=None, noise_provider=No
         return Sample(noise, noise, None, False, None, 0.0, noise_kind, noise_file)
 
     params = draw_params(scenario, rng, snr)
-    chirp, _, backend = chirp_and_backend(
+    chirp, _ = generate_chirp(
         time,
+        backend=backend,
         t_merger=params.t_merger,
         mass1=params.mass1,
         mass2=params.mass2,
@@ -252,14 +266,18 @@ def make_sample(scenario, rng=None, has_signal=None, snr=None, noise_provider=No
     )
 
 
-def make_test_set(scenario, n_samples, rng=None, noise_provider=None):
+def make_test_set(
+    scenario, n_samples, rng=None, noise_provider=None, backend=WAVEFORM_BACKEND
+):
     """n_samples samples with drawn labels, normalized, as (X, y).
 
     X has the shape (n_samples, N_SAMPLES, 1) the CNN takes, y holds 0 and 1.
     """
     X, y = [], []
     for _ in range(n_samples):
-        sample = make_sample(scenario, rng, noise_provider=noise_provider)
+        sample = make_sample(
+            scenario, rng, noise_provider=noise_provider, backend=backend
+        )
         X.append(normalize(sample.data))
         y.append(1 if sample.has_signal else 0)
     return np.array(X).reshape(n_samples, N_SAMPLES, 1), np.array(y)

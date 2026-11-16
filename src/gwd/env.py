@@ -1,10 +1,9 @@
 """gwd env: what this installation runs with (P3.6).
 
-Prints versions, the installed extras, the active waveform backend, the resolved paths,
-and the matplotlib backend. Availability is checked with importlib.util.find_spec and
-the installed package metadata, so TensorFlow and gwpy are never imported. The one
-exception is the waveform backend: only importing gwd.core.waveforms (and with it
-PyCBC) shows whether PyCBC actually works.
+Prints versions, the installed extras, the waveform backend of the pipeline and of the
+demo apps, the resolved paths, and the matplotlib backend. Availability is checked with
+importlib.util.find_spec and the installed package metadata, so TensorFlow and gwpy are
+never imported. The one exception is PyCBC: only importing it shows whether it works.
 """
 
 import importlib.metadata
@@ -53,11 +52,11 @@ def package_version(module, distribution):
         return "unknown version"
 
 
-def waveform_backend():
-    """'pycbc' or 'newton', as gwd.core.waveforms decided on import."""
+def pycbc_works():
+    """True if PyCBC can be imported, which the pipeline needs (P5.2)."""
     from gwd.core import waveforms
 
-    return "pycbc" if waveforms.HAS_PYCBC else "newton"
+    return waveforms.pycbc_available()
 
 
 def gui_backend():
@@ -99,11 +98,20 @@ def main():
         _line(extra, f"{state} ({details})")
 
     print("\nWaveform backend:")
-    backend = waveform_backend()
-    if backend == "pycbc":
-        _line("Active", f"pycbc {importlib.metadata.version('pycbc')}")
+    from gwd.config import WAVEFORM_BACKEND
+    from gwd.core.waveforms import backend_label
+
+    if pycbc_works():
+        _line("Pipeline", backend_label(WAVEFORM_BACKEND))
+        _line("Demo apps", backend_label("pycbc"))
     else:
-        _line("Active", "newton (Newtonian approximation, PyCBC not importable)")
+        _line(
+            "Pipeline",
+            f"{WAVEFORM_BACKEND} MISSING: gwd data generate and gwd eval run, "
+            "thresholds, and compare stop (pip install -e '.[physics]' on Linux "
+            "or WSL)",
+        )
+        _line("Demo apps", "newton (Newtonian approximation, physically inaccurate)")
 
     print("\nPaths:")
     from gwd import config

@@ -8,7 +8,7 @@ from gwd.core.simulation import TimeDomainSimulator
 
 @pytest.fixture
 def simulator(backend):
-    return TimeDomainSimulator(duration=0.5, sample_rate=4096)
+    return TimeDomainSimulator(duration=0.5, sample_rate=4096, backend=backend)
 
 
 def test_generate_chirp_gives_physical_strain_with_the_merger_at_80_percent(simulator):
@@ -49,3 +49,8 @@ def test_response_converts_strain_to_arm_length_change_and_intensity(simulator):
     # Small phase: sin^2(x) = x^2 with x = 4 pi dL / lambda.
     phase = 4 * np.pi * delta_l / simulator.laser_wavelength
     np.testing.assert_allclose(intensity, phase**2, rtol=1e-6, atol=0)
+
+
+def test_the_simulator_needs_a_known_backend():
+    with pytest.raises(ValueError, match="pycbc"):
+        TimeDomainSimulator(backend="lal")

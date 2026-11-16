@@ -1,5 +1,4 @@
 import os
-import warnings
 
 import numpy as np
 import pytest
@@ -7,8 +6,8 @@ import pytest
 from gwd.core import waveforms
 
 SEED = 20251115
-BACKENDS = ["pycbc", "newton"]
-PYCBC_INSTALLED = waveforms.HAS_PYCBC  # Captured before any test patches it.
+BACKENDS = list(waveforms.BACKENDS)
+PYCBC_INSTALLED = waveforms.pycbc_available()
 
 
 @pytest.fixture(autouse=True)
@@ -34,18 +33,12 @@ def needs_pycbc():
 
 
 @pytest.fixture(params=BACKENDS)
-def backend(request, monkeypatch):
-    """Select the waveform backend through waveforms.HAS_PYCBC.
+def backend(request):
+    """The waveform backend a test passes explicitly; 'pycbc' skips without PyCBC.
 
-    On 'pycbc', a fallback to Newton (CORE-4) fails the test: its WaveformFallbackWarning
-    becomes an error. The error is not an AssertionError, so xfail(raises=AssertionError)
-    cannot hide it.
+    Since P5.2 the backend is an argument and nothing falls back to Newton, so a test
+    on 'pycbc' runs PyCBC or fails with WaveformBackendError.
     """
-    with warnings.catch_warnings():
-        if request.param == "pycbc":
-            require_pycbc()
-            monkeypatch.setattr(waveforms, "HAS_PYCBC", True)
-            warnings.simplefilter("error", waveforms.WaveformFallbackWarning)
-        else:
-            monkeypatch.setattr(waveforms, "HAS_PYCBC", False)
-        yield request.param
+    if request.param == "pycbc":
+        require_pycbc()
+    return request.param

@@ -295,3 +295,31 @@ def test_train_with_the_default_dataset_missing_exits_with_one(tmp_path):
     assert result.returncode == 1
     assert "labels.csv is missing" in result.stderr
     assert "Traceback" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["eval", "thresholds"],
+        ["eval", "compare", "--model", "a", "--model", "b"],
+        ["app", "glitch-hunter"],
+    ],
+)
+def test_without_pycbc_a_command_that_draws_signals_exits_with_1(argv, tmp_path):
+    """P5.2: no Newton fallback, no traceback; the hint names the install command."""
+    for name in ("a", "b"):
+        (tmp_path / "models_registry").mkdir(exist_ok=True)
+        (tmp_path / "models_registry" / f"{name}.keras").touch()
+    code = "\n".join(
+        [
+            "import sys",
+            "sys.modules['pycbc'] = None",
+            "from gwd.cli import main",
+            f"rc = main({argv!r})",
+            "print(rc, 'tensorflow' in sys.modules)",
+        ]
+    )
+    result = run_python(code, tmp_path)
+    assert result.stdout.splitlines()[-1] == "1 False"
+    assert "pip install -e '.[physics]'" in result.stderr
+    assert "Traceback" not in result.stderr
