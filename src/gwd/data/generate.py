@@ -1,166 +1,59 @@
-import glob
 import os
-import random
 
 import numpy as np
 import pandas as pd
 
 from gwd.config import (
-    DATA_DIR_NOISE,
     DATA_DIR_TRAIN,
-    DURATION,
     LABELS_FILE,
-    N_SAMPLES,
     SAMPLES_FOR_TRAINING,
     ensure_dirs,
 )
-from gwd.core.noise import generate_gaussian_noise
-from gwd.core.waveforms import (
-    generate_astrophysical_chirp,
-    generate_random_bbh_parameters,
-)
-from gwd.data.preprocessing import normalize
-
-REAL_NOISE_DIR = DATA_DIR_NOISE
+from gwd.data.injection import make_sample, real_noise_provider
+from gwd.data.scenarios import TRAIN_V1
 
 
-def scale_signal_to_snr(signal, noise, target_snr):
+def generate_dataset(
+    num_samples=SAMPLES_FOR_TRAINING,
+    output_folder=DATA_DIR_TRAIN,
+    scenario=TRAIN_V1,
+    rng=None,
+):
+    """Write num_samples samples of scenario and their labels.csv to output_folder.
+
+    Even indices are signal samples, odd ones noise only (strictly 50/50). The noise
+    is real where scenario and the chunks in DATA_DIR_NOISE allow it. rng defaults to
+    the global numpy RNG (see gwd.data.injection).
     """
-    Skaliert das Signal basierend auf PEAK-Amplitude relativ zur Noise-Std.
-    Das entspricht der Logik in evaluate_model_with_roc.py.
-    """
-    # 1. Noise Level messen (Standardabweichung)
-    noise_level = np.std(noise)
-    if noise_level == 0:
-        noise_level = 1.0
-
-    # 2. Signal normalisieren (auf Peak = 1.0)
-    sig_max = np.max(np.abs(signal))
-    if sig_max == 0:
-        return signal, 0.0
-
-    signal_normalized = signal / sig_max
-
-    # 3. Auf Ziel-SNR skalieren
-    # Peak Amplitude = target_snr * noise_level
-    scaled_signal = signal_normalized * target_snr * noise_level
-
-    return scaled_signal, target_snr
-
-
-def load_random_real_noise(length):
-    """Lädt echtes Rauschen und normalisiert es auf Std=1."""
-    files = glob.glob(os.path.join(REAL_NOISE_DIR, "*.npy"))
-    if not files:
-        return generate_gaussian_noise(length, 1.0)
-
-    f = random.choice(files)
-    try:
-        data = np.load(f)
-        if len(data) != length:
-            # Einfaches Resizing falls nötig
-            if len(data) > length:
-                start = np.random.randint(0, len(data) - length)
-                data = data[start : start + length]
-            else:
-                return generate_gaussian_noise(length, 1.0)
-
-        # Default eps as before. On raw strain (std ~1e-21) eps dominates, so the
-        # result has a std of ~1e-11, not 1. Kept as is (V1); see the P3.2 PR.
-        data = normalize(data)
-        return data
-    except Exception:
-        return generate_gaussian_noise(length, 1.0)
-
-
-def generate_dataset(num_samples=SAMPLES_FOR_TRAINING, output_folder=DATA_DIR_TRAIN):
-    print(f"🚀 Starte Daten-Generierung (Peak-SNR Methode). Ziel: {num_samples}")
+    print(
+        f"🚀 Generating data ({scenario.name}, {scenario.snr_kind} SNR). Target: {num_samples}"
+    )
 
     ensure_dirs(output_folder)
 
-    time = np.linspace(0, DURATION, N_SAMPLES)
+    noise_provider = real_noise_provider()
     labels = []
 
-    has_real_noise = len(glob.glob(os.path.join(REAL_NOISE_DIR, "*.npy"))) > 0
-
     for i in range(num_samples):
-        # Default Werte
-        has_signal = 0
-        t_merger = 0.0
-        snr = 0.0
-        m1 = 0.0
-        m2 = 0.0
-        dist = 0.0
-        data = None
-
-        dice = np.random.rand()
-
-        # Rauschen laden (Echt oder Simuliert)
-        if has_real_noise and dice < 0.8:
-            noise = load_random_real_noise(len(time))
-        else:
-            noise = generate_gaussian_noise(len(time), 1.0)
-
-        # Soll ein Signal rein? (50% Chance in den Signal-Blöcken)
-        # Wir vereinfachen die Logik hier etwas für klarere Verteilung
-        # 50% Rauschen pur, 50% Signal+Rauschen
-        should_have_signal = i % 2 == 0  # Strikt 50/50 Verteilung
-
-        if should_have_signal:
-            # Parameter würfeln
-            params = generate_random_bbh_parameters()
-            m1 = params["mass1"]
-            m2 = params["mass2"]
-            dist = params["distance"]
-            t_merger = np.random.uniform(
-                DURATION * 0.5, DURATION * 0.9
-            )  # Merger eher hinten
-
-            # Signal generieren
-            # Wir nutzen hier generate_astrophysical_chirp als Wrapper,
-            # da es normalize=True unterstützt, was wir für Peak-Scaling brauchen
-            signal_raw, _ = generate_astrophysical_chirp(
-                time,
-                t_merger=t_merger,
-                mass1=m1,
-                mass2=m2,
-                distance_mpc=dist,
-                normalize=True,
-            )
-
-            # SNR wählen: WICHTIG! Jetzt kleinere Werte nehmen!
-            # Vorher: 5-25 (bei falscher Berechnung)
-            # Jetzt: 1.0 - 15.0 (realistische Peak SNRs für Training)
-            # Wir wollen auch schwache Signale (SNR 1-3) lernen!
-            target_snr = np.random.uniform(1.0, 12.0)
-
-            # Skalieren
-            signal_scaled, actual_snr = scale_signal_to_snr(
-                signal_raw, noise, target_snr
-            )
-
-            data = noise + signal_scaled
-            has_signal = 1
-            snr = actual_snr
-
-        else:
-            data = noise
-            has_signal = 0
+        sample = make_sample(
+            scenario, rng, has_signal=(i % 2 == 0), noise_provider=noise_provider
+        )
+        params = sample.params
 
         # Speichern
         filename = f"sample_{i:05d}.npy"
         filepath = os.path.join(output_folder, filename)
-        np.save(filepath, data)
+        np.save(filepath, sample.data)
 
         labels.append(
             {
                 "filename": filename,
-                "has_signal": has_signal,
-                "merger_time": float(t_merger),
-                "snr": float(snr),
-                "mass1": float(m1),
-                "mass2": float(m2),
-                "distance": float(dist),
+                "has_signal": int(sample.has_signal),
+                "merger_time": float(params.t_merger) if params else 0.0,
+                "snr": float(sample.snr),
+                "mass1": float(params.mass1) if params else 0.0,
+                "mass2": float(params.mass2) if params else 0.0,
+                "distance": float(params.distance) if params else 0.0,
             }
         )
 

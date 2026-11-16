@@ -9,6 +9,7 @@ import pytest
 
 from gwd.config import DURATION, N_SAMPLES, SAMPLE_RATE
 from gwd.data.gwosc import EVENTS, StrainError, event, fetch_strain
+from gwd.data.scenarios import TRAIN_V1
 
 GPS = 1126259462
 
@@ -31,8 +32,7 @@ OLD_KNOWN_EVENTS = {
     "GW190521": 1242442967.4,
     "GW190814": 1249852257.0,
 }
-# Mass range of gwd.core.waveforms.generate_random_bbh_parameters.
-TRAINING_MASSES = (5.0, 100.0)
+TRAINING_MASSES = TRAIN_V1.masses
 
 
 @pytest.fixture

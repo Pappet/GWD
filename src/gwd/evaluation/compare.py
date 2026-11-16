@@ -12,9 +12,7 @@ import matplotlib
 import numpy as np
 
 from gwd.config import (
-    DURATION,
     EVALUATION_MODELS_PLOTS_DIR,
-    N_SAMPLES,
     ensure_dirs,
 )
 
@@ -22,9 +20,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from sklearn.metrics import auc, roc_curve
 
-from gwd.core.noise import generate_gaussian_noise
-from gwd.core.waveforms import generate_astrophysical_chirp
-from gwd.data.preprocessing import normalize
+from gwd.data.injection import make_test_set
+from gwd.data.scenarios import EVAL_V1
 from gwd.registry import MODEL_HELP, list_models, load_model, model_name, resolve
 
 TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -43,36 +40,6 @@ def load_models(paths):
             print(f"✗ Fehler bei {path}: {e}")
 
     return models
-
-
-def generate_test_set(n_samples=1000):
-    """Generiert einen festen Test-Set für faire Vergleiche."""
-    print(f"\n📊 Generiere {n_samples} Test-Samples...")
-
-    time = np.linspace(0, DURATION, N_SAMPLES)
-    X_test = []
-    y_true = []
-
-    for i in range(n_samples):
-        has_sig = np.random.rand() > 0.5
-        noise = generate_gaussian_noise(len(time), 1.0)
-
-        if has_sig:
-            snr = np.random.uniform(0.5, 2.5)
-            t_m = np.random.uniform(2.0, 3.5)
-            sig, _ = generate_astrophysical_chirp(time, t_merger=t_m)
-            data = noise + (sig * snr)
-        else:
-            data = noise
-
-        data = normalize(data)
-        X_test.append(data)
-        y_true.append(1 if has_sig else 0)
-
-        if (i + 1) % 200 == 0:
-            print(f"   ... {i + 1}/{n_samples}")
-
-    return np.array(X_test).reshape(n_samples, len(time), 1), np.array(y_true)
 
 
 def compare_models_roc(models, X_test, y_true):
@@ -238,7 +205,9 @@ def main(argv=None):
     print(f"\n✅ {len(models)} Modelle geladen.")
 
     # 2. Test-Set generieren
-    X_test, y_true = generate_test_set(n_samples=1000)
+    n_samples = 1000
+    print(f"\n📊 Generating {n_samples} test samples ({EVAL_V1.name})...")
+    X_test, y_true = make_test_set(EVAL_V1, n_samples)
 
     # 3. Vergleich durchführen
     rankings = compare_models_roc(models, X_test, y_true)
