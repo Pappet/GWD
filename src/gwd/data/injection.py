@@ -44,6 +44,14 @@ Scenario V2 (condition_signal, P6.2) injects first and conditions afterwards
 Signal and noise thus pass the same filters, so no unfiltered chirp above 300 Hz is
 left as a shortcut (DATA-12, APPX-1), and the normalization no longer depends on the
 noise type (the V1 scale skew of real chunks, P3.2). V2 draws no real noise (D3 = B).
+
+Scenario V3 (whiten) draws exactly as V2, step for step, so the same rng gives the same
+label, noise, and parameters. Only step 5 differs: the padded sum is first whitened
+with the known PSD of the simulated noise (simulated_psd, the PSD the noise was drawn
+from), then conditioned and normalized as in V2. The chirp alone passes the same chain
+to give the signal part. Whitening is linear and invertible in the band, so the drawn
+optimal SNR keeps its meaning (D2 = B): it is the same matched filter SNR in the
+whitened sample.
 """
 
 import glob
@@ -360,7 +368,10 @@ def scale_factor_v2(window_signal, target_snr, kind, fs=SAMPLE_RATE):
 def make_conditioned_sample(
     scenario, rng=None, has_signal=None, snr=None, backend=WAVEFORM_BACKEND
 ):
-    """Draw one V2 sample: inject first, then condition and normalize together (P6.2).
+    """Draw one V2 or V3 sample: inject first, then condition and normalize together.
+
+    V3 (scenario.whiten) whitens with the known PSD before conditioning (see the
+    module doc); the draws are those of V2.
 
     The draw order and the steps are in the module doc. The returned data, noise, and
     signal are the conditioned window of N_SAMPLES points, divided by the std of the
@@ -379,9 +390,11 @@ def make_conditioned_sample(
         has_signal = bool(rng.rand() > 0.5)
     noise_kind = scenario.simulated_noise
     raw_noise = draw_simulated_noise(noise_kind, total, rng)
+    # V3 whitens with the PSD the noise was drawn from; V2 does not whiten.
+    psd = simulated_psd(noise_kind, total) if scenario.whiten else None
 
     if not has_signal:
-        conditioned = condition_array(raw_noise, SAMPLE_RATE, pad_s)
+        conditioned = condition_array(raw_noise, SAMPLE_RATE, pad_s, psd=psd)
         data = normalize(conditioned, eps=0.0)
         return Sample(data, data, None, False, None, 0.0, noise_kind)
 
@@ -400,8 +413,8 @@ def make_conditioned_sample(
         chirp[pad : pad + N_SAMPLES], params.snr, noise_kind
     )
 
-    conditioned = condition_array(raw_noise + chirp, SAMPLE_RATE, pad_s)
-    conditioned_signal = condition_array(chirp, SAMPLE_RATE, pad_s)
+    conditioned = condition_array(raw_noise + chirp, SAMPLE_RATE, pad_s, psd=psd)
+    conditioned_signal = condition_array(chirp, SAMPLE_RATE, pad_s, psd=psd)
     mean, std = np.mean(conditioned), np.std(conditioned)
     data = (conditioned - mean) / std
     signal = conditioned_signal / std

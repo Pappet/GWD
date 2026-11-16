@@ -12,6 +12,13 @@ The SNR of V2 is the optimal (matched filter) SNR against that PSD in BANDPASS (
 so the same value means the same detectability for every mass and noise type. V2 uses
 no real noise yet (D3 = B; real noise for V2 is P6.3). V1 stays the default of
 gwd data generate and of the evaluation until P6.5.
+
+V3 (TRAIN_V3, INDIST_V3, STRESS_V3, APP_V3) is V2 with one change: the conditioning
+whitens the padded sum of noise and signal with the known PSD of the noise before the
+notches and the band-pass (whiten=True, preprocessing "whiten_bandpass"). The ranges,
+the noise, and the draws are those of V2, so with the same seed indist_v3 and
+stress_v3 hold the same events and noise realizations as indist_v2 and stress_v2
+(EvalSet.stream); only the preprocessing differs.
 """
 
 import hashlib
@@ -28,6 +35,15 @@ SIMULATED_NOISES = ("white", "aligo")
 # Fields that came with V2 (P6.2), with the value every V1 scenario has. hash() leaves a
 # field out while it has this value, so the V1 hashes in existing manifests stay valid.
 V2_FIELD_DEFAULTS = {"simulated_noise": "white", "pad_s": 0.0}
+# The field that came with V3, with the value every V1 and V2 scenario has; hash()
+# leaves it out at that value too, so the V1 and V2 hashes stay valid.
+V3_FIELD_DEFAULTS = {"whiten": False}
+# What a model's input goes through before the CNN, on simulated and real data alike:
+# "bandpass" (V1, V2) notches the power line and band-passes; "whiten_bandpass" (V3)
+# whitens with the PSD of the noise first (gwd.data.preprocessing). A model records it
+# in its metadata (key "preprocessing"); preprocessing_of() reads it back.
+PREPROCESSINGS = ("bandpass", "whiten_bandpass")
+DEFAULT_PREPROCESSING = "bandpass"
 
 
 @dataclass(frozen=True)
@@ -54,6 +70,9 @@ class Scenario:
         V1 knows only "white".
     pad_s: seconds of extra noise and signal on each side of the window, conditioned
         with it and cut off afterwards (V2); 0 in V1.
+    whiten: whether the conditioning first whitens the padded sum with the known PSD
+        of the simulated noise (V3, gwd.data.preprocessing.whiten). Needs
+        condition_signal; False in V1 and V2.
     """
 
     name: str
@@ -68,6 +87,7 @@ class Scenario:
     condition_signal: bool = False
     simulated_noise: str = "white"
     pad_s: float = 0.0
+    whiten: bool = False
 
     def __post_init__(self):
         if self.mass_mode not in MASS_MODES:
@@ -84,6 +104,17 @@ class Scenario:
             self._check_v2()
         else:
             self._check_v1()
+        if self.whiten and not self.condition_signal:
+            raise ValueError("whiten needs condition_signal (V3 builds on V2)")
+
+    @property
+    def preprocessing(self):
+        """What a model trained on this scenario expects of its input (PREPROCESSINGS).
+
+        "whiten_bandpass" for V3 (whiten, then notches and band-pass), else "bandpass":
+        V1 and V2 run the notch and band-pass chain only, also on real data.
+        """
+        return "whiten_bandpass" if self.whiten else DEFAULT_PREPROCESSING
 
     def _check_v1(self):
         """V1: a peak SNR, white simulated noise, no pad (gwd.data.injection, V1)."""
@@ -113,10 +144,12 @@ class Scenario:
     def noise_text(self):
         """What noise the scenario draws, for the start lines (without real chunks)."""
         if self.simulated_noise == "aligo":
-            return (
-                "simulated aLIGO design noise (aLIGOZeroDetHighPower), conditioned "
-                "with the signal"
+            how = (
+                "whitened with its PSD and conditioned with the signal"
+                if self.whiten
+                else "conditioned with the signal"
             )
+            return f"simulated aLIGO design noise (aLIGOZeroDetHighPower), {how}"
         if self.condition_signal:
             return "white gaussian, conditioned with the signal"
         return "gaussian"
@@ -134,7 +167,7 @@ class Scenario:
         stored with a dataset.
         """
         fields = asdict(self)
-        for key, default in V2_FIELD_DEFAULTS.items():
+        for key, default in {**V2_FIELD_DEFAULTS, **V3_FIELD_DEFAULTS}.items():
             if fields[key] == default:
                 del fields[key]
         text = json.dumps(fields, sort_keys=True)
@@ -214,9 +247,30 @@ APP_V2 = replace(
     masses=(30.0, 30.0),
 )
 
+# --- V3: V2 plus whitening with the known PSD before the notches and band-pass ---
+
+# Training data of V3: TRAIN_V2 with whitening. Everything else, and so every draw,
+# is that of TRAIN_V2 (tests/data/test_scenario_v3.py).
+TRAIN_V3 = replace(TRAIN_V2, name="TRAIN_V3", version=3, whiten=True)
+INDIST_V3 = replace(INDIST_V2, name="INDIST_V3", version=3, whiten=True)
+STRESS_V3 = replace(STRESS_V2, name="STRESS_V3", version=3, whiten=True)
+APP_V3 = replace(APP_V2, name="APP_V3", version=3, whiten=True)
+
 SCENARIOS = {
     s.name: s
-    for s in (TRAIN_V1, EVAL_V1, APP_V1, TRAIN_V2, INDIST_V2, STRESS_V2, APP_V2)
+    for s in (
+        TRAIN_V1,
+        EVAL_V1,
+        APP_V1,
+        TRAIN_V2,
+        INDIST_V2,
+        STRESS_V2,
+        APP_V2,
+        TRAIN_V3,
+        INDIST_V3,
+        STRESS_V3,
+        APP_V3,
+    )
 }
 
 
@@ -229,7 +283,9 @@ class EvalSet:
     range (of its snr_kind: peak in V1, optimal in V2) into equal bins, which the
     signal samples fill in turn, so every bin is occupied. training is the scenario
     the models were trained on: signal samples outside its parameter ranges count as
-    extrapolation.
+    extrapolation. stream names the set whose random streams this set draws from; None
+    means its own name. A V3 set draws from the streams of its V2 counterpart, so with
+    the same seed it holds the same events and noise, preprocessed differently.
     """
 
     name: str
@@ -237,6 +293,17 @@ class EvalSet:
     snr_bin_width: float
     description: str
     training: Scenario = TRAIN_V1
+    stream: Optional[str] = None
+
+    @property
+    def stream_name(self):
+        """The name that keys the random streams of the set (gwd.evaluation.testsets)."""
+        return self.stream or self.name
+
+    @property
+    def preprocessing(self):
+        """The preprocessing of the set's samples: that of its scenario."""
+        return self.scenario.preprocessing
 
     @property
     def snr_kind(self):
@@ -288,4 +355,72 @@ STRESS_V2_SET = EvalSet(
     training=TRAIN_V2,
 )
 
-TESTSETS = {s.name: s for s in (INDIST_V1, STRESS_V1, INDIST_V2_SET, STRESS_V2_SET)}
+# The V3 sets: the V2 sets with whitening, drawn from the V2 streams (same events).
+INDIST_V3_SET = replace(
+    INDIST_V2_SET,
+    name="indist_v3",
+    scenario=INDIST_V3,
+    description="indist_v2 whitened: the same events and noise as indist_v2 with the "
+    "same seed, whitened with the aLIGO PSD before the band-pass",
+    training=TRAIN_V3,
+    stream="indist_v2",
+)
+STRESS_V3_SET = replace(
+    STRESS_V2_SET,
+    name="stress_v3",
+    scenario=STRESS_V3,
+    description="stress_v2 whitened: the same events and noise as stress_v2 with the "
+    "same seed, whitened with the aLIGO PSD before the band-pass",
+    training=TRAIN_V3,
+    stream="stress_v2",
+)
+
+TESTSETS = {
+    s.name: s
+    for s in (
+        INDIST_V1,
+        STRESS_V1,
+        INDIST_V2_SET,
+        STRESS_V2_SET,
+        INDIST_V3_SET,
+        STRESS_V3_SET,
+    )
+}
+
+
+def preprocessing_of(metadata):
+    """The preprocessing a model expects, from its metadata (gwd.registry.read_metadata).
+
+    The key "preprocessing" (written by gwd train since V3); else that of the scenario
+    in "dataset_scenario", if it is a known one; else DEFAULT_PREPROCESSING, which is
+    what every model got before V3 (no metadata, or a model from before P4.1).
+    """
+    metadata = metadata or {}
+    value = metadata.get("preprocessing")
+    if value in PREPROCESSINGS:
+        return value
+    scenario = SCENARIOS.get(metadata.get("dataset_scenario"))
+    return scenario.preprocessing if scenario else DEFAULT_PREPROCESSING
+
+
+def counterpart_set(spec, preprocessing):
+    """The test set with the draws of spec and the given preprocessing, or None.
+
+    spec itself if its preprocessing is that one; else the set that draws from the same
+    streams with the same scenario fields apart from the whitening (indist_v2 and
+    indist_v3, stress_v2 and stress_v3). None if there is none (the V1 sets have no
+    whitened counterpart).
+    """
+    if spec.preprocessing == preprocessing:
+        return spec
+
+    def draws(s):
+        fields = s.scenario.distribution()
+        for key in ("version", "whiten"):
+            fields.pop(key)
+        return s.stream_name, s.snr_bin_width, fields
+
+    for other in TESTSETS.values():
+        if other.preprocessing == preprocessing and draws(other) == draws(spec):
+            return other
+    return None

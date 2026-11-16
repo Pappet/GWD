@@ -246,9 +246,11 @@ def _add_testset(parser, *aliases):
         *aliases,
         choices=sorted(TESTSETS),
         help="The fixed test set: indist_v1 (the training distribution TRAIN_V1), "
-        "stress_v1 (EVAL_V1, as before P5.7), indist_v2 (TRAIN_V2), or stress_v2 "
-        "(TRAIN_V2 with an extrapolation bin). Default: DEFAULT_TESTSET in gwd.config "
-        "(stress_v1).",
+        "stress_v1 (EVAL_V1, as before P5.7), indist_v2 (TRAIN_V2), stress_v2 "
+        "(TRAIN_V2 with an extrapolation bin), or indist_v3 and stress_v3 (the same "
+        "events as the V2 sets, whitened). A model trained with whitening is scored on "
+        "the V3 counterpart of a V2 set, and the other way round. Default: "
+        "DEFAULT_TESTSET in gwd.config (stress_v1).",
     )
     parser.add_argument(
         "--seed",
@@ -331,8 +333,10 @@ def build_parser():
         type=str.lower,
         choices=sorted(name.lower() for name in SCENARIOS),
         default="train_v1",
-        help="Scenario to draw from: train_v1, or train_v2 (simulated aLIGO noise, "
-        "conditioned with the signal, optimal SNR; needs gwpy). Default: train_v1.",
+        help="Scenario to draw from: train_v1, train_v2 (simulated aLIGO noise, "
+        "conditioned with the signal, optimal SNR; needs gwpy), or train_v3 (train_v2 "
+        "whitened with the aLIGO PSD before the band-pass; needs gwpy). Default: "
+        "train_v1.",
     )
     generate.set_defaults(handler=_generate)
 

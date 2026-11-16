@@ -92,6 +92,16 @@ WAVEFORM_BACKEND = "pycbc"
 NOTCH_FREQS = (60, 120, 180, 240)  # Hz
 BANDPASS = (20, 300)  # Hz, (low, high)
 
+# Whitening (V3, preprocessing "whiten_bandpass" in gwd.data.scenarios): simulated
+# samples whiten with the known PSD of their noise, real data with the Welch PSD of
+# their padded segment (gwd.data.preprocessing). That Welch PSD takes Hann segments of
+# this length (s), half overlap, and the median average (robust against a loud event).
+WHITEN_PSD_SEGMENT_S = 4.0
+# Real data are tapered with a Tukey window over this many seconds at each end before
+# they are whitened, so the jump between their two ends does not ring into the window.
+# The taper lies inside the pads, which are cut off afterwards.
+WHITEN_TAPER_S = 1.0
+
 # Length of the real-noise segment that fetch_noise downloads (about 68 minutes).
 # The segment start is START_GPS in gwd.data.fetch_noise.
 NOISE_FETCH_SECONDS = 4096

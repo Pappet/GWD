@@ -50,7 +50,14 @@ def test_the_standard_sets_are_indist_and_stress():
     assert TESTSETS["stress_v1"].scenario == EVAL_V1
     for name in V1_SETS:
         assert TESTSETS[name].training == TRAIN_V1
-    assert sorted(TESTSETS) == ["indist_v1", "indist_v2", "stress_v1", "stress_v2"]
+    assert sorted(TESTSETS) == [
+        "indist_v1",
+        "indist_v2",
+        "indist_v3",
+        "stress_v1",
+        "stress_v2",
+        "stress_v3",
+    ]
     for name in ("indist_v2", "stress_v2"):
         assert TESTSETS[name].training == TRAIN_V2
 
