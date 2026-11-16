@@ -128,6 +128,27 @@ def _train(args):
     return 0
 
 
+def _testset_options(args):
+    """The test set arguments given; the functions default to gwd.config (P5.7)."""
+    options = {"testset": args.testset, "seed": args.seed, "n": args.n}
+    return {name: value for name, value in options.items() if value is not None}
+
+
+def _eval_build_testset(args):
+    from gwd.evaluation import testsets
+
+    try:
+        options = _testset_options(args)
+        if "testset" in options:
+            options["name"] = options.pop("testset")
+        built = testsets.build(rebuild=args.rebuild, **options)
+    except testsets.InvalidTestsetError as error:
+        print(f"❌ {error}", file=sys.stderr)
+        return 1
+    print("\n".join(testsets.describe(built)))
+    return 0
+
+
 def _eval_run(args):
     from gwd.evaluation import evaluate
 
@@ -193,6 +214,50 @@ def _add_seed(parser, what, default="unseeded"):
         "--seed",
         type=int,
         help=f"Seed for {what}. Default: {default}.",
+    )
+
+
+def _non_negative(text):
+    value = int(text)
+    if value < 0:
+        raise argparse.ArgumentTypeError(f"must not be negative: {value}")
+    return value
+
+
+def _at_least_two(text):
+    value = int(text)
+    if value < 2:
+        raise argparse.ArgumentTypeError(f"must be at least 2: {value}")
+    return value
+
+
+def _add_testset(parser, *aliases):
+    """--testset, --seed, and --n: which fixed test set (gwd.evaluation.testsets).
+
+    The defaults stay None here and come from gwd.config in the functions, so the
+    parser does not import gwd.config (which needs a project root).
+    """
+    from gwd.data.scenarios import TESTSETS
+
+    parser.add_argument(
+        "--testset",
+        *aliases,
+        choices=sorted(TESTSETS),
+        help="The fixed test set: indist_v1 (the training distribution TRAIN_V1) or "
+        "stress_v1 (EVAL_V1, as before P5.7). Default: DEFAULT_TESTSET in gwd.config "
+        "(stress_v1).",
+    )
+    parser.add_argument(
+        "--seed",
+        type=_non_negative,
+        help="Seed of the test set (its own random stream, disjoint from training). "
+        "Default: TESTSET_SEED in gwd.config (0).",
+    )
+    parser.add_argument(
+        "--n",
+        type=_at_least_two,
+        help="Samples in the balanced part 'test'; the noise-only part calib_bg has as "
+        "many. Default: TESTSET_SIZE in gwd.config (1000).",
     )
 
 
@@ -336,6 +401,23 @@ def build_parser():
     eval_commands = evaluation.add_subparsers(
         dest="eval_command", metavar="COMMAND", required=True
     )
+
+    build_testset = eval_commands.add_parser(
+        "build-testset",
+        help="Build a fixed, hashed test set once (later calls load it).",
+        description="Draw a test set once into data/eval/<testset>_<seed>_<n>.npz, "
+        "with its manifest and SHA-256 in results/testsets/. If both exist, load and "
+        "check them instead (a cache hit); exit code 1 if they do not match or are "
+        "stale.",
+    )
+    # --scenario is the name in docs/aufraeumen/PLAN.md.
+    _add_testset(build_testset, "--scenario")
+    build_testset.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="Draw and write the set again, also over a cached one. Default: no.",
+    )
+    build_testset.set_defaults(handler=_eval_build_testset)
 
     run = eval_commands.add_parser(
         "run",

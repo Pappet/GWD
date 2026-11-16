@@ -64,6 +64,7 @@ def test_every_command_is_known():
         ("data", "validate"),
         ("train",),
         ("eval",),
+        ("eval", "build-testset"),
         ("eval", "run"),
         ("eval", "thresholds"),
         ("eval", "compare"),
@@ -219,6 +220,34 @@ def test_seed_none_leaves_the_rngs_alone(monkeypatch):
     cli.seed_everything(None)
 
 
+def test_build_testset_passes_name_seed_n_and_rebuild(monkeypatch, capsys):
+    from gwd.evaluation import testsets
+
+    calls = []
+    monkeypatch.setattr(
+        testsets, "build", lambda **options: calls.append(options) or "built"
+    )
+    monkeypatch.setattr(testsets, "describe", lambda built: [f"described {built}"])
+    argv = ["eval", "build-testset", "--scenario", "indist_v1", "--seed", "7"]
+    assert cli.main([*argv, "--n", "64", "--rebuild"]) == 0
+    assert calls == [{"name": "indist_v1", "seed": 7, "n": 64, "rebuild": True}]
+    assert "described built" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["eval", "build-testset", "--seed", "-1"],
+        ["eval", "build-testset", "--n", "1"],
+        ["eval", "build-testset", "--testset", "train_v1"],
+    ],
+)
+def test_invalid_test_set_options_exit_with_2(argv):
+    with pytest.raises(SystemExit) as exit_:
+        cli.main(argv)
+    assert exit_.value.code == 2
+
+
 class FakeTraining:
     """Stands in for gwd.training.train, so the train handler runs without TensorFlow."""
 
@@ -301,6 +330,7 @@ def test_train_with_the_default_dataset_missing_exits_with_one(tmp_path):
 @pytest.mark.parametrize(
     "argv",
     [
+        ["eval", "build-testset"],
         ["eval", "thresholds"],
         ["eval", "compare", "--model", "a", "--model", "b"],
     ],
