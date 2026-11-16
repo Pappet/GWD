@@ -70,11 +70,11 @@ def _validate(args):
     from gwd.config import DATA_DIR_TRAIN, VALIDATION_DATASET_PLOTS_DIR
     from gwd.data import validate
 
-    return validate.run(
-        data_folder=args.data or DATA_DIR_TRAIN,
-        output_folder=args.plots or VALIDATION_DATASET_PLOTS_DIR,
-        plots=not args.no_plots,
-    )
+    # --plots without a folder is the empty string; no --plots means no plots.
+    plots = args.plots
+    if plots == "":
+        plots = VALIDATION_DATASET_PLOTS_DIR
+    return validate.run(data_folder=args.data or DATA_DIR_TRAIN, output_folder=plots)
 
 
 def _train(args):
@@ -237,15 +237,19 @@ def build_parser():
 
     validate = data_commands.add_parser(
         "validate",
-        help="Check a dataset and plot its distributions.",
-        description="Check a dataset; exit code 1 if it is not fit for training.",
+        help="Check a dataset: every sample, orphans, manifest, scenario ranges.",
+        description="Check every sample that labels.csv lists, sample files it does "
+        "not list, manifest.json, and, if the manifest names its scenario, the signal "
+        "parameter ranges and the class balance. Exit code 1 if there is any finding.",
     )
     validate.add_argument("--data", help="Dataset folder. Default: data/training/.")
     validate.add_argument(
-        "--plots", help="Plot folder. Default: plots/validation_dataset/."
-    )
-    validate.add_argument(
-        "--no-plots", action="store_true", help="Statistics only, no plots."
+        "--plots",
+        nargs="?",
+        const="",
+        metavar="FOLDER",
+        help="Also write the report plots, to FOLDER or, without one, to "
+        "plots/validation_dataset/. Default: no plots.",
     )
     validate.set_defaults(handler=_validate)
 

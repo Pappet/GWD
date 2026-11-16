@@ -52,7 +52,7 @@ Before the cleanup, the scripts in `src/` found each other through `sys.path` ed
 |---|---|
 | `gwd data fetch-noise [--detector --gps --duration]` | `gwd.data.fetch_noise.fetch_and_slice` (network; overwrites chunks of the same name in `data/noise_background/`) |
 | `gwd data generate [--n --seed --out --scenario]` | `gwd.data.generate.generate_dataset`; `--scenario` is `train_v1` (default), `eval_v1`, or `app_v1` |
-| `gwd data validate [--data --plots --no-plots]` | `gwd.data.validate.run` |
+| `gwd data validate [--data --plots]` | `gwd.data.validate.run`; `--plots` with or without a folder writes the report plots, which are off by default |
 | `gwd train [--data --epochs --batch-size --lr --patience --mixed-precision --seed]` | `gwd.training.train.train(TrainConfig(...))` with only the options that were given |
 | `gwd eval run [--model --real/--no-real --seed]` | `gwd.evaluation.evaluate.run`; since P4.3 `--no-real` is the default and `--real` adds the field test (network, D10) |
 | `gwd eval thresholds [--model --save/--no-save --seed]` | `gwd.evaluation.thresholds.run`; saves by default and never asks (`EVAL-17`) |

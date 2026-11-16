@@ -8,7 +8,7 @@ was written before P4.1; its scenario is unknown, so only its integrity is check
 run() prints both with the statistics and returns 1 if there is any finding.
 
 Usage:
-    gwd data validate [--data FOLDER] [--plots FOLDER] [--no-plots]
+    gwd data validate [--data FOLDER] [--plots [FOLDER]]
 """
 
 import glob
@@ -400,8 +400,30 @@ def _print_findings(title, findings, ok_text):
         print(f"   ✅ {ok_text}")
 
 
-def create_visualizations(df, data_folder, output_folder=VALIDATION_DATASET_PLOTS_DIR):
-    """Erstellt umfassende Visualisierungen des Datensatzes."""
+def snr_examples(signal_samples):
+    """(label, row) of the signal samples with the lowest, median, and highest SNR."""
+    if signal_samples.empty:
+        return []
+    ordered = signal_samples.sort_values("snr", kind="stable")
+    picks = {"Lowest SNR": 0, "Median SNR": len(ordered) // 2, "Highest SNR": -1}
+    examples, seen = [], set()
+    for label, position in picks.items():
+        row = ordered.iloc[position]
+        if row["filename"] not in seen:
+            seen.add(row["filename"])
+            examples.append((label, row))
+    return examples
+
+
+def create_visualizations(
+    df, data_folder, output_folder=VALIDATION_DATASET_PLOTS_DIR, scenario=None
+):
+    """Erstellt umfassende Visualisierungen des Datensatzes.
+
+    The SNR histogram marks the SNR range of scenario, if it is known. The samples
+    shown are the first noise sample and the signal samples with the lowest, the
+    median, and the highest SNR; the fixed SNR classes up to '>20' are gone (DATA-4).
+    """
     # Lazy, so importing gwd.data does not load matplotlib (docs/architecture.md).
     import matplotlib.gridspec as gridspec
     import matplotlib.pyplot as plt
@@ -435,13 +457,16 @@ def create_visualizations(df, data_folder, output_folder=VALIDATION_DATASET_PLOT
         linewidth=2,
         label=f"Mean = {signal_samples['snr'].mean():.2f}",
     )
-    axes1[0].axvline(
-        5, color="orange", linestyle=":", linewidth=2, alpha=0.5, label="SNR = 5"
-    )
-    axes1[0].axvline(
-        10, color="purple", linestyle=":", linewidth=2, alpha=0.5, label="SNR = 10"
-    )
-    axes1[0].set_xlabel("Signal-to-Noise Ratio (SNR)", fontsize=12)
+    if scenario is not None:
+        for bound in scenario.snr_range:
+            axes1[0].axvline(bound, color="orange", linestyle=":", linewidth=2)
+        axes1[0].axvspan(
+            *scenario.snr_range,
+            color="orange",
+            alpha=0.08,
+            label=f"{scenario.name} range",
+        )
+    axes1[0].set_xlabel("Peak SNR (peak amplitude / noise std)", fontsize=12)
     axes1[0].set_ylabel("Anzahl Samples", fontsize=12)
     axes1[0].set_title("SNR Verteilung", fontsize=14, fontweight="bold")
     axes1[0].legend()
@@ -503,22 +528,10 @@ def create_visualizations(df, data_folder, output_folder=VALIDATION_DATASET_PLOT
     ax3.set_title("Massenverhältnis-Verteilung", fontweight="bold")
     ax3.grid(True, alpha=0.3)
 
-    # Distanz vs SNR
-    ax4 = fig2.add_subplot(gs[1, 0])
-    ax4.scatter(
-        signal_samples["distance"],
-        signal_samples["snr"],
-        alpha=0.5,
-        s=10,
-        color="steelblue",
-    )
-    ax4.set_xlabel("Distanz [Mpc]", fontsize=11)
-    ax4.set_ylabel("SNR", fontsize=11)
-    ax4.set_title("SNR vs Distanz", fontweight="bold")
-    ax4.grid(True, alpha=0.3)
-
     # Distanz Distribution
-    ax5 = fig2.add_subplot(gs[1, 1])
+    # The distance has no effect on the sample (normalized chirp), so there is no
+    # 'SNR vs distance' plot; this histogram shows only the drawn metadata.
+    ax5 = fig2.add_subplot(gs[1, 0])
     ax5.hist(
         signal_samples["distance"],
         bins=40,
@@ -532,7 +545,7 @@ def create_visualizations(df, data_folder, output_folder=VALIDATION_DATASET_PLOT
     ax5.grid(True, alpha=0.3)
 
     # Merger Time Distribution
-    ax6 = fig2.add_subplot(gs[1, 2])
+    ax6 = fig2.add_subplot(gs[1, 1])
     ax6.hist(
         signal_samples["merger_time"],
         bins=40,
@@ -561,31 +574,8 @@ def create_visualizations(df, data_folder, output_folder=VALIDATION_DATASET_PLOT
     if len(noise_samples) > 0:
         samples_to_plot.append(("Nur Rauschen", noise_samples.iloc[0]))
 
-    # Verschiedene SNR-Bereiche
-    snr_ranges = [
-        ("Sehr Schwach (SNR < 5)", signal_samples[signal_samples["snr"] < 5]),
-        (
-            "Schwach (SNR 5-10)",
-            signal_samples[(signal_samples["snr"] >= 5) & (signal_samples["snr"] < 10)],
-        ),
-        (
-            "Mittel (SNR 10-15)",
-            signal_samples[
-                (signal_samples["snr"] >= 10) & (signal_samples["snr"] < 15)
-            ],
-        ),
-        (
-            "Stark (SNR 15-20)",
-            signal_samples[
-                (signal_samples["snr"] >= 15) & (signal_samples["snr"] < 20)
-            ],
-        ),
-        ("Sehr Stark (SNR > 20)", signal_samples[signal_samples["snr"] >= 20]),
-    ]
-
-    for label, subset in snr_ranges:
-        if len(subset) > 0:
-            samples_to_plot.append((label, subset.iloc[0]))
+    for label, row in snr_examples(signal_samples):
+        samples_to_plot.append((label, row))
 
     n_plots = len(samples_to_plot)
     fig3, axes3 = plt.subplots(n_plots, 1, figsize=(16, 3 * n_plots))
@@ -638,15 +628,11 @@ def create_visualizations(df, data_folder, output_folder=VALIDATION_DATASET_PLOT
     if len(noise_samples) > 0:
         spec_samples.append(("Nur Rauschen", noise_samples.iloc[0]))
 
-    if len(signal_samples[signal_samples["snr"] < 10]) > 0:
-        spec_samples.append(
-            ("Schwaches Signal", signal_samples[signal_samples["snr"] < 10].iloc[0])
-        )
-
-    if len(signal_samples[signal_samples["snr"] >= 15]) > 0:
-        spec_samples.append(
-            ("Starkes Signal", signal_samples[signal_samples["snr"] >= 15].iloc[0])
-        )
+    examples = snr_examples(signal_samples)
+    if examples:
+        spec_samples.append(examples[0])
+    if len(examples) > 1:
+        spec_samples.append(examples[-1])
 
     fig4, axes4 = plt.subplots(
         len(spec_samples), 2, figsize=(16, 5 * len(spec_samples))
@@ -741,13 +727,12 @@ def create_visualizations(df, data_folder, output_folder=VALIDATION_DATASET_PLOT
     print(f"\n   ✅ Alle Visualisierungen erstellt in '{output_folder}/'")
 
 
-def run(
-    data_folder=DATA_DIR_TRAIN, output_folder=VALIDATION_DATASET_PLOTS_DIR, plots=True
-):
+def run(data_folder=DATA_DIR_TRAIN, output_folder=None):
     """Check the dataset in data_folder and print the report. Returns the exit code.
 
-    0 without findings, 1 with any integrity or distribution finding. Plots go to
-    output_folder if plots is true and the samples are intact.
+    0 without findings, 1 with any integrity or distribution finding. The plots are
+    optional: they are written to output_folder if it is given and the samples are
+    intact. gwd data validate --plots passes VALIDATION_DATASET_PLOTS_DIR.
     """
     print("\n" + "=" * 80)
     print("🔍 DATASET VALIDATION")
@@ -784,10 +769,10 @@ def run(
             "the classes are balanced.",
         )
 
-    if plots and integrity:
+    if output_folder and integrity:
         print("\nPlots skipped: they need intact samples.")
-    elif plots:
-        create_visualizations(labels, data_folder, output_folder)
+    elif output_folder:
+        create_visualizations(labels, data_folder, output_folder, scenario)
 
     findings = len(integrity) + len(distribution)
     print("\n" + "=" * 80)

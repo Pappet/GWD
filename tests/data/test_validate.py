@@ -1,6 +1,9 @@
 """gwd.data.validate checks every sample, the manifest, and orphans (P4.6)."""
 
+import os
 import shutil
+import subprocess
+import sys
 
 import numpy as np
 import pandas as pd
@@ -249,7 +252,7 @@ def test_a_correct_dataset_of_64_gives_rc_0_for_any_seed(tmp_path, seed, capsys)
     """The old validator failed on a low median SNR by chance (DATA-4)."""
     folder = tmp_path / "data"
     generate_dataset(64, str(folder), TRAIN_V1, seed=seed, noise_dir=str(tmp_path))
-    assert validate.run(str(folder), plots=False) == 0
+    assert validate.run(str(folder)) == 0
     out = capsys.readouterr().out
     assert "Scenario: TRAIN_V1" in out
     assert "The dataset is fit for training." in out
@@ -267,7 +270,7 @@ def test_each_broken_case_gives_rc_1(pristine, tmp_path, capsys):
         damage(folder)
         integrity, distribution, _ = validate.check_dataset(str(folder))
         assert (checks(integrity), distribution) == ([check], [])
-        assert validate.run(str(folder), plots=False) == 1
+        assert validate.run(str(folder)) == 1
         assert "1 finding(s): the dataset is not fit" in capsys.readouterr().out
 
 
@@ -277,12 +280,63 @@ def test_without_manifest_only_the_integrity_is_checked(dataset, capsys):
     labels.loc[labels.index[0], "snr"] = 99.0  # outside TRAIN_V1, but not checked
     labels.to_csv(dataset / "labels.csv", index=False)
     assert validate.check_dataset(str(dataset)) == ([], [], "unknown (v1)")
-    assert validate.run(str(dataset), plots=False) == 0
+    assert validate.run(str(dataset)) == 0
     out = capsys.readouterr().out
     assert "Scenario: unknown (v1)" in out
     assert "DISTRIBUTION" not in out
 
 
 def test_missing_labels_gives_rc_1(tmp_path, capsys):
-    assert validate.run(str(tmp_path / "nothing"), plots=False) == 1
+    assert validate.run(str(tmp_path / "nothing")) == 1
     assert "labels.csv is missing" in capsys.readouterr().out
+
+
+# --- the gwd data validate command ---
+
+
+def run_gwd(args, home):
+    env = {**os.environ, "GWD_HOME": str(home), "MPLBACKEND": "Agg"}
+    return subprocess.run(
+        [sys.executable, "-m", "gwd.cli", *args],
+        cwd=home,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+
+PLOTS = [
+    "01_snr_distribution.png",
+    "02_physical_parameters.png",
+    "03_sample_timeseries.png",
+    "04_spectrograms.png",
+    "05_correlation_matrix.png",
+]
+
+
+def test_plots_are_written_only_with_plots(dataset, tmp_path):
+    result = run_gwd(["data", "validate", "--data", str(dataset)], tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not (tmp_path / "plots").exists()
+
+    result = run_gwd(["data", "validate", "--data", str(dataset), "--plots"], tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    written = sorted(
+        p.name for p in (tmp_path / "plots" / "validation_dataset").iterdir()
+    )
+    assert written == PLOTS
+
+    other = tmp_path / "elsewhere"
+    args = ["data", "validate", "--data", str(dataset), "--plots", str(other)]
+    assert run_gwd(args, tmp_path).returncode == 0
+    assert sorted(p.name for p in other.iterdir()) == PLOTS
+
+
+def test_the_command_fails_for_a_broken_dataset(dataset, tmp_path):
+    (dataset / "sample_00003.npy").unlink()
+    args = ["data", "validate", "--data", str(dataset), "--plots"]
+    result = run_gwd(args, tmp_path)
+    assert result.returncode == 1
+    assert "sample_00003.npy: listed in labels.csv, but missing" in result.stdout
+    assert "Plots skipped" in result.stdout
+    assert "Traceback" not in result.stderr
