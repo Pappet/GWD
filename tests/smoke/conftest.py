@@ -4,8 +4,6 @@ import sys
 
 import pytest
 
-from .entrypoints import PIPELINE
-
 
 def _run(args, home, stdin=None):
     """Run python with args as a subprocess. GWD_HOME keeps all of its files inside home."""
@@ -36,15 +34,6 @@ def assert_ran_cleanly(name, result):
     details = f"{name} (rc {result.returncode})\n{result.stdout[-2000:]}\n{result.stderr[-2000:]}"
     assert result.returncode == 0, details
     assert "Traceback" not in result.stderr, details
-
-
-@pytest.fixture(scope="session")
-def pipeline_home(tmp_path_factory):
-    """Run every pipeline stage once, in order, and return the temporary project root."""
-    home = tmp_path_factory.mktemp("pipeline")
-    for name, stage in PIPELINE.items():
-        assert_ran_cleanly(name, run_stage(stage, home))
-    return home
 
 
 @pytest.fixture(scope="session")

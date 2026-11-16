@@ -1,8 +1,8 @@
 """Every command and relative link in the documentation works (P7.1).
 
-The scanned files are the Markdown files in the project root and in docs/; the German
-working folder docs/aufraeumen/ quotes old commands on purpose and is left out until P7.4
-removes it. The test checks:
+The scanned files are the Markdown files in the project root and in docs/ (until P7.4
+the German working folder docs/aufraeumen/, which quoted old commands on purpose, was
+left out; P7.4 removed it). The test checks:
 
 - every ``gwd ...`` line in a code block parses with gwd.cli.build_parser(), options
   and values included (nothing runs);

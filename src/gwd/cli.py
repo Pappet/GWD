@@ -393,7 +393,7 @@ def build_parser():
         "check them instead (a cache hit); exit code 1 if they do not match or are "
         "stale.",
     )
-    # --scenario is the name in docs/aufraeumen/PLAN.md.
+    # --scenario is the name the cleanup plan used for this option (P5.7).
     _add_testset(build_testset, "--scenario")
     build_testset.add_argument(
         "--rebuild",

@@ -8,8 +8,8 @@ where tensorflow, gwpy, and pycbc may appear at all, lazy or not. Dynamic import
 (__import__, importlib) are not checked.
 
 Known violations are in ALLOWLIST. It may only shrink: an entry that no longer matches
-a real violation fails the test, so fixing the code forces removing the entry. It must
-be empty by P7.4.
+a real violation fails the test, so fixing the code forces removing the entry. It is
+empty since P5.2, as P7.4 requires, and stays empty.
 """
 
 import ast
