@@ -38,7 +38,7 @@ def ensure_dirs(*paths):
 # Nothing is created on import. Code that writes calls ensure_dirs() first.
 ROOT_DIR = _find_root()
 
-# Daten-Ordner
+# Data folders
 DATA_DIR_TRAIN = os.path.join(ROOT_DIR, "data/training")
 DATA_DIR_NOISE = os.path.join(ROOT_DIR, "data/noise_background")
 MODELS_DIR = os.path.join(ROOT_DIR, "models_registry")
@@ -50,16 +50,16 @@ VALIDATION_DATASET_PLOTS_DIR = os.path.join(ROOT_DIR, "plots/validation_dataset"
 TRAINING_PLOTS_DIR = os.path.join(ROOT_DIR, "plots/training")
 EVALUATION_MODELS_PLOTS_DIR = os.path.join(ROOT_DIR, "plots/evaluation_models")
 
-# Dateinamen
+# File names
 LEADERBOARD_FILE = os.path.join(RESULTS_DIR, "model_leaderboard.csv")
 LEGACY_LEADERBOARD_FILES = (
     os.path.join(ROOT_DIR, "analysis/model_leaderboard.csv"),
     os.path.join(ROOT_DIR, "model_leaderboard.csv"),
 )
-LABELS_FILE = "labels.csv"  # Relativ zu DATA_DIR_TRAIN
+LABELS_FILE = "labels.csv"  # relative to DATA_DIR_TRAIN
 OPTIMAL_THRESHOLDS_FILE = os.path.join(RESULTS_DIR, "optimal_thresholds.json")
 
-# --- KONSTANTEN ---
+# --- CONSTANTS ---
 SAMPLE_RATE = 4096  # Hz
 DURATION = 4.0  # seconds per sample
 N_SAMPLES = int(SAMPLE_RATE * DURATION)  # 16384 values per sample
