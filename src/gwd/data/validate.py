@@ -388,10 +388,11 @@ def print_statistics(labels, scenario):
             f"   {column:<12} {values.min():>10.4g} {values.median():>10.4g} "
             f"{values.max():>10.4g}   {bound}"
         )
-    kind = scenario.snr_kind if scenario is not None else "peak"
+    if scenario is None:
+        return
     print(
-        f"   snr is a {kind} SNR (peak amplitude over noise std), not a matched "
-        "filter SNR."
+        f"   snr is a {scenario.snr_kind} SNR (peak amplitude over noise std), not a "
+        "matched filter SNR."
     )
     print(
         "   distance does not change the sample: the chirp is normalized before "
