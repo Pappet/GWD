@@ -21,6 +21,8 @@ LIGHT_MODULES = [
     "gwd.apps.waveform_explorer",
     "gwd.apps.interferometer_designer",
     "gwd.apps.glitch_hunter.app",
+    "gwd.apps.glitch_hunter.sources",
+    "gwd.apps.glitch_hunter.audio",
 ]
 TF_MODULES = [
     "gwd.training.model",

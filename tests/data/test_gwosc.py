@@ -130,6 +130,7 @@ def test_unknown_event_raises():
         "gwd.data.fetch_noise",
         "gwd.evaluation.evaluate",
         "gwd.apps.glitch_hunter.app",
+        "gwd.apps.glitch_hunter.sources",
     ],
 )
 def test_import_does_not_load_gwpy(module):

@@ -322,3 +322,47 @@ def test_without_pycbc_a_command_that_draws_signals_exits_with_1(argv, tmp_path)
     assert result.stdout.splitlines()[-1] == "1 False"
     assert "pip install -e '.[physics]'" in result.stderr
     assert "Traceback" not in result.stderr
+
+
+def run_glitch_hunter(argv, home, blocked=()):
+    """Run gwd app glitch-hunter in a subprocess under Agg; blocked modules are None."""
+    code = "\n".join(
+        [
+            "import os, sys",
+            "os.environ['GWD_HEADLESS_OK'] = '1'",
+            *(f"sys.modules[{name!r}] = None" for name in blocked),
+            "from gwd.cli import main",
+            f"rc = main({['app', 'glitch-hunter', *argv]!r})",
+            "print(rc, 'tensorflow' in sys.modules)",
+        ]
+    )
+    return run_python(code, home)
+
+
+def test_without_pycbc_the_glitch_hunter_starts_with_the_simulation_off(tmp_path):
+    """P4.4: real data need no PyCBC, so only the simulation is off (was rc 1 in P5.2)."""
+    result = run_glitch_hunter([], tmp_path, blocked=["pycbc"])
+    assert result.stdout.splitlines()[-1] == "0 False"
+    assert "the simulation is off" in result.stderr
+    assert "pip install -e '.[physics]'" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_without_pycbc_and_gwpy_the_glitch_hunter_exits_with_1(tmp_path):
+    result = run_glitch_hunter([], tmp_path, blocked=["pycbc", "gwpy"])
+    assert result.stdout.splitlines()[-1] == "1 False"
+    assert "pip install -e '.[physics]'" in result.stderr
+    assert "pip install -e '.[gwdata]'" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_an_unknown_glitch_hunter_model_exits_with_1(tmp_path):
+    result = run_glitch_hunter(["--model", "nope"], tmp_path)
+    assert result.stdout.splitlines()[-1] == "1 False"
+    assert "Model 'nope' is neither a file nor a model" in result.stderr
+
+
+def test_model_is_an_option_of_the_glitch_hunter_only(tmp_path):
+    result = run_gwd(["app", "waveform", "--model", "latest"], tmp_path)
+    assert result.returncode == 2
+    assert "--model is an option of glitch-hunter only" in result.stderr
