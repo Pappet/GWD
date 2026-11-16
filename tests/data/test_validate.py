@@ -9,7 +9,7 @@ import pytest
 from gwd.config import N_SAMPLES
 from gwd.data import validate
 from gwd.data.generate import generate_dataset
-from gwd.data.scenarios import TRAIN_V1
+from gwd.data.scenarios import EVAL_V1, TRAIN_V1
 
 
 @pytest.fixture(scope="module")
@@ -172,3 +172,117 @@ def test_format_findings_caps_each_check():
     assert "[orphan] 25 finding(s)" in text
     assert "s19: x" in text and "s20: x" not in text
     assert "... and 5 more" in text
+
+
+# --- distribution and exit code ---
+
+
+@pytest.fixture
+def labels(pristine):
+    return validate.read_labels(str(pristine))
+
+
+def test_the_ranges_come_from_the_scenario():
+    assert validate.signal_ranges(TRAIN_V1) == {
+        "snr": TRAIN_V1.snr_range,
+        "mass1": TRAIN_V1.masses,
+        "mass2": TRAIN_V1.masses,
+        "merger_time": TRAIN_V1.t_merger_range,
+    }
+    assert validate.signal_ranges(EVAL_V1)["mass1"] == (30.0, 30.0)
+
+
+def test_a_generated_dataset_matches_its_scenario(labels):
+    assert validate.check_distribution(labels, TRAIN_V1) == []
+
+
+def test_another_scenario_reports_its_ranges(labels):
+    findings = validate.check_distribution(labels, EVAL_V1)
+    messages = " ".join(f.message for f in findings)
+    assert set(checks(findings)) == {"range"}
+    # The merger times of this seed happen to lie inside 2.0-3.5 s as well.
+    for column in ("snr", "mass1", "mass2"):
+        assert f"have {column} outside" in messages
+
+
+@pytest.mark.parametrize(
+    "column, value",
+    [("snr", 12.5), ("snr", 0.0), ("mass1", 101.0), ("merger_time", 1.9)],
+)
+def test_a_value_outside_the_range_is_one_finding(labels, column, value):
+    labels.loc[labels.index[0], column] = value  # sample_00000 has a signal
+    findings = validate.check_distribution(labels, TRAIN_V1)
+    assert checks(findings) == ["range"]
+    assert f"1 signal sample(s) have {column} outside" in findings[0].message
+
+
+def test_mass2_above_mass1_is_a_finding(labels):
+    first = labels.index[0]
+    labels.loc[first, ["mass1", "mass2"]] = [10.0, 20.0]
+    findings = validate.check_distribution(labels, TRAIN_V1)
+    assert checks(findings) == ["range"]
+    assert "mass2 above mass1" in findings[0].message
+
+
+def test_noise_samples_are_not_range_checked(labels):
+    # Noise-only samples carry zeros, which lie outside every TRAIN_V1 range.
+    assert (labels.loc[labels["has_signal"] == 0, "snr"] == 0).all()
+    assert validate.check_distribution(labels, TRAIN_V1) == []
+
+
+def test_the_balance_allows_five_percent(labels):
+    # 16 samples, 8 with a signal: 9 is 56 %, 7 of 15 is 46.7 %.
+    tipped = labels.copy()
+    tipped.loc[tipped.index[1], "has_signal"] = 1
+    tipped.loc[tipped.index[1], ["snr", "mass1", "mass2", "merger_time"]] = [
+        5.0,
+        20.0,
+        10.0,
+        3.0,
+    ]
+    assert checks(validate.check_distribution(tipped, TRAIN_V1)) == ["balance"]
+    assert validate.check_distribution(labels.iloc[1:], TRAIN_V1) == []
+
+
+@pytest.mark.parametrize("seed", [1, 2, 3, 4, 5])
+def test_a_correct_dataset_of_64_gives_rc_0_for_any_seed(tmp_path, seed, capsys):
+    """The old validator failed on a low median SNR by chance (DATA-4)."""
+    folder = tmp_path / "data"
+    generate_dataset(64, str(folder), TRAIN_V1, seed=seed, noise_dir=str(tmp_path))
+    assert validate.run(str(folder), plots=False) == 0
+    out = capsys.readouterr().out
+    assert "Scenario: TRAIN_V1" in out
+    assert "The dataset is fit for training." in out
+
+
+def test_each_broken_case_gives_rc_1(pristine, tmp_path, capsys):
+    cases = {
+        "missing": lambda d: (d / "sample_00003.npy").unlink(),
+        "nan": lambda d: np.save(d / "sample_00005.npy", np.full(N_SAMPLES, np.nan)),
+        "shape": lambda d: np.save(d / "sample_00002.npy", np.ones(N_SAMPLES + 1)),
+    }
+    for check, damage in cases.items():
+        folder = tmp_path / check
+        shutil.copytree(pristine, folder)
+        damage(folder)
+        integrity, distribution, _ = validate.check_dataset(str(folder))
+        assert (checks(integrity), distribution) == ([check], [])
+        assert validate.run(str(folder), plots=False) == 1
+        assert "1 finding(s): the dataset is not fit" in capsys.readouterr().out
+
+
+def test_without_manifest_only_the_integrity_is_checked(dataset, capsys):
+    (dataset / "manifest.json").unlink()
+    labels = validate.read_labels(str(dataset))
+    labels.loc[labels.index[0], "snr"] = 99.0  # outside TRAIN_V1, but not checked
+    labels.to_csv(dataset / "labels.csv", index=False)
+    assert validate.check_dataset(str(dataset)) == ([], [], "unknown (v1)")
+    assert validate.run(str(dataset), plots=False) == 0
+    out = capsys.readouterr().out
+    assert "Scenario: unknown (v1)" in out
+    assert "DISTRIBUTION" not in out
+
+
+def test_missing_labels_gives_rc_1(tmp_path, capsys):
+    assert validate.run(str(tmp_path / "nothing"), plots=False) == 1
+    assert "labels.csv is missing" in capsys.readouterr().out

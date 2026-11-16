@@ -1,8 +1,11 @@
-"""
-Datensatz-Validierung für Gravitationswellen Training
+"""Validation of a training dataset (P4.6).
 
-Dieses Script überprüft die Qualität des generierten Datensatzes und erstellt
-umfassende Visualisierungen zur Analyse.
+check_integrity(folder) checks labels.csv, every sample it lists, the sample_*.npy
+files it does not list (orphans), and manifest.json, and returns a list of Finding.
+check_distribution(labels, scenario) checks the signal samples against the ranges of
+the scenario the manifest names, and the class balance. A dataset without a manifest
+was written before P4.1; its scenario is unknown, so only its integrity is checked.
+run() prints both with the statistics and returns 1 if there is any finding.
 
 Usage:
     gwd data validate [--data FOLDER] [--plots FOLDER] [--no-plots]
@@ -27,123 +30,8 @@ from gwd.config import (
     VALIDATION_DATASET_PLOTS_DIR,
     ensure_dirs,
 )
-from gwd.data.provenance import read_manifest, sha256_file
+from gwd.data.provenance import UNKNOWN_V1, read_manifest, sha256_file
 from gwd.data.scenarios import SCENARIOS
-
-
-def load_dataset_info(data_folder):
-    """Lädt die Labels-CSV und gibt Statistiken zurück."""
-    csv_path = os.path.join(data_folder, LABELS_FILE)
-
-    if not os.path.exists(csv_path):
-        raise FileNotFoundError(f"Konnte {csv_path} nicht finden!")
-
-    df = pd.read_csv(csv_path)
-    return df
-
-
-def print_statistics(df):
-    """Gibt detaillierte Statistiken über den Datensatz aus."""
-    print("\n" + "=" * 80)
-    print("📊 DATENSATZ STATISTIK")
-    print("=" * 80)
-
-    # Grundlegende Statistik
-    total_samples = len(df)
-    signal_samples = df[df["has_signal"] == 1]
-    noise_samples = df[df["has_signal"] == 0]
-
-    print("\n1. ALLGEMEINE ÜBERSICHT:")
-    print(f"   {'Gesamt Samples:':<30} {total_samples:>10,}")
-    print(
-        f"   {'Samples mit Signal:':<30} {len(signal_samples):>10,} ({len(signal_samples) / total_samples * 100:>5.1f}%)"
-    )
-    print(
-        f"   {'Samples nur Rauschen:':<30} {len(noise_samples):>10,} ({len(noise_samples) / total_samples * 100:>5.1f}%)"
-    )
-
-    # SNR Statistik (nur Signal-Samples)
-    if len(signal_samples) > 0:
-        print("\n2. SNR VERTEILUNG (Signal-Samples):")
-        print(f"   {'Minimum SNR:':<30} {signal_samples['snr'].min():>10.4f}")
-        print(f"   {'Maximum SNR:':<30} {signal_samples['snr'].max():>10.4f}")
-        print(f"   {'Durchschnitt SNR:':<30} {signal_samples['snr'].mean():>10.4f}")
-        print(f"   {'Median SNR:':<30} {signal_samples['snr'].median():>10.4f}")
-        print(f"   {'Standardabweichung:':<30} {signal_samples['snr'].std():>10.4f}")
-
-        # SNR Kategorien
-        print("\n   SNR Kategorien:")
-        print(
-            f"   {'SNR < 5 (sehr schwach):':<30} {(signal_samples['snr'] < 5).sum():>10,} ({(signal_samples['snr'] < 5).sum() / len(signal_samples) * 100:>5.1f}%)"
-        )
-        print(
-            f"   {'SNR 5-10 (schwach):':<30} {((signal_samples['snr'] >= 5) & (signal_samples['snr'] < 10)).sum():>10,} ({((signal_samples['snr'] >= 5) & (signal_samples['snr'] < 10)).sum() / len(signal_samples) * 100:>5.1f}%)"
-        )
-        print(
-            f"   {'SNR 10-15 (mittel):':<30} {((signal_samples['snr'] >= 10) & (signal_samples['snr'] < 15)).sum():>10,} ({((signal_samples['snr'] >= 10) & (signal_samples['snr'] < 15)).sum() / len(signal_samples) * 100:>5.1f}%)"
-        )
-        print(
-            f"   {'SNR 15-20 (stark):':<30} {((signal_samples['snr'] >= 15) & (signal_samples['snr'] < 20)).sum():>10,} ({((signal_samples['snr'] >= 15) & (signal_samples['snr'] < 20)).sum() / len(signal_samples) * 100:>5.1f}%)"
-        )
-        print(
-            f"   {'SNR > 20 (sehr stark):':<30} {(signal_samples['snr'] >= 20).sum():>10,} ({(signal_samples['snr'] >= 20).sum() / len(signal_samples) * 100:>5.1f}%)"
-        )
-
-        # Qualitäts-Check
-        print("\n   💡 QUALITÄTS-CHECK:")
-        if signal_samples["snr"].median() < 5:
-            print("   ❌ WARNUNG: Median SNR zu niedrig! Signale schwer detektierbar.")
-        elif signal_samples["snr"].median() < 8:
-            print("   ⚠️  ACHTUNG: Median SNR niedrig. Training könnte schwierig sein.")
-        elif signal_samples["snr"].median() < 12:
-            print("   ✅ OK: Median SNR im akzeptablen Bereich.")
-        else:
-            print("   ✅ EXCELLENT: Median SNR optimal für Training!")
-
-    # Physikalische Parameter (nur Signal-Samples)
-    if len(signal_samples) > 0:
-        print("\n3. PHYSIKALISCHE PARAMETER:")
-
-        # Massen
-        print("\n   Massen (Sonnenmassen):")
-        print(
-            f"   {'Mass 1 - Bereich:':<30} {signal_samples['mass1'].min():>8.1f} - {signal_samples['mass1'].max():.1f}"
-        )
-        print(
-            f"   {'Mass 1 - Durchschnitt:':<30} {signal_samples['mass1'].mean():>10.1f}"
-        )
-        print(
-            f"   {'Mass 2 - Bereich:':<30} {signal_samples['mass2'].min():>8.1f} - {signal_samples['mass2'].max():.1f}"
-        )
-        print(
-            f"   {'Mass 2 - Durchschnitt:':<30} {signal_samples['mass2'].mean():>10.1f}"
-        )
-
-        # Gesamtmasse und Massenverhältnis
-        total_mass = signal_samples["mass1"] + signal_samples["mass2"]
-        mass_ratio = signal_samples["mass1"] / signal_samples["mass2"]
-        print(
-            f"   {'Gesamtmasse - Bereich:':<30} {total_mass.min():>8.1f} - {total_mass.max():.1f}"
-        )
-        print(
-            f"   {'Massenverhältnis (q):':<30} {mass_ratio.min():>8.2f} - {mass_ratio.max():.2f}"
-        )
-
-        # Distanz
-        print("\n   Distanz (Megaparsec):")
-        print(
-            f"   {'Bereich:':<30} {signal_samples['distance'].min():>8.0f} - {signal_samples['distance'].max():.0f}"
-        )
-        print(f"   {'Durchschnitt:':<30} {signal_samples['distance'].mean():>10.0f}")
-        print(f"   {'Median:':<30} {signal_samples['distance'].median():>10.0f}")
-
-        # Merger Time
-        print("\n   Merger Zeitpunkt (Sekunden):")
-        print(
-            f"   {'Bereich:':<30} {signal_samples['merger_time'].min():>8.2f} - {signal_samples['merger_time'].max():.2f}"
-        )
-        print(f"   {'Durchschnitt:':<30} {signal_samples['merger_time'].mean():>10.2f}")
-
 
 # --- integrity: every listed file, no orphans, consistent with the manifest ---
 
@@ -343,6 +231,173 @@ def check_integrity(folder, on_sample=None):
     findings.extend(find_orphans(folder, labels))
     findings.extend(check_manifest(folder, labels))
     return findings
+
+
+# --- distribution: the ranges of the scenario in manifest.json ---
+
+# Largest distance of the signal share from one half (50 % ± 5 %).
+BALANCE_TOLERANCE = 0.05
+# Relative slack of the range checks: labels.csv stores the floats as text, and
+# 10 ** log10(5) is not exactly 5.
+RANGE_RTOL = 1e-9
+
+
+def dataset_scenario(folder):
+    """(name, Scenario) of the dataset's manifest.json.
+
+    Without a manifest the name is UNKNOWN_V1, and for a name gwd.data.scenarios does
+    not know, the Scenario is None.
+    """
+    manifest, _ = read_manifest(folder)
+    if manifest is None:
+        return UNKNOWN_V1, None
+    name = manifest.get("scenario")
+    return name, SCENARIOS.get(name)
+
+
+def signal_ranges(scenario):
+    """{labels.csv column: (low, high)} that every signal sample of scenario lies in.
+
+    The bounds are the scenario's own fields. With random masses, mass2 also lies at
+    or below mass1, which check_distribution checks on its own.
+    """
+    if scenario.mass_mode == "random":
+        mass1 = mass2 = tuple(scenario.masses)
+    else:
+        mass1 = (scenario.masses[0],) * 2
+        mass2 = (scenario.masses[1],) * 2
+    return {
+        "snr": tuple(scenario.snr_range),
+        "mass1": mass1,
+        "mass2": mass2,
+        "merger_time": tuple(scenario.t_merger_range),
+    }
+
+
+def _slack(value):
+    return RANGE_RTOL * max(1.0, abs(value))
+
+
+def check_distribution(labels, scenario):
+    """Findings where labels does not match scenario: class balance and ranges."""
+    findings = []
+    has_signal = pd.to_numeric(labels["has_signal"], errors="coerce")
+    signal_rows = labels[has_signal == 1]
+    share = len(signal_rows) / len(labels)
+    if abs(share - 0.5) > BALANCE_TOLERANCE + 1e-12:
+        findings.append(
+            Finding(
+                "balance",
+                f"{share:.1%} of the samples have a signal, not "
+                f"{0.5:.0%} ± {BALANCE_TOLERANCE:.0%}",
+            )
+        )
+    if signal_rows.empty:
+        return findings
+
+    columns = {
+        column: pd.to_numeric(signal_rows[column], errors="coerce")
+        for column in signal_ranges(scenario)
+    }
+    for column, (low, high) in signal_ranges(scenario).items():
+        values = columns[column]
+        inside = values.between(low - _slack(low), high + _slack(high))
+        outside = int((~inside).sum())
+        if outside:
+            findings.append(
+                Finding(
+                    "range",
+                    f"{outside} signal sample(s) have {column} outside "
+                    f"[{low:g}, {high:g}] of {scenario.name} (min {values.min():.6g}, "
+                    f"max {values.max():.6g})",
+                )
+            )
+    if scenario.mass_mode == "random":
+        above = columns["mass2"] > columns["mass1"] + RANGE_RTOL * columns["mass1"]
+        if above.any():
+            findings.append(
+                Finding(
+                    "range",
+                    f"{int(above.sum())} signal sample(s) have mass2 above mass1, "
+                    f"which {scenario.name} does not draw",
+                )
+            )
+    return findings
+
+
+def check_dataset(folder):
+    """(integrity findings, distribution findings, scenario name) of a dataset.
+
+    The distribution is checked only if labels.csv has every required column and the
+    manifest names a known scenario.
+    """
+    integrity = check_integrity(folder)
+    name, scenario = dataset_scenario(folder)
+    distribution = []
+    if scenario is not None and not any(f.check == "labels" for f in integrity):
+        distribution = check_distribution(read_labels(folder), scenario)
+    return integrity, distribution, name
+
+
+# --- report ---
+
+STATISTIC_COLUMNS = ("snr", "mass1", "mass2", "merger_time", "distance")
+
+
+def print_statistics(labels, scenario):
+    """Print the class counts and the range of each signal parameter."""
+    total = len(labels)
+    has_signal = pd.to_numeric(labels["has_signal"], errors="coerce")
+    signal_rows = labels[has_signal == 1]
+    print("\n1. OVERVIEW:")
+    print(f"   {'Samples:':<24} {total:>8,}")
+    print(
+        f"   {'With signal:':<24} {len(signal_rows):>8,} "
+        f"({len(signal_rows) / total:.1%})"
+    )
+    print(
+        f"   {'Noise only:':<24} {total - len(signal_rows):>8,} "
+        f"({(total - len(signal_rows)) / total:.1%})"
+    )
+    if "noise_source" in labels.columns:
+        for source, count in labels["noise_source"].value_counts().sort_index().items():
+            print(f"   {'Noise ' + str(source) + ':':<24} {count:>8,}")
+    if "waveform_backend" in labels.columns and not signal_rows.empty:
+        backends = signal_rows["waveform_backend"].value_counts().sort_index()
+        for backend, count in backends.items():
+            print(f"   {'Chirps ' + str(backend) + ':':<24} {count:>8,}")
+
+    if signal_rows.empty:
+        return
+    ranges = signal_ranges(scenario) if scenario is not None else {}
+    print("\n2. SIGNAL PARAMETERS (signal samples):")
+    print(f"   {'column':<12} {'min':>10} {'median':>10} {'max':>10}   scenario range")
+    for column in STATISTIC_COLUMNS:
+        values = pd.to_numeric(signal_rows[column], errors="coerce")
+        low_high = ranges.get(column)
+        bound = f"{low_high[0]:g} – {low_high[1]:g}" if low_high else "–"
+        print(
+            f"   {column:<12} {values.min():>10.4g} {values.median():>10.4g} "
+            f"{values.max():>10.4g}   {bound}"
+        )
+    kind = scenario.snr_kind if scenario is not None else "peak"
+    print(
+        f"   snr is a {kind} SNR (peak amplitude over noise std), not a matched "
+        "filter SNR."
+    )
+    print(
+        "   distance does not change the sample: the chirp is normalized before "
+        "it is scaled to the SNR."
+    )
+
+
+def _print_findings(title, findings, ok_text):
+    print(f"\n{title}")
+    if findings:
+        print(f"   ❌ {len(findings)} finding(s):")
+        print(format_findings(findings))
+    else:
+        print(f"   ✅ {ok_text}")
 
 
 def create_visualizations(df, data_folder, output_folder=VALIDATION_DATASET_PLOTS_DIR):
@@ -689,100 +744,60 @@ def create_visualizations(df, data_folder, output_folder=VALIDATION_DATASET_PLOT
 def run(
     data_folder=DATA_DIR_TRAIN, output_folder=VALIDATION_DATASET_PLOTS_DIR, plots=True
 ):
-    """Check the dataset in data_folder, with plots in output_folder. Returns the exit code."""
+    """Check the dataset in data_folder and print the report. Returns the exit code.
+
+    0 without findings, 1 with any integrity or distribution finding. Plots go to
+    output_folder if plots is true and the samples are intact.
+    """
     print("\n" + "=" * 80)
-    print("🔍 DATENSATZ VALIDIERUNG - GRAVITATIONSWELLEN TRAINING")
+    print("🔍 DATASET VALIDATION")
     print("=" * 80)
     print(f"\nDataset folder: {data_folder}")
-    print(f"Plot folder: {output_folder}")
 
-    try:
-        # Labels laden
-        df = load_dataset_info(data_folder)
-
-        # Statistiken ausgeben
-        print_statistics(df)
-
-        # Every listed sample, orphans, and the manifest
-        print("\n4. INTEGRITY:")
-        integrity = check_integrity(data_folder)
-        if integrity:
-            print(f"   {len(integrity)} finding(s):")
-            print(format_findings(integrity))
-        else:
-            print(f"   ✅ All {len(df)} samples are intact, no orphans.")
-
-        # Visualisierungen erstellen
-        if plots and integrity:
-            print("\n   Plots skipped: they need intact samples.")
-        elif plots:
-            create_visualizations(df, data_folder, output_folder)
-
-        # Finale Bewertung
-        signal_samples = df[df["has_signal"] == 1]
-
-        print("\n" + "=" * 80)
-        print("📋 FINALE BEWERTUNG")
-        print("=" * 80)
-
-        issues = (
-            [f"❌ {len(integrity)} integrity finding(s), see above"]
-            if integrity
-            else []
+    integrity, distribution, name = check_dataset(data_folder)
+    _, scenario = dataset_scenario(data_folder)
+    if name == UNKNOWN_V1:
+        print(
+            f"Scenario: {UNKNOWN_V1}. There is no manifest.json (written before "
+            "P4.1), so only the integrity is checked."
         )
-        warnings_list = []
+    elif scenario is None:
+        print(f"Scenario: {name!r} is not in gwd.data.scenarios.")
+    else:
+        print(f"Scenario: {name} (hash {scenario.hash()})")
 
-        # Check 1: SNR
-        if len(signal_samples) > 0:
-            median_snr = signal_samples["snr"].median()
-            if median_snr < 5:
-                issues.append("❌ KRITISCH: Median SNR < 5 - Signale zu schwach!")
-            elif median_snr < 8:
-                warnings_list.append(
-                    "⚠️  WARNUNG: Median SNR < 8 - Training könnte schwierig sein"
-                )
-            else:
-                print("✅ SNR: Optimal für Training")
+    labels_usable = not any(f.check == "labels" for f in integrity)
+    if labels_usable:
+        labels = read_labels(data_folder)
+        print_statistics(labels, scenario)
 
-        # Check 2: Balance
-        balance = len(signal_samples) / len(df) * 100
-        if balance < 40 or balance > 60:
-            warnings_list.append(f"⚠️  WARNUNG: Unbalanciert ({balance:.1f}% Signale)")
-        else:
-            print(f"✅ Balance: Gut balanciert ({balance:.1f}% Signale)")
+    _print_findings(
+        "3. INTEGRITY (every listed sample, orphans, manifest):",
+        integrity,
+        "All listed samples are intact, no orphans.",
+    )
+    if scenario is not None and labels_usable:
+        _print_findings(
+            f"4. DISTRIBUTION (ranges of {scenario.name}, balance):",
+            distribution,
+            f"Every signal sample lies in the ranges of {scenario.name}; "
+            "the classes are balanced.",
+        )
 
-        # Check 3: Diversität
-        if len(signal_samples) > 0:
-            mass_range = signal_samples["mass1"].max() - signal_samples["mass1"].min()
-            if mass_range < 20:
-                warnings_list.append("⚠️  WARNUNG: Geringe Massen-Diversität")
-            else:
-                print("✅ Diversität: Gute Parameter-Abdeckung")
+    if plots and integrity:
+        print("\nPlots skipped: they need intact samples.")
+    elif plots:
+        create_visualizations(labels, data_folder, output_folder)
 
-        # Ausgabe der Warnings und Errors
-        if warnings_list:
-            print("\nWarnungen:")
-            for w in warnings_list:
-                print(f"  {w}")
-
-        if issues:
-            print("\nKritische Probleme:")
-            for issue in issues:
-                print(f"  {issue}")
-            print("\n❌ DATENSATZ NICHT GEEIGNET FÜR TRAINING!")
-            return 1
-        else:
-            print("\n" + "=" * 80)
-            print("✅ DATENSATZ IST BEREIT FÜR TRAINING!")
-            print("=" * 80)
-            return 0
-
-    except Exception as e:
-        print(f"\n❌ FEHLER: {e}")
-        import traceback
-
-        traceback.print_exc()
+    findings = len(integrity) + len(distribution)
+    print("\n" + "=" * 80)
+    if findings:
+        print(f"❌ {findings} finding(s): the dataset is not fit for training.")
+        print("=" * 80)
         return 1
+    print("✅ The dataset is fit for training.")
+    print("=" * 80)
+    return 0
 
 
 if __name__ == "__main__":
