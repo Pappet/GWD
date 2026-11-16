@@ -269,7 +269,7 @@ The cleanup plan left these out on purpose. They are possible follow-up projects
 
 | ID | Question | Answer | Status | Affects |
 |---|---|---|---|---|
-| **D1** | PyCBC required, or a corrected Newton backend? | A: PyCBC required, delete Newton. Follows from F1 and F3. | Effectively decided; owner confirms before P6.1 | P5.2, P6.1 |
+| **D1** | PyCBC required, or a corrected Newton backend? | A: PyCBC required, delete Newton. Follows from F1 and F3. | A, implemented in #48, pending owner confirmation | P5.2, P6.1 |
 | **D2** | SNR definition for V2? | B: optimal SNR drives V2. V1 stays. | Default applies | P6.2, P6.5 |
 | **D3** | Noise for V2? | B: simulated noise. Real noise (P6.3) is parked. | Default applies | P6.2, P6.3, P6.5 |
 | **D4** | Glitch Hunter: game, tool, or both? | A: "Training" and "Challenge" modes. | Default applies | P4.4, P5.7 |
@@ -335,7 +335,7 @@ Each step PR ticks its own step, so a tick takes effect when that PR is merged. 
 | [x] | P5.6 | Training: grouped three-way split, seeds, float32, full metadata | #41 |
 | [x] | P5.7 | Fixed, hashed test sets; metrics per SNR bin, mass bin, and noise type | #44 |
 | [x] | P5.8 | Per-model threshold at fixed FPR; leaderboard v2 with raw numbers | #45 |
-| [ ] | P6.1 | Delete or correct the Newton backend (D1) | Open: waits on D1 (A is effectively decided; the owner confirms). Planned as a separate, optional PR on top of #47 |
+| [x] | P6.1 | Delete or correct the Newton backend (D1) | #48 (D1 = A; optional top of the stack, merge only after the owner confirms D1) |
 | [x] | P6.2 | Scenario V2: inject first, then condition together | #46 |
 | [ ] | P6.3 | Real noise for V2 (D3) | Open: parked, because the default of D3 (B: simulated noise) applies |
 | [x] | P6.4 | Rewrite the Matched Filter baseline (D5) | #47 (D5 = B: dropped; one sentence in `docs/evaluation.md`) |
