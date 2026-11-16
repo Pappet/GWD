@@ -89,4 +89,7 @@ BATCH_SIZE = 128
 LEARNING_RATE = 5e-4  # Adam
 EARLY_STOPPING_PATIENCE = 5  # epochs without a better val_loss before stopping
 REDUCE_LR_PATIENCE = 3  # epochs without a better val_loss before halving the rate
-TEST_SPLIT = 0.2  # held-out share, also the validation data until P5.6
+# The three-way split of gwd train (P5.6): 70 % train, 15 % val, 15 % test, grouped by
+# noise chunk (gwd.training.split). Until P5.6, one 20 % share was val and test at once.
+VAL_SPLIT = 0.15  # steers early stopping, the checkpoint, and the learning rate
+TEST_SPLIT = 0.15  # evaluated once, with the best epoch, after training

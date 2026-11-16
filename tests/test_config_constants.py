@@ -23,4 +23,8 @@ def test_training_defaults_match_the_old_literals():
     assert config.LEARNING_RATE == 0.0005
     assert config.EARLY_STOPPING_PATIENCE == 5
     assert config.REDUCE_LR_PATIENCE == 3
-    assert config.TEST_SPLIT == 0.2
+
+
+def test_the_split_is_70_15_15():
+    """P5.6: a separate val share; TEST_SPLIT was 0.2 and doubled as val before."""
+    assert (config.VAL_SPLIT, config.TEST_SPLIT) == (0.15, 0.15)
