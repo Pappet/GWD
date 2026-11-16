@@ -8,16 +8,16 @@ This document describes how GWD evaluates a trained CNN today: the commands, the
 
 | Command | What it does | Writes |
 |---|---|---|
-| `gwd eval run` | ROC analysis of one model on simulated data, then the field test on real data (network) | one plot with six panels, one leaderboard row |
+| `gwd eval run` | ROC analysis of one model on simulated data; with `--real` also the field test on real data (network) | one plot with six panels, one leaderboard row |
 | `gwd eval thresholds` | Six threshold strategies from the ROC curve of one model | one plot, `results/optimal_thresholds.json` |
 | `gwd eval compare` | ROC curves of several models on the same simulated test set | two plots |
 | `gwd eval leaderboard` | Prints the leaderboard, best ROC AUC first | nothing |
 
-`run`, `thresholds`, and `compare` take `--model` with `latest` (the newest timestamp in the name), a model name in `models_registry/`, or a path to a `.keras` file; `compare` takes it more than once and compares all models without it. `--seed` seeds Python's `random` and the global numpy RNG, so the same seed gives the same test set; without it every run draws a new one. `gwd eval run --no-real` skips the field test, and `gwd eval thresholds --no-save` does not write the JSON file. An unknown model ends the command with exit code 1.
+`run`, `thresholds`, and `compare` take `--model` with `latest` (the newest timestamp in the name), a model name in `models_registry/`, or a path to a `.keras` file; `compare` takes it more than once and compares all models without it. `--seed` seeds Python's `random` and the global numpy RNG, so the same seed gives the same test set; without it every run draws a new one. `gwd eval run` runs offline; `--real` adds the field test, which downloads from GWOSC (decision D10: the field test is optional). `gwd eval thresholds --no-save` does not write the JSON file. An unknown model ends the command with exit code 1.
 
 ```bash
 gwd eval run --model latest --seed 1
-gwd eval run --no-real
+gwd eval run --real
 gwd eval thresholds --seed 1
 gwd eval compare --model gwd_model_20251203-220536 --model latest --seed 1
 gwd eval leaderboard
@@ -52,10 +52,12 @@ Look at ROC AUC and the sensitivity together: a model with a higher AUC can stil
 
 ### Field test on real data
 
-Without `--no-real`, `gwd eval run` downloads data from GWOSC (network):
+With `--real`, `gwd eval run` downloads data from GWOSC (network), in `gwd.evaluation.real_data`. Each stretch of H1 data is downloaded with 16 s more on each side, conditioned as a whole (notches at 60, 120, 180, and 240 Hz, then a 20–300 Hz band-pass), and only then cut back to the requested span. The filters ring at the ends of the data they get; the extra 16 s keep that ringing out of the scored windows, as for the training noise, which is conditioned in one piece and then cut. gwpy keeps a local copy of every downloaded file, so a second run reads them from disk.
 
-- **Events:** a 4 s window of H1 strain around each of GW150914, GW170817, GW190521, GW170104, and GW151226, conditioned with notches at 60, 120, 180, and 240 Hz and a 20–300 Hz band-pass, then normalized. An event counts as found if its score is > 0.15. A rejected or failed download is reported and counted as not found. GW170817 (a neutron star merger) lies outside the training mass range.
-- **False alarm rate:** 200 s of H1 noise from GPS 1253326755, conditioned the same way and cut into 4 s segments. The rate is the number of segments with a score > 0.15, divided by the analysed time and given per year. Without any false alarm it is the bound `< 157788.0/y`, which is one year divided by 200 s.
+- **Events:** the 4 s window around each of GW150914, GW170817, GW190521, GW170104, and GW151226, normalized and scored. An event counts as found if its score is ≥ 0.15, the same rule as for the simulated metrics. The events inside the training mass range and those outside it (GW170817, a neutron star merger) are counted separately. An event whose download fails or is too short is skipped and reported, not counted as missed; then its group reads `n/a (k of n loaded)`.
+- **False alarms:** 200 s of H1 noise from GPS 1253326755, conditioned the same way and cut into 50 windows of 4 s. The result is the number of windows with a score ≥ 0.15 and the analysed time, for example `3 false alarms in 0.0556 h`. It is not scaled to a rate per year: 50 windows are too few for that. If the noise download fails, it reads `n/a (noise not loaded)`.
+
+Because of the padding, the `>=` rule, and the new texts, field test results since P4.3 cannot be compared with older leaderboard rows.
 
 ## Plots
 
@@ -109,7 +111,7 @@ If no point of the ROC curve meets an FPR limit, the proposal lies just above th
 
 ## Leaderboard
 
-Every `gwd eval run` appends one row to `results/model_leaderboard.csv`; old rows are kept, so a model evaluated twice has two rows. `gwd eval leaderboard` prints all rows sorted by `ROC_AUC`, best first, with rows without a numeric AUC at the end.
+Every `gwd eval run` appends one row to `results/model_leaderboard.csv`; old rows are kept as written, so a model evaluated twice has two rows. `gwd eval leaderboard` prints all rows sorted by `ROC_AUC`, best first, with rows without a numeric AUC at the end.
 
 | Column | Content | Format |
 |---|---|---|
@@ -123,8 +125,8 @@ Every `gwd eval run` appends one row to `results/model_leaderboard.csv`; old row
 | `Sim_SNR50` | SNR50 | 2 decimals, or `-` |
 | `Sim_SNR90` | SNR90 | 2 decimals, or `-` |
 | `Physik_Gap` | Always `-`, see below | `-` |
-| `Real_Events_Found` | Events found in the field test | `found/total`; `0/0` with `--no-real` |
-| `Real_Noise_FAR` | False alarm rate of the field test | for example `< 157788.0/y`; `N/A` if the noise download failed, `n/a` with `--no-real` |
+| `Real_Events_Found` | Events found in the field test, inside the training range, then outside (OOD) | for example `4/4; OOD 0/1`; a group with a failed download reads `n/a (k of n loaded)`; `n/a` without `--real` |
+| `Real_Noise_FAR` | False alarms of the field test in the analysed noise | for example `3 false alarms in 0.0556 h`; `n/a (noise not loaded)` if the noise download failed, `n/a` without `--real` |
 
 If `results/model_leaderboard.csv` does not exist yet and `analysis/model_leaderboard.csv` does, the file is copied there once; the original stays. An old `./model_leaderboard.csv` in the project root is not copied, because it may use another schema.
 
@@ -136,5 +138,6 @@ There is no valid Matched Filter baseline. The script that computed it was delet
 
 - `EVAL_V1` uses white noise, fixed 30/30 M☉ masses, and a peak SNR of 0.5–2.5, while the training data has up to 80% real noise, random masses, and a peak SNR of 1–12 (`DATA-1`, `EVAL-1`, `EVAL-2`, `EVAL-3`). The full list is under "Known skews" in [architecture.md](architecture.md#scenarios-and-snr-definition-current-state-v1).
 - The operating point and the field test use the fixed threshold 0.15, not a threshold chosen per model.
-- The field test counts with score > 0.15, the simulated metrics with score ≥ 0.15.
+- Rows written before P4.3 have field test values from unpadded windows, counted with score > 0.15, with failed downloads counted as missed (`0/5`), and a false alarm rate per year (`< 157788.0/y`). They cannot be compared with newer rows.
+- The field test uses five events and 200 s of noise; its numbers are a rough check, not a measured detector performance.
 - The test sets change with every run unless `--seed` is given.
