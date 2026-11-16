@@ -21,25 +21,6 @@ MODEL_HELP = (
 )
 
 
-def seed_everything(seed):
-    """Seed Python's random and the global numpy RNG, for the eval commands.
-
-    A minimal stand-in until the eval commands pass an rng explicitly (P5.7).
-    gwd.core takes an rng since P5.3, and gwd.data.injection passes it the global RNG
-    when the caller gives none, so this seed reaches it. seed=None changes nothing, so
-    runs stay unseeded as before. gwd data generate and gwd train pass the seed to
-    their function instead, which also records it.
-    """
-    if seed is None:
-        return
-    import random
-
-    import numpy as np
-
-    random.seed(seed)
-    np.random.seed(seed)
-
-
 # --- handlers: each returns an exit code ---
 
 
@@ -129,7 +110,10 @@ def _train(args):
 
 
 def _testset_options(args):
-    """The test set arguments given; the functions default to gwd.config (P5.7)."""
+    """The test set arguments given; the functions default to gwd.config (P5.7).
+
+    The set seeds its own random stream, so nothing seeds the global RNG any more.
+    """
     options = {"testset": args.testset, "seed": args.seed, "n": args.n}
     return {name: value for name, value in options.items() if value is not None}
 
@@ -152,22 +136,19 @@ def _eval_build_testset(args):
 def _eval_run(args):
     from gwd.evaluation import evaluate
 
-    seed_everything(args.seed)
-    return evaluate.run(model=args.model, real=args.real)
+    return evaluate.run(model=args.model, real=args.real, **_testset_options(args))
 
 
 def _eval_thresholds(args):
     from gwd.evaluation import thresholds
 
-    seed_everything(args.seed)
-    return thresholds.run(model=args.model, save=args.save)
+    return thresholds.run(model=args.model, save=args.save, **_testset_options(args))
 
 
 def _eval_compare(args):
     from gwd.evaluation import compare
 
-    seed_everything(args.seed)
-    return compare.run(models=args.model)
+    return compare.run(models=args.model, **_testset_options(args))
 
 
 def _eval_leaderboard(args):
@@ -421,9 +402,11 @@ def build_parser():
 
     run = eval_commands.add_parser(
         "run",
-        help="ROC evaluation of one model; adds a leaderboard row.",
-        description="ROC evaluation on simulated data (EVAL_V1) and, with --real, the "
-        "field test on real events. Adds a row to results/model_leaderboard.csv.",
+        help="ROC evaluation of one model on a fixed test set.",
+        description="ROC evaluation on a fixed, hashed test set (built on first use), "
+        "with metrics per peak SNR, optimal SNR, total mass, and noise source, and, "
+        "with --real, the field test on real events. On the test set stress_v1 it adds "
+        "a row to results/model_leaderboard.csv.",
     )
     _add_model(run)
     run.add_argument(
@@ -432,14 +415,14 @@ def build_parser():
         default=False,
         help="Run the real data field test (needs network access). Default: --no-real.",
     )
-    _add_seed(run, "the simulated test set")
+    _add_testset(run)
     run.set_defaults(handler=_eval_run)
 
     thresholds = eval_commands.add_parser(
         "thresholds",
         help="Find detection thresholds for one model.",
-        description="Find detection thresholds for one model from its ROC curve and "
-        "save them in results/optimal_thresholds.json.",
+        description="Find detection thresholds for one model from its ROC curve on a "
+        "fixed test set and save them in results/optimal_thresholds.json.",
     )
     _add_model(thresholds)
     thresholds.add_argument(
@@ -448,20 +431,20 @@ def build_parser():
         default=True,
         help="Save the thresholds. Default: --save.",
     )
-    _add_seed(thresholds, "the simulated test set")
+    _add_testset(thresholds)
     thresholds.set_defaults(handler=_eval_thresholds)
 
     compare = eval_commands.add_parser(
         "compare",
         help="Compare models in one ROC plot.",
-        description="Compare models in one ROC plot on the same simulated test set.",
+        description="Compare models in one ROC plot on the same fixed test set.",
     )
     compare.add_argument(
         "--model",
         action="append",
         help=f"One model to compare, repeatable: {MODEL_HELP}. Default: all models.",
     )
-    _add_seed(compare, "the simulated test set")
+    _add_testset(compare)
     compare.set_defaults(handler=_eval_compare)
 
     leaderboard = eval_commands.add_parser(

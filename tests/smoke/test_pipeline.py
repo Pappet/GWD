@@ -82,6 +82,20 @@ def test_leaderboard_has_one_row(pipeline_home):
     assert not (pipeline_home / "analysis").exists()
 
 
+def test_the_test_set_and_its_manifest_exist(pipeline_home):
+    """P5.7: one stress_v1 set for evaluate, thresholds, and compare."""
+    stem = f"stress_v1_{SEED}_1000"
+    manifest = json.loads(
+        (pipeline_home / "results" / "testsets" / f"{stem}.json").read_text()
+    )
+    assert (pipeline_home / "data" / "eval" / f"{stem}.npz").exists()
+    assert manifest["noise_sources"]["test"] == {"gaussian": 1000}
+    thresholds = json.loads(
+        (pipeline_home / "results" / "optimal_thresholds.json").read_text()
+    )
+    assert thresholds["testset"]["sha256"] == manifest["sha256"]
+
+
 def test_thresholds_and_comparison_plot_exist(pipeline_home):
     plots = pipeline_home / "plots" / "evaluation_models"
     assert (pipeline_home / "results" / "optimal_thresholds.json").exists()

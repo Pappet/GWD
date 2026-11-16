@@ -206,18 +206,41 @@ def test_env_reports_paths_and_loads_no_tensorflow(tmp_path):
     assert "matplotlib       Agg (not interactive)" in result.stdout
 
 
-def test_seed_everything_seeds_random_and_numpy():
-    import random
-
-    cli.seed_everything(5)
-    first = (random.random(), np.random.rand())
-    cli.seed_everything(5)
-    assert (random.random(), np.random.rand()) == first
-
-
-def test_seed_none_leaves_the_rngs_alone(monkeypatch):
+@pytest.mark.parametrize(
+    "argv, module, expected",
+    [
+        (["eval", "run"], "evaluate", {"model": "latest", "real": False}),
+        (
+            ["eval", "run", "--testset", "indist_v1", "--seed", "3", "--n", "10"],
+            "evaluate",
+            {
+                "model": "latest",
+                "real": False,
+                "testset": "indist_v1",
+                "seed": 3,
+                "n": 10,
+            },
+        ),
+        (
+            ["eval", "thresholds", "--no-save", "--seed", "0"],
+            "thresholds",
+            {"model": "latest", "save": False, "seed": 0},
+        ),
+        (
+            ["eval", "compare", "--model", "a", "--testset", "stress_v1"],
+            "compare",
+            {"models": ["a"], "testset": "stress_v1"},
+        ),
+    ],
+)
+def test_the_eval_commands_pass_the_test_set(argv, module, expected, monkeypatch):
+    """P5.7: --testset, --seed, --n go to the function; nothing seeds the global RNG."""
+    calls = []
+    target = __import__(f"gwd.evaluation.{module}", fromlist=["run"])
+    monkeypatch.setattr(target, "run", lambda **options: calls.append(options) or 0)
     monkeypatch.setattr(np.random, "seed", lambda seed: pytest.fail("seeded"))
-    cli.seed_everything(None)
+    assert cli.main(argv) == 0
+    assert calls == [expected]
 
 
 def test_build_testset_passes_name_seed_n_and_rebuild(monkeypatch, capsys):
@@ -237,8 +260,8 @@ def test_build_testset_passes_name_seed_n_and_rebuild(monkeypatch, capsys):
 @pytest.mark.parametrize(
     "argv",
     [
-        ["eval", "build-testset", "--seed", "-1"],
-        ["eval", "build-testset", "--n", "1"],
+        ["eval", "run", "--seed", "-1"],
+        ["eval", "run", "--n", "1"],
         ["eval", "build-testset", "--testset", "train_v1"],
     ],
 )

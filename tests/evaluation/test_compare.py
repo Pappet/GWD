@@ -1,5 +1,7 @@
 """gwd eval compare: two plots, one scoring pass per model, one color per model (P4.2)."""
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 from matplotlib.colors import to_rgba
@@ -30,9 +32,14 @@ def stubbed(monkeypatch, tmp_path):
         log.append(("load", path))
         return StubModel(path, strengths[path], log)
 
-    def test_set(scenario, n):
+    def test_set(name, n, seed):
         y = np.r_[np.zeros(n // 2), np.ones(n // 2)]
-        return np.repeat(y[:, None, None], 4, axis=1), y
+        return SimpleNamespace(
+            X=np.repeat(y[:, None, None], 4, axis=1),
+            y=y,
+            label=lambda: f"{name} (seed {seed}, n {n})",
+            short_hash=lambda: "0" * 12,
+        )
 
     def save(fig, filename):
         figures.append((filename, fig))
@@ -40,7 +47,8 @@ def stubbed(monkeypatch, tmp_path):
 
     monkeypatch.setattr(compare, "resolve", lambda spec: spec)
     monkeypatch.setattr(compare, "load_model", load)
-    monkeypatch.setattr(compare, "make_test_set", test_set)
+    monkeypatch.setattr(compare.testsets, "build", test_set)
+    monkeypatch.setattr(compare.testsets, "describe", lambda built: [])
     monkeypatch.setattr(compare, "save_plot", save)
     return list(strengths), log, figures
 
@@ -130,3 +138,19 @@ def test_fewer_than_two_loadable_models_make_no_plot(
     monkeypatch.setattr(compare, "load_model", load)
     assert compare.run(names) == rc
     assert figures == []
+
+
+def test_all_models_share_the_named_test_set(stubbed, monkeypatch):
+    names, _, figures = stubbed
+    calls = []
+    build = compare.testsets.build
+
+    def record(name, n, seed):
+        calls.append((name, n, seed))
+        return build(name, n, seed)
+
+    monkeypatch.setattr(compare.testsets, "build", record)
+    assert compare.run(names, testset="indist_v1", seed=4, n=10) == 0
+    assert calls == [("indist_v1", 10, 4)]
+    title = figures[0][1].axes[0].get_title()
+    assert title == "ROC curves on indist_v1 (seed 4, n 10), SHA-256 000000000000"

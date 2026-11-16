@@ -3,6 +3,8 @@
 ROC comparison: several models on one test set, independent of a threshold.
 
 Run it with ``gwd eval compare``; it writes the comparison plot and a zoom on low FPR.
+Since P5.7 every model is scored on the part 'test' of one fixed, hashed test set
+(gwd.evaluation.testsets; --testset, --seed, --n, default stress_v1).
 """
 
 import datetime
@@ -12,7 +14,10 @@ import sys
 import matplotlib
 
 from gwd.config import (
+    DEFAULT_TESTSET,
     EVALUATION_MODELS_PLOTS_DIR,
+    TESTSET_SEED,
+    TESTSET_SIZE,
     ensure_dirs,
 )
 
@@ -20,8 +25,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from sklearn.metrics import auc, roc_curve
 
-from gwd.data.injection import make_test_set
-from gwd.data.scenarios import EVAL_V1
+from gwd.evaluation import testsets
 from gwd.registry import list_models, load_model, model_name, resolve
 
 TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -74,7 +78,7 @@ def save_plot(fig, filename):
     return path
 
 
-def compare_models_roc(curves, colors):
+def compare_models_roc(curves, colors, title="ROC Curve Comparison"):
     """Plot all ROC curves and the AUC ranking. Returns the ranking, best first."""
 
     print("\n🧠 Plotting the ROC curves of all models...")
@@ -95,7 +99,7 @@ def compare_models_roc(curves, colors):
 
     ax1.set_xlabel("False Positive Rate", fontsize=12, fontweight="bold")
     ax1.set_ylabel("True Positive Rate", fontsize=12, fontweight="bold")
-    ax1.set_title("ROC Curve Comparison", fontsize=14, fontweight="bold")
+    ax1.set_title(title, fontsize=12, fontweight="bold")
     ax1.legend(loc="lower right", fontsize=9)
     ax1.grid(True, alpha=0.3)
 
@@ -177,8 +181,12 @@ def zoom_to_relevant_region(curves, colors):
     save_plot(fig, f"plot_compare_roc_{TIMESTAMP}_zoom.png")
 
 
-def run(models=None):
-    """Compare the given models (default: all in models_registry/). Returns the exit code."""
+def run(models=None, testset=DEFAULT_TESTSET, seed=TESTSET_SEED, n=TESTSET_SIZE):
+    """Compare the given models (default: all in models_registry/) on one test set.
+
+    testset, seed, and n name the set (gwd.evaluation.testsets.build). Returns the
+    exit code.
+    """
     print("=" * 70)
     print("🏆 ROC CURVE COMPARISON TOOL")
     print("=" * 70)
@@ -198,10 +206,14 @@ def run(models=None):
         print("\n⚠️ Only one model found. Train more models to compare them.")
         return 0
 
-    # 2. Generate the test set
-    n_samples = 1000
-    print(f"\n📊 Generating {n_samples} test samples ({EVAL_V1.name})...")
-    X_test, y_true = make_test_set(EVAL_V1, n_samples)
+    # 2. The test set, before any model loads (drawing it needs PyCBC)
+    try:
+        built = testsets.build(testset, n, seed)
+    except testsets.InvalidTestsetError as error:
+        print(f"❌ {error}", file=sys.stderr)
+        return 1
+    print("\n".join(testsets.describe(built)))
+    X_test, y_true = built.X, built.y
 
     # 3. Load each model in turn and score it once
     curves = score_models(paths, X_test, y_true)
@@ -218,7 +230,9 @@ def run(models=None):
     colors = model_colors([name for name, *_ in curves])
 
     # 4. Compare
-    rankings = compare_models_roc(curves, colors)
+    rankings = compare_models_roc(
+        curves, colors, f"ROC curves on {built.label()}, SHA-256 {built.short_hash()}"
+    )
 
     # 5. Print the ranking
     print("\n" + "=" * 70)
