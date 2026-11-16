@@ -287,7 +287,7 @@ Each step PR ticks its own step, so a tick takes effect when that PR is merged.
 | [ ] | P6.3 | Real noise for V2 (D3) | |
 | [ ] | P6.4 | Rewrite the Matched Filter baseline (D5) | |
 | [ ] | P6.5 | Retrain and re-evaluate, switch to V2, archive old artifacts | |
-| [ ] | P7.1 | New README, `docs/evaluation.md`, documentation command test | |
+| [x] | P7.1 | New README, `docs/evaluation.md`, documentation command test | #35 |
 | [x] | P7.2 | License entry in `pyproject.toml` (D12) | #17 (done in P2.1) |
 | [x] | P7.3 | CI on the lockfile, README on updating it (D7) | #19 |
 | [ ] | P7.4 | Final check: end to end, empty allowlist, checklist | |
