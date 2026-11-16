@@ -66,6 +66,7 @@ import numpy as np
 from gwd.config import (
     DATA_DIR_NOISE,
     DEFAULT_TESTSET,
+    DEFAULT_TESTSET_BY_VERSION,
     N_SAMPLES,
     SAMPLE_DTYPE,
     TESTSET_DIR,
@@ -80,7 +81,13 @@ from gwd.data.generate import NOISE_SOURCES
 from gwd.data.injection import make_sample, real_noise_files, real_noise_provider
 from gwd.data.preprocessing import normalize
 from gwd.data.provenance import TIME_AXIS, git_commit, package_version, sha256_file
-from gwd.data.scenarios import TESTSETS, counterpart_set, preprocessing_of
+from gwd.data.scenarios import (
+    DEFAULT_PREPROCESSING,
+    TESTSETS,
+    counterpart_set,
+    preprocessing_of,
+    training_scenario,
+)
 from gwd.registry import read_metadata
 
 # Raise it whenever build() draws or stores differently, so old caches count as stale.
@@ -200,6 +207,48 @@ def set_for_model(name, model_path):
     preprocessing = model_preprocessing(model_path)
     chosen, note = for_preprocessing(name, preprocessing)
     return chosen, preprocessing, note
+
+
+def default_for_model(model_path):
+    """(the test set a model is scored on without --testset, why), from its metadata.
+
+    The metadata is read through the registry (gwd.registry.read_metadata), and the set
+    follows the version of the model's training scenario (gwd.data.scenarios.
+    training_scenario) by DEFAULT_TESTSET_BY_VERSION in gwd.config: indist_v2 for V2,
+    indist_v3 for V3, the in-distribution sets, on which a threshold holds its false
+    alarm rate on the noise the model was trained for; DEFAULT_TESTSET (stress_v1) for
+    V1, so V1 numbers stay comparable with all before. A model that names no known
+    scenario (trained before P4.1, or on a dataset without a manifest) gets
+    DEFAULT_TESTSET too, unless its preprocessing is not the default one: then the
+    in-distribution set with that preprocessing (indist_v3 for whiten_bandpass).
+    """
+    metadata = read_metadata(model_path)
+    scenario = training_scenario(metadata)
+    if scenario is not None and scenario.version in DEFAULT_TESTSET_BY_VERSION:
+        name = DEFAULT_TESTSET_BY_VERSION[scenario.version]
+        reason = (
+            f"the model was trained on {scenario.name}, a V{scenario.version} scenario"
+        )
+        if name == DEFAULT_TESTSET:
+            reason += f"; V1 models keep {name}, comparable with the numbers before"
+        return name, reason
+    preprocessing = preprocessing_of(metadata)
+    if preprocessing != DEFAULT_PREPROCESSING:
+        for name in DEFAULT_TESTSET_BY_VERSION.values():
+            if get(name).preprocessing == preprocessing:
+                return name, (
+                    "the model names no known training scenario, but its "
+                    f"preprocessing is '{preprocessing}'"
+                )
+    return DEFAULT_TESTSET, (
+        "the model names no known training scenario (trained before P4.1, or on a "
+        "dataset without a manifest), so it counts as V1"
+    )
+
+
+def describe_default(name, reason):
+    """The line that says which set a command chose without --testset, and why."""
+    return f"Test set: {name} (no --testset given; {reason})"
 
 
 def file_stem(name, seed, n):

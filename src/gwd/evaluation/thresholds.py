@@ -4,7 +4,7 @@ Threshold calibration: one detection threshold per model at a fixed false alarm 
 
 Since P5.8 (D10 = A) ``gwd eval thresholds`` calibrates the threshold on the
 noise-only part calib_bg of a fixed, hashed test set (gwd.evaluation.testsets;
---testset, --seed, --n, default stress_v1), never on the part test: the lowest
+--testset, --seed, --n; default: see below), never on the part test: the lowest
 threshold whose false alarm rate on calib_bg is at most THRESHOLD_TARGET_FPR (1 %).
 With --save (the default) it stores the threshold, the target and the reached FPR, the
 strategy, and the test set with its SHA-256 in the model's metadata
@@ -25,6 +25,13 @@ chosen on the part test, so their test numbers are optimistic, and nothing uses 
 Since V3 the threshold is calibrated on data with the model's preprocessing
 (gwd.evaluation.testsets.set_for_model): a whitening model asked for indist_v2 or
 stress_v2 is calibrated on indist_v3 or stress_v3, and the metadata names that set.
+
+Without --testset the set follows the model (gwd.evaluation.testsets.default_for_model):
+indist_v2 for a model trained on a V2 scenario, indist_v3 for V3, and stress_v1 for V1
+and for models that do not name their scenario; the run prints which set and why. With
+--save, a set whose preprocessing the model was not trained with (a V1 set for a
+whitening model, which has no counterpart) is refused with exit code 1 before anything
+is computed: a threshold from it says nothing about the model's own data.
 """
 
 import datetime
@@ -36,7 +43,6 @@ import matplotlib
 import numpy as np
 
 from gwd.config import (
-    DEFAULT_TESTSET,
     EVALUATION_MODELS_PLOTS_DIR,
     TESTSET_SEED,
     TESTSET_SIZE,
@@ -311,7 +317,7 @@ def testset_record(built, part):
 def run(
     model="latest",
     save=True,
-    testset=DEFAULT_TESTSET,
+    testset=None,
     seed=TESTSET_SEED,
     n=TESTSET_SIZE,
 ):
@@ -319,7 +325,9 @@ def run(
 
     The threshold comes from the part calib_bg of the test set testset, seed, n
     (gwd.evaluation.testsets.build) at THRESHOLD_TARGET_FPR; the part test only
-    reports. Returns the exit code.
+    reports. testset None takes the model's default set
+    (gwd.evaluation.testsets.default_for_model). With save, a set whose preprocessing
+    the model was not trained with is refused (exit code 1). Returns the exit code.
     """
     print("=" * 70)
     print("🎯 THRESHOLD CALIBRATION")
@@ -333,11 +341,32 @@ def run(
         print(f"❌ {error}")
         return 1
 
+    # Without --testset, the set of the model's training scenario.
+    default, reason = testsets.default_for_model(model_path)
+    if testset is None:
+        testset = default
+        print(testsets.describe_default(testset, reason))
     # The set with the model's preprocessing (V3): a counterpart of testset if needed.
     testset, preprocessing, note = testsets.set_for_model(testset, model_path)
     print(f"Preprocessing of the model: {preprocessing}")
     if note:
         print(note)
+    if testsets.get(testset).preprocessing != preprocessing and save:
+        print(
+            f"❌ Not calibrating with --save: {testset} has preprocessing "
+            f"'{testsets.get(testset).preprocessing}', but the model expects "
+            f"'{preprocessing}', so a threshold from it would not hold on the model's "
+            f"own data. Leave out --testset (the default for this model is "
+            f"{default}), or add --no-save to only look at it.",
+            file=sys.stderr,
+        )
+        return 1
+    if testset != default:
+        print(
+            f"Note: the default set of this model is {default} ({reason}); a "
+            f"threshold from {testset} holds its false alarm rate only on noise like "
+            f"that of {testset}."
+        )
 
     # 2. The test set first: drawing it needs PyCBC, so a missing backend stops
     # before the model takes its time to load.

@@ -319,3 +319,59 @@ def test_build_testset_twice_with_the_cli(tmp_path):
     assert result.returncode == 1
     assert "changed after the build" in result.stderr
     assert "Traceback" not in result.stderr
+
+
+# --- the default set follows the model ---
+
+
+@pytest.mark.parametrize(
+    "metadata, expected, why",
+    [
+        (None, "stress_v1", "names no known training scenario"),
+        ({}, "stress_v1", "names no known training scenario"),
+        ({"dataset_scenario": "unknown (v1)"}, "stress_v1", "no known training"),
+        ({"dataset_scenario": "TRAIN_V1"}, "stress_v1", "trained on TRAIN_V1"),
+        ({"dataset_scenario": "EVAL_V1"}, "stress_v1", "trained on EVAL_V1"),
+        ({"dataset_scenario": "TRAIN_V2"}, "indist_v2", "trained on TRAIN_V2"),
+        ({"dataset_scenario": "STRESS_V2"}, "indist_v2", "trained on STRESS_V2"),
+        ({"dataset_scenario": "TRAIN_V3"}, "indist_v3", "trained on TRAIN_V3"),
+        # Online training records the scenario in its block too; read if the
+        # top-level key is missing.
+        ({"online": {"scenario": "TRAIN_V3"}}, "indist_v3", "trained on TRAIN_V3"),
+        ({"online": {"scenario": "TRAIN_V2"}}, "indist_v2", "trained on TRAIN_V2"),
+        # No scenario, but a whitening model: the whitened in-distribution set.
+        (
+            {"preprocessing": "whiten_bandpass"},
+            "indist_v3",
+            "preprocessing is 'whiten_bandpass'",
+        ),
+        # The metadata of the owner's online-trained V3 model.
+        (
+            {
+                "training_data": "online",
+                "dataset_folder": None,
+                "dataset_scenario": "TRAIN_V3",
+                "preprocessing": "whiten_bandpass",
+                "online": {"scenario": "TRAIN_V3", "scenario_hash": "89b98862405a"},
+            },
+            "indist_v3",
+            "trained on TRAIN_V3",
+        ),
+    ],
+)
+def test_the_default_set_follows_the_training_scenario(
+    tmp_path, metadata, expected, why
+):
+    from gwd import registry
+
+    model = tmp_path / "gwd_model_20260101-000000.keras"
+    model.write_bytes(b"")
+    if metadata is not None:
+        registry.write_metadata(str(model), metadata)
+    name, reason = testsets.default_for_model(str(model))
+    assert name == expected
+    assert why in reason
+    # The default always has the model's preprocessing, so no counterpart is needed.
+    assert testsets.set_for_model(name, str(model))[2] is None
+    line = testsets.describe_default(name, reason)
+    assert line.startswith(f"Test set: {expected} (no --testset given; ")

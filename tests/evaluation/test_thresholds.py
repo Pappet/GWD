@@ -227,3 +227,111 @@ def test_a_whitening_model_is_calibrated_on_the_whitened_counterpart(
     assert thresholds.run(testset="indist_v2") == 0
     assert asked == ["indist_v3"]
     assert "Preprocessing of the model: whiten_bandpass" in capsys.readouterr().out
+
+
+# --- the default set follows the model ---
+
+
+@pytest.fixture
+def asked(monkeypatch, small_set):
+    """The names of the sets that thresholds.run builds; each returns the small set."""
+    names = []
+
+    def build(name, n, seed):
+        names.append(name)
+        return small_set
+
+    monkeypatch.setattr(thresholds.testsets, "build", build)
+    return names
+
+
+@pytest.mark.parametrize(
+    "metadata, expected, why",
+    [
+        (None, "stress_v1", "names no known training scenario"),
+        ({"dataset_scenario": "TRAIN_V1"}, "stress_v1", "trained on TRAIN_V1"),
+        ({"dataset_scenario": "TRAIN_V2"}, "indist_v2", "trained on TRAIN_V2"),
+        (
+            {
+                "training_data": "online",
+                "dataset_scenario": "TRAIN_V3",
+                "preprocessing": "whiten_bandpass",
+                "online": {"scenario": "TRAIN_V3"},
+            },
+            "indist_v3",
+            "trained on TRAIN_V3",
+        ),
+    ],
+)
+def test_without_testset_the_model_is_calibrated_on_its_own_set(
+    stubbed, asked, capsys, metadata, expected, why
+):
+    """The bug: a V3 model was calibrated on stress_v1 by default and saved a
+    meaningless threshold. Now V2 and V3 models get their in-distribution set, V1 and
+    unknown models stress_v1 as before, and the run says which and why."""
+    if metadata is not None:
+        registry.write_metadata(stubbed["path"], metadata)
+    assert thresholds.run() == 0
+    assert asked == [expected]
+    out = capsys.readouterr().out
+    assert f"Test set: {expected} (no --testset given; " in out
+    assert why in out
+    assert "Note: the default set" not in out
+    assert registry.threshold_record(stubbed["path"]) is not None
+
+
+def test_an_explicit_testset_wins_and_the_default_is_named(
+    stubbed, asked, capsys, small_set
+):
+    registry.write_metadata(stubbed["path"], {"dataset_scenario": "TRAIN_V3"})
+    assert thresholds.run(testset="stress_v3") == 0
+    assert asked == ["stress_v3"]
+    out = capsys.readouterr().out
+    assert "no --testset given" not in out
+    assert "Note: the default set of this model is indist_v3" in out
+
+
+@pytest.mark.parametrize("testset", ["stress_v1", "indist_v1"])
+def test_save_refuses_a_set_without_the_models_preprocessing(
+    stubbed, asked, capsys, monkeypatch, testset
+):
+    """A whitening model on a V1 set (no whitened counterpart): --save stops with exit
+    code 1 before any set is built or the model loaded, and writes nothing."""
+    metadata = {"dataset_scenario": "TRAIN_V3", "preprocessing": "whiten_bandpass"}
+    registry.write_metadata(stubbed["path"], metadata)
+    monkeypatch.setattr(
+        thresholds, "load_model", lambda path: pytest.fail("the model was loaded")
+    )
+    assert thresholds.run(testset=testset) == 1
+    assert asked == []
+    assert registry.read_metadata(stubbed["path"]) == metadata
+    assert not os.path.exists(thresholds.report_path(stubbed["path"]))
+    err = capsys.readouterr().err
+    assert f"Not calibrating with --save: {testset} has preprocessing 'bandpass'" in err
+    assert "the default for this model is indist_v3" in err
+
+
+def test_no_save_still_shows_a_set_without_the_models_preprocessing(
+    stubbed, asked, capsys
+):
+    registry.write_metadata(stubbed["path"], {"preprocessing": "whiten_bandpass"})
+    assert thresholds.run(testset="stress_v1", save=False) == 0
+    assert asked == ["stress_v1"]
+    assert "no counterpart with it" in capsys.readouterr().out
+    assert registry.threshold_record(stubbed["path"]) is None
+
+
+def test_the_cli_refuses_to_save_on_a_foreign_preprocessing(tmp_path, capsys):
+    """gwd eval thresholds --model <path> --testset stress_v1 for a V3 model: exit 1,
+    and the model's .json is unchanged (no TensorFlow, no test set needed)."""
+    from gwd import cli
+
+    model = tmp_path / "gwd_model_20261116-223350.keras"
+    model.write_bytes(b"")
+    metadata = {"dataset_scenario": "TRAIN_V3", "preprocessing": "whiten_bandpass"}
+    registry.write_metadata(str(model), metadata)
+    before = (tmp_path / "gwd_model_20261116-223350.json").read_bytes()
+    argv = ["eval", "thresholds", "--model", str(model), "--testset", "stress_v1"]
+    assert cli.main(argv) == 1
+    assert (tmp_path / "gwd_model_20261116-223350.json").read_bytes() == before
+    assert "Not calibrating with --save" in capsys.readouterr().err

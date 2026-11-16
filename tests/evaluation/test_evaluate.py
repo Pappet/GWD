@@ -432,3 +432,49 @@ def test_a_whitening_model_on_a_v1_set_is_warned_about(stubbed, tmp_path, capsys
     assert evaluate.run(testset="stress_v1") == 0
     out = capsys.readouterr().out
     assert "has 'bandpass' and no counterpart with it" in out
+
+
+@pytest.mark.parametrize(
+    "metadata, expected",
+    [
+        (None, "stress_v1"),
+        ({"dataset_scenario": "unknown (v1)"}, "stress_v1"),
+        ({"dataset_scenario": "TRAIN_V2"}, "indist_v2"),
+        (
+            {"dataset_scenario": "TRAIN_V3", "preprocessing": "whiten_bandpass"},
+            "indist_v3",
+        ),
+        ({"online": {"scenario": "TRAIN_V3"}}, "indist_v3"),
+    ],
+)
+def test_without_testset_the_model_is_scored_on_its_own_set(
+    stubbed, monkeypatch, tmp_path, capsys, small_sets, metadata, expected
+):
+    if metadata is not None:
+        write_metadata(tmp_path, **metadata)
+    built = []
+
+    def build(name, n, seed):
+        built.append(name)
+        return small_sets["stress_v1"]
+
+    monkeypatch.setattr(evaluate.testsets, "build", build)
+    assert evaluate.run() == 0
+    assert built == [expected]
+    assert f"Test set: {expected} (no --testset given; " in capsys.readouterr().out
+
+
+def test_an_explicit_testset_wins_over_the_models_default(
+    stubbed, monkeypatch, tmp_path, capsys, small_sets
+):
+    write_metadata(tmp_path, dataset_scenario="TRAIN_V2")
+    built = []
+
+    def build(name, n, seed):
+        built.append(name)
+        return small_sets["stress_v1"]
+
+    monkeypatch.setattr(evaluate.testsets, "build", build)
+    assert evaluate.run(testset="stress_v2") == 0
+    assert built == ["stress_v2"]
+    assert "no --testset given" not in capsys.readouterr().out
