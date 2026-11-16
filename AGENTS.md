@@ -18,6 +18,7 @@ Rules for AI assistants working in this repository.
 - Each step PR ticks its own step in the checklist in `docs/architecture.md`.
 - Before every commit, run `pytest -m 'not slow and not network'`.
   Before opening a pull request, run all tests.
+- CI must be green before a pull request is merged.
 - Change golden values only in `golden:` commits, and state the reason.
 - Do not commit tool state.
 
@@ -28,8 +29,15 @@ Rules for AI assistants working in this repository.
 
 ## Language
 
-- Write all new code, comments, console output, documentation, commit messages,
-  and PR text in English.
+- Everything is in English (decision D11 = B): identifiers, data columns, file
+  names, comments, docstrings, console output, CLI help texts, the menu,
+  documentation, commit messages, and PR text.
+- New files and new lines are written in English. Existing German text is
+  translated when a step touches its file; a module that a step rewrites is
+  translated completely, in its own `docs:` commit in the same pull request.
+- A German name that other code or stored data depends on, such as the leaderboard
+  column `Physik_Gap`, is renamed only in the step that changes that schema.
+- Exception: `docs/aufraeumen/` stays German until P7.4 removes it.
 
 ## Documentation
 

@@ -71,6 +71,8 @@ Before the cleanup, the scripts in `src/` found each other through `sys.path` ed
 
 **Menu (since P2.4, gwd commands since P3.6).** `main.py` uses only the standard library. `MENU` is a fixed list of `(text, gwd arguments)` with 12 entries: the 11 from P2.5 and `gwd env`. Each entry runs as `subprocess.run([sys.executable, "-m", "gwd.cli", ...])` in the project folder, so the menu works from any working directory and reports the real exit code. The end of input exits with 0 (after an entry, with that entry's exit code) instead of raising `EOFError`; the screen is cleared with `cls` or `clear` without a shell, only on a terminal. `tests/test_menu.py` parses every argument list with `gwd.cli.build_parser()`, so the menu and the CLI cannot drift apart.
 
+**Documentation (since P7.1).** The README describes the components, the installation per extra with the GUI backend, the workflow as `gwd` commands, the apps, the data folders and `GWD_HOME`, and the tests. `docs/evaluation.md` (moved from `ROC_ANALYSIS_README.md` with `git mv`, with the useful parts of the removed `ROC_INTEGRATION_OVERVIEW.md`) describes the evaluation commands, test sets, metrics, plots, threshold strategies, the leaderboard schema, and the baseline status. `tests/test_docs_commands.py` scans the Markdown files in the root and in `docs/`, but not `docs/aufraeumen/`: every `gwd` line in a code block and every inline `gwd` span must parse with `gwd.cli.build_parser()`, options in a synopsis such as `gwd train [--epochs --seed]` must exist on that command, `python -m` must name an importable module, `pytest -m` may use only registered markers, and every relative link must point to an existing file. So a step that changes a command also has to change the documentation.
+
 **Project root (since P2.3).** `gwd.config` takes `GWD_HOME` if it is set and not blank, and then warns once (`Using GWD_HOME=...`). Otherwise it takes the nearest folder above `src/gwd/config.py` that contains a `pyproject.toml`, which is the repo root in the editable install. If there is none, the import fails and asks for `GWD_HOME`. Without `GWD_HOME`, all paths are the same as before P2.3 (`tests/test_config_paths.py`).
 
 ## Import rules
@@ -224,7 +226,7 @@ The draw order for `TRAIN_V1` is the one of the old generator, so its files are 
 | **D8** | One package or three? Keep the menu? | A: one package `gwd`, one command `gwd`, `main.py` as a menu. | Decided | P2.1 onward |
 | **D9** | Version result files? | A: `results/` stays local. | Default applies | P1.1, P5.7, P5.8 |
 | **D10** | Threshold, ranking, field test? | A: per-model threshold at 1% FPR, ranking by ROC_AUC, field test optional. | Default applies | P4.3, P4.4, P5.8 |
-| **D11** | Language? | B: everything in English. Until P3.6, only lines a step changes anyway get translated. From P3.6, a rewritten module is fully translated in its own `docs:` commit. P7.1 does the rest. `docs/aufraeumen/` stays German. | Decided | All steps |
+| **D11** | Language? | B: everything in English. Until P3.6, only lines a step changes anyway get translated. From P3.6, a rewritten module is fully translated in its own `docs:` commit. Since P7.1 the rule is in `AGENTS.md`, and the README, `docs/evaluation.md`, the CLI help, and the menu are English; the German left in `core/simulation.py`, `core/noise.py`, `config.py`, `data/validate.py`, `evaluation/leaderboard.py`, and `apps/glitch_hunter/app.py` is translated when a step touches the file. `docs/aufraeumen/` stays German. | Decided | All steps |
 | **D12** | License? | GPL-3.0-or-later, copyright Peter Paprotny. `LICENSE` and the README section are done (PR #1), and the `pyproject.toml` entry since P2.1 (#17). | Decided | P2.1 |
 
 ### Reference commits
@@ -285,7 +287,7 @@ Each step PR ticks its own step, so a tick takes effect when that PR is merged.
 | [ ] | P6.3 | Real noise for V2 (D3) | |
 | [ ] | P6.4 | Rewrite the Matched Filter baseline (D5) | |
 | [ ] | P6.5 | Retrain and re-evaluate, switch to V2, archive old artifacts | |
-| [ ] | P7.1 | New README, `docs/evaluation.md`, documentation command test | |
+| [x] | P7.1 | New README, `docs/evaluation.md`, documentation command test | #35 |
 | [x] | P7.2 | License entry in `pyproject.toml` (D12) | #17 (done in P2.1) |
 | [x] | P7.3 | CI on the lockfile, README on updating it (D7) | #19 |
 | [ ] | P7.4 | Final check: end to end, empty allowlist, checklist | |
