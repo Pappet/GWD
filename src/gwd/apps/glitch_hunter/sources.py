@@ -4,7 +4,10 @@ Nothing here draws or touches matplotlib, so a worker thread may call any of it.
 
 - SimSource draws a sample through gwd.data.injection from the scenario of a Mode:
   'Training' draws from TRAIN_V1, the training distribution, and is the start mode;
-  'Challenge' draws from APP_V1, which is deliberately hard (decision D4).
+  'Challenge' draws from APP_V1, which is deliberately hard (decision D4). Since P6.2
+  each mode also exists in scenario V2 (MODES_V2: TRAIN_V2 and APP_V2, simulated aLIGO
+  noise conditioned with the signal, optimal SNR); V1 stays the default until P6.5.
+  V2 needs gwpy for the conditioning.
 - GwoscSource downloads a known event or a random stretch of O3 noise with a pad of
   PAD_S seconds on each side, conditions it as a whole, and crops the pads
   (conditioned_crop), like the field test of gwd.evaluation.real_data (P4.3).
@@ -21,7 +24,7 @@ from gwd.config import DURATION, N_SAMPLES, SAMPLE_RATE
 from gwd.data.gwosc import EVENTS, StrainError, fetch_strain
 from gwd.data.injection import make_sample, real_noise_provider
 from gwd.data.preprocessing import conditioned_crop, normalize
-from gwd.data.scenarios import APP_V1, TRAIN_V1
+from gwd.data.scenarios import APP_V1, APP_V2, TRAIN_V1, TRAIN_V2
 
 DETECTOR = "H1"
 
@@ -42,11 +45,15 @@ EVENT_CLEARANCE_S = DURATION + 2 * PAD_S
 
 @dataclass(frozen=True)
 class Mode:
-    """A simulation mode: its name in the GUI, its scenario, and what it means."""
+    """A simulation mode: its name in the GUI, its scenario, what it means, its version.
+
+    version is the scenario version (1 or 2); a mode name exists in both.
+    """
 
     name: str
     scenario: object  # a gwd.data.scenarios.Scenario
     note: str
+    version: int = 1
 
 
 TRAINING = Mode(
@@ -62,6 +69,36 @@ CHALLENGE = Mode(
 )
 MODES = (TRAINING, CHALLENGE)
 
+# The same modes in scenario V2 (P6.2). Models trained before P6.5 learned V1.
+TRAINING_V2 = Mode(
+    "Training",
+    TRAIN_V2,
+    "the V2 training distribution (TRAIN_V2): simulated aLIGO noise, conditioned "
+    "with the signal, optimal SNR 4-20, masses 5-100 Msun",
+    version=2,
+)
+CHALLENGE_V2 = Mode(
+    "Challenge",
+    APP_V2,
+    "deliberately hard, inside TRAIN_V2 (APP_V2): 30/30 Msun at optimal SNR 4-8",
+    version=2,
+)
+MODES_V2 = (TRAINING_V2, CHALLENGE_V2)
+
+# The modes of each scenario version; DEFAULT_VERSION is the start version.
+VERSIONS = {1: MODES, 2: MODES_V2}
+DEFAULT_VERSION = 1
+
+
+def mode_title(mode):
+    """The mode's name, with 'V2 ' in front for a V2 mode (V1 looks as before P6.2)."""
+    return mode.name if mode.version == 1 else f"V{mode.version} {mode.name}"
+
+
+def counterpart(mode, version):
+    """The mode with the same name as mode in scenario version version."""
+    return next(m for m in VERSIONS[version] if m.name == mode.name)
+
 
 @dataclass(frozen=True)
 class LoadedSample:
@@ -71,9 +108,10 @@ class LoadedSample:
     has_signal: the truth: a chirp was injected, or the window holds a known event.
     name: what the GUI calls the sample.
     source: "simulation" or "gwosc".
-    snr: the peak SNR the signal was scaled to (simulation); 0.0 otherwise.
+    snr: the SNR the signal was scaled to (simulation): of kind snr_kind; 0.0 otherwise.
+    snr_kind: "peak" (V1) or "optimal" (V2).
     signal: the injected chirp in the units of data (simulation), else None.
-    noise_kind: "white" or "real" (simulation), "gwosc" for downloaded data.
+    noise_kind: "white", "real", or "aligo" (simulation), "gwosc" for downloaded data.
     event: the gwd.data.gwosc.Event in the window, else None.
     note: the mode's note, or why the simulation stands in for a failed download.
     """
@@ -83,6 +121,7 @@ class LoadedSample:
     name: str
     source: str
     snr: float = 0.0
+    snr_kind: str = "peak"
     signal: Optional[np.ndarray] = None
     noise_kind: str = "white"
     event: Optional[object] = None
@@ -98,7 +137,8 @@ class SimSource:
     """Simulated samples from the scenario of a mode, through gwd.data.injection.
 
     A scenario with real noise (TRAIN_V1) draws real chunks from data/noise_background
-    when there are any, as gwd data generate does; otherwise all noise is white.
+    when there are any, as gwd data generate does; otherwise all noise is white. A V2
+    mode draws simulated aLIGO noise and needs gwpy.
     """
 
     def __init__(self, mode=TRAINING, noise_provider="default", rng=None):
@@ -110,15 +150,16 @@ class SimSource:
 
     def draw(self, note=None):
         """Draw one sample. note replaces the mode's note (used for a fallback)."""
-        sample = make_sample(
-            self.mode.scenario, self.rng, noise_provider=self.noise_provider
-        )
+        scenario = self.mode.scenario
+        sample = make_sample(scenario, self.rng, noise_provider=self.noise_provider)
+        optimal = scenario.snr_kind == "optimal"
         return LoadedSample(
             data=sample.data,
             has_signal=sample.has_signal,
-            name=f"Simulation ({self.mode.name})",
+            name=f"Simulation ({mode_title(self.mode)})",
             source="simulation",
-            snr=sample.snr,
+            snr=sample.optimal_snr if optimal else sample.snr,
+            snr_kind=scenario.snr_kind,
             signal=sample.signal,
             noise_kind=sample.noise_kind,
             note=self.mode.note if note is None else note,

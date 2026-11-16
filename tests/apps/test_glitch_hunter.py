@@ -274,6 +274,35 @@ def test_each_mode_shows_its_peak_snr(mode, low, high):
     assert mode.name in app.ax_signal.get_title()
 
 
+def test_the_scenario_switch_draws_v2_and_keeps_the_mode():
+    """P6.2: V1 at the start; V2 draws the same mode from its V2 scenario."""
+    pytest.importorskip("gwpy")
+    app = make_app()
+    assert app.sim.mode is sources.TRAINING
+    assert app.radio_version.value_selected == "V1"
+    assert app.radio_version.active
+    app.radio_mode.set_active(sources.MODES.index(sources.CHALLENGE))
+    app.radio_version.set_active(1)
+    assert app.sim.mode is sources.CHALLENGE_V2
+    assert app.radio_mode.value_selected == app_module.mode_label(sources.CHALLENGE_V2)
+    assert app.sample.name == "Simulation (V2 Challenge)"
+    assert "V2 Challenge" in app.ax_signal.get_title()
+    app.radio_version.set_active(0)
+    assert app.sim.mode is sources.CHALLENGE
+    assert app.radio_mode.value_selected == app_module.mode_label(sources.CHALLENGE)
+    assert app.sample.name == "Simulation (Challenge)"
+
+
+def test_without_gwpy_the_scenario_switch_is_off():
+    sim = sources.SimSource(noise_provider=None, rng=np.random.RandomState(1))
+    app = app_module.GlitchHunterApp(
+        sim=sim, player=Player(system="Linux", popen=FakePopen()), v2_available=False
+    )
+    assert not app.radio_version.active
+    app.set_version("V2")
+    assert app.sim.mode is sources.TRAINING
+
+
 def test_the_slider_starts_at_the_threshold_and_rejudges_the_truth():
     """APP-4: the slider showed 0.50 while 0.46 decided; the box kept its color."""
     app = make_app(model=DummyModel(score=0.6))

@@ -14,7 +14,7 @@ from gwd.apps.glitch_hunter import app as app_module
 from gwd.apps.glitch_hunter import audio, sources
 from gwd.config import N_SAMPLES, SAMPLE_RATE, THRESHOLD_FALLBACK
 from gwd.data.gwosc import EVENTS, StrainError, event
-from gwd.data.scenarios import APP_V1, TRAIN_V1
+from gwd.data.scenarios import APP_V1, APP_V2, TRAIN_V1, TRAIN_V2
 
 
 class Picks:
@@ -89,6 +89,46 @@ def test_training_draws_real_noise_chunks_when_there_are_any(tmp_path):
     source = sources.SimSource(noise_provider=provider, rng=np.random.RandomState(2))
     kinds = {source.draw().noise_kind for _ in range(20)}
     assert kinds == {"real", "white"}  # TRAIN_V1: 80 % real
+
+
+def test_each_mode_exists_in_v1_and_v2_and_v1_is_the_default():
+    """P6.2: the switch V1/V2 keeps the mode; V1 stays the default until P6.5."""
+    assert sources.DEFAULT_VERSION == 1
+    assert sources.VERSIONS == {1: sources.MODES, 2: sources.MODES_V2}
+    assert sources.TRAINING_V2.scenario is TRAIN_V2
+    assert sources.CHALLENGE_V2.scenario is APP_V2
+    for v1, v2 in zip(sources.MODES, sources.MODES_V2):
+        assert (v1.version, v2.version) == (1, 2)
+        assert sources.counterpart(v1, 2) is v2
+        assert sources.counterpart(v2, 1) is v1
+        assert sources.counterpart(v1, 1) is v1
+    assert app_module.mode_label(sources.TRAINING_V2) == "Training (training data)"
+    # The V2 challenge lies inside TRAIN_V2, so it is not called extrapolation.
+    assert "extrapolation" not in app_module.mode_label(sources.CHALLENGE_V2)
+    assert [app_module.version_label(v) for v in sorted(sources.VERSIONS)] == [
+        "V1",
+        "V2",
+    ]
+
+
+@pytest.mark.parametrize(
+    "mode, low, high",
+    [(sources.TRAINING_V2, 4.0, 20.0), (sources.CHALLENGE_V2, 4.0, 8.0)],
+    ids=["Training", "Challenge"],
+)
+def test_each_v2_mode_draws_the_optimal_snr_of_its_scenario(mode, low, high):
+    pytest.importorskip("gwpy")
+    source = sources.SimSource(mode, noise_provider=None, rng=np.random.RandomState(5))
+    seen = set()
+    for _ in range(8):
+        sample = source.draw()
+        seen.add(sample.has_signal)
+        assert sample.data.shape == (N_SAMPLES,)
+        assert sample.noise_kind == "aligo" and sample.snr_kind == "optimal"
+        assert sample.name == f"Simulation (V2 {mode.name})"
+        if sample.has_signal:
+            assert low <= sample.snr <= high
+    assert seen == {True, False}
 
 
 def test_a_fallback_note_replaces_the_mode_note():
@@ -210,6 +250,10 @@ def test_the_truth_of_a_simulated_sample_names_its_peak_snr():
         np.zeros(N_SAMPLES), True, "Simulation (Training)", "simulation", snr=3.25
     )
     assert app_module.truth_text(sample) == "TRUTH: SIGNAL (peak SNR 3.25)"
+    v2 = sources.LoadedSample(
+        np.zeros(N_SAMPLES), True, "x", "simulation", snr=8.0, snr_kind="optimal"
+    )
+    assert app_module.truth_text(v2) == "TRUTH: SIGNAL (optimal SNR 8.00)"
     noise = sources.LoadedSample(np.zeros(N_SAMPLES), False, "x", "simulation")
     assert app_module.truth_text(noise) == "TRUTH: NOISE"
 
