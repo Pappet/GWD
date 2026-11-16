@@ -24,9 +24,11 @@ MODEL_HELP = (
 def seed_everything(seed):
     """Seed Python's random and the global numpy RNG, for the eval commands.
 
-    A minimal stand-in until P5.3 and P5.6 pass an rng explicitly. seed=None changes
-    nothing, so runs stay unseeded as before. gwd data generate and gwd train pass the
-    seed to their function instead, which also records it.
+    A minimal stand-in until the eval commands pass an rng explicitly (P5.6, P5.7).
+    gwd.core takes an rng since P5.3, and gwd.data.injection passes it the global RNG
+    when the caller gives none, so this seed reaches it. seed=None changes nothing, so
+    runs stay unseeded as before. gwd data generate and gwd train pass the seed to
+    their function instead, which also records it.
     """
     if seed is None:
         return

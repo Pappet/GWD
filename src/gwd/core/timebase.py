@@ -7,8 +7,8 @@ def time_axis(fs, duration, t0=0.0):
     """n = round(fs * duration) times t0 + k / fs, k = 0 .. n - 1.
 
     The spacing is exactly 1 / fs and the last time is t0 + duration - 1 / fs. Before
-    P5.3 the code used np.linspace(0, duration, n), whose spacing duration / (n - 1)
-    is an effective sampling rate of 4095.75 Hz instead of 4096 Hz for 4 s.
+    P5.3 the code used np.linspace from 0 to duration with n points, whose spacing
+    duration / (n - 1) is an effective 4095.75 Hz instead of 4096 Hz for 4 s.
     """
     n = int(round(fs * duration))
     if n < 2:

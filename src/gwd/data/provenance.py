@@ -22,7 +22,7 @@ from gwd.core.waveforms import backend_label, check_backend
 MANIFEST_FILE = "manifest.json"
 MANIFEST_FORMAT = 1
 # The time axis of the samples (gwd.core.timebase.time_axis). Manifests without this
-# key were written before P5.3, on np.linspace(0, duration, n) (CORE-19).
+# key were written before P5.3, on np.linspace from 0 to duration (CORE-19).
 TIME_AXIS = "arange(n)/fs"
 # What training records for a dataset without a manifest (written before P4.1).
 UNKNOWN_V1 = "unknown (v1)"
