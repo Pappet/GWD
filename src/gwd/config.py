@@ -45,6 +45,12 @@ MODELS_DIR = os.path.join(ROOT_DIR, "models_registry")
 
 RESULTS_DIR = os.path.join(ROOT_DIR, "results")
 
+# Fixed, hashed test sets (P5.7, gwd.evaluation.testsets): the arrays are a local cache
+# under data/eval/, the manifests with the hash under results/testsets/ (D9 = A: both
+# stay local; under D9 = B the manifests could be versioned, which data/ cannot).
+TESTSET_DIR = os.path.join(ROOT_DIR, "data/eval")
+TESTSET_MANIFEST_DIR = os.path.join(RESULTS_DIR, "testsets")
+
 PLOTS_DIR = os.path.join(ROOT_DIR, "plots")
 VALIDATION_DATASET_PLOTS_DIR = os.path.join(ROOT_DIR, "plots/validation_dataset")
 TRAINING_PLOTS_DIR = os.path.join(ROOT_DIR, "plots/training")
@@ -81,6 +87,12 @@ BANDPASS = (20, 300)  # Hz, (low, high)
 # Length of the real-noise segment that fetch_noise downloads (about 68 minutes).
 # The segment start is START_GPS in gwd.data.fetch_noise.
 NOISE_FETCH_SECONDS = 4096
+
+# --- TEST SET DEFAULTS ---
+# gwd eval run, thresholds, and compare override them with --testset, --seed, and --n.
+DEFAULT_TESTSET = "stress_v1"  # = EVAL_V1, comparable with the numbers before P5.7
+TESTSET_SEED = 0
+TESTSET_SIZE = 1000  # samples of the balanced part 'test'; calib_bg has as many
 
 # --- TRAINING DEFAULTS ---
 # gwd train overrides them with --epochs, --batch-size, --lr, and --patience.

@@ -105,3 +105,50 @@ APP_V1 = Scenario(
 )
 
 SCENARIOS = {s.name: s for s in (TRAIN_V1, EVAL_V1, APP_V1)}
+
+
+@dataclass(frozen=True)
+class EvalSet:
+    """A named, fixed test set drawn from a scenario (P5.7, gwd.evaluation.testsets).
+
+    The name carries the version (indist_v1), and it names the cached files; a set
+    whose drawing changes gets a new name. peak_snr_bin_width splits the scenario's
+    peak SNR range into equal bins, which the signal samples fill in turn, so every
+    bin is occupied. training is the scenario the models were trained on: signal
+    samples outside its parameter ranges count as extrapolation.
+    """
+
+    name: str
+    scenario: Scenario
+    peak_snr_bin_width: float
+    description: str
+    training: Scenario = TRAIN_V1
+
+    def peak_snr_edges(self):
+        """The edges of the peak SNR bins, from the low to the high end of the range."""
+        low, high = self.scenario.snr_range
+        bins = round((high - low) / self.peak_snr_bin_width)
+        if bins < 1 or abs(low + bins * self.peak_snr_bin_width - high) > 1e-9:
+            raise ValueError(
+                f"{self.name}: the bin width {self.peak_snr_bin_width} does not split "
+                f"the peak SNR range {self.scenario.snr_range} evenly"
+            )
+        return tuple(low + i * self.peak_snr_bin_width for i in range(bins + 1))
+
+
+# The standard test sets (D4 = A): the training distribution, and the old evaluation
+# distribution. OOD events stay in the field test, reported on their own.
+INDIST_V1 = EvalSet(
+    name="indist_v1",
+    scenario=TRAIN_V1,
+    peak_snr_bin_width=1.0,
+    description="the training distribution TRAIN_V1, with its noise mix",
+)
+STRESS_V1 = EvalSet(
+    name="stress_v1",
+    scenario=EVAL_V1,
+    peak_snr_bin_width=0.25,
+    description="EVAL_V1 as before P5.7: white noise, 30/30 M☉, peak SNR 0.5–2.5",
+)
+
+TESTSETS = {s.name: s for s in (INDIST_V1, STRESS_V1)}

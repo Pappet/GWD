@@ -21,25 +21,6 @@ MODEL_HELP = (
 )
 
 
-def seed_everything(seed):
-    """Seed Python's random and the global numpy RNG, for the eval commands.
-
-    A minimal stand-in until the eval commands pass an rng explicitly (P5.7).
-    gwd.core takes an rng since P5.3, and gwd.data.injection passes it the global RNG
-    when the caller gives none, so this seed reaches it. seed=None changes nothing, so
-    runs stay unseeded as before. gwd data generate and gwd train pass the seed to
-    their function instead, which also records it.
-    """
-    if seed is None:
-        return
-    import random
-
-    import numpy as np
-
-    random.seed(seed)
-    np.random.seed(seed)
-
-
 # --- handlers: each returns an exit code ---
 
 
@@ -128,25 +109,46 @@ def _train(args):
     return 0
 
 
+def _testset_options(args):
+    """The test set arguments given; the functions default to gwd.config (P5.7).
+
+    The set seeds its own random stream, so nothing seeds the global RNG any more.
+    """
+    options = {"testset": args.testset, "seed": args.seed, "n": args.n}
+    return {name: value for name, value in options.items() if value is not None}
+
+
+def _eval_build_testset(args):
+    from gwd.evaluation import testsets
+
+    try:
+        options = _testset_options(args)
+        if "testset" in options:
+            options["name"] = options.pop("testset")
+        built = testsets.build(rebuild=args.rebuild, **options)
+    except testsets.InvalidTestsetError as error:
+        print(f"❌ {error}", file=sys.stderr)
+        return 1
+    print("\n".join(testsets.describe(built)))
+    return 0
+
+
 def _eval_run(args):
     from gwd.evaluation import evaluate
 
-    seed_everything(args.seed)
-    return evaluate.run(model=args.model, real=args.real)
+    return evaluate.run(model=args.model, real=args.real, **_testset_options(args))
 
 
 def _eval_thresholds(args):
     from gwd.evaluation import thresholds
 
-    seed_everything(args.seed)
-    return thresholds.run(model=args.model, save=args.save)
+    return thresholds.run(model=args.model, save=args.save, **_testset_options(args))
 
 
 def _eval_compare(args):
     from gwd.evaluation import compare
 
-    seed_everything(args.seed)
-    return compare.run(models=args.model)
+    return compare.run(models=args.model, **_testset_options(args))
 
 
 def _eval_leaderboard(args):
@@ -193,6 +195,50 @@ def _add_seed(parser, what, default="unseeded"):
         "--seed",
         type=int,
         help=f"Seed for {what}. Default: {default}.",
+    )
+
+
+def _non_negative(text):
+    value = int(text)
+    if value < 0:
+        raise argparse.ArgumentTypeError(f"must not be negative: {value}")
+    return value
+
+
+def _at_least_two(text):
+    value = int(text)
+    if value < 2:
+        raise argparse.ArgumentTypeError(f"must be at least 2: {value}")
+    return value
+
+
+def _add_testset(parser, *aliases):
+    """--testset, --seed, and --n: which fixed test set (gwd.evaluation.testsets).
+
+    The defaults stay None here and come from gwd.config in the functions, so the
+    parser does not import gwd.config (which needs a project root).
+    """
+    from gwd.data.scenarios import TESTSETS
+
+    parser.add_argument(
+        "--testset",
+        *aliases,
+        choices=sorted(TESTSETS),
+        help="The fixed test set: indist_v1 (the training distribution TRAIN_V1) or "
+        "stress_v1 (EVAL_V1, as before P5.7). Default: DEFAULT_TESTSET in gwd.config "
+        "(stress_v1).",
+    )
+    parser.add_argument(
+        "--seed",
+        type=_non_negative,
+        help="Seed of the test set (its own random stream, disjoint from training). "
+        "Default: TESTSET_SEED in gwd.config (0).",
+    )
+    parser.add_argument(
+        "--n",
+        type=_at_least_two,
+        help="Samples in the balanced part 'test'; the noise-only part calib_bg has as "
+        "many. Default: TESTSET_SIZE in gwd.config (1000).",
     )
 
 
@@ -337,11 +383,30 @@ def build_parser():
         dest="eval_command", metavar="COMMAND", required=True
     )
 
+    build_testset = eval_commands.add_parser(
+        "build-testset",
+        help="Build a fixed, hashed test set once (later calls load it).",
+        description="Draw a test set once into data/eval/<testset>_<seed>_<n>.npz, "
+        "with its manifest and SHA-256 in results/testsets/. If both exist, load and "
+        "check them instead (a cache hit); exit code 1 if they do not match or are "
+        "stale.",
+    )
+    # --scenario is the name in docs/aufraeumen/PLAN.md.
+    _add_testset(build_testset, "--scenario")
+    build_testset.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="Draw and write the set again, also over a cached one. Default: no.",
+    )
+    build_testset.set_defaults(handler=_eval_build_testset)
+
     run = eval_commands.add_parser(
         "run",
-        help="ROC evaluation of one model; adds a leaderboard row.",
-        description="ROC evaluation on simulated data (EVAL_V1) and, with --real, the "
-        "field test on real events. Adds a row to results/model_leaderboard.csv.",
+        help="ROC evaluation of one model on a fixed test set.",
+        description="ROC evaluation on a fixed, hashed test set (built on first use), "
+        "with metrics per peak SNR, optimal SNR, total mass, and noise source, and, "
+        "with --real, the field test on real events. On the test set stress_v1 it adds "
+        "a row to results/model_leaderboard.csv.",
     )
     _add_model(run)
     run.add_argument(
@@ -350,14 +415,14 @@ def build_parser():
         default=False,
         help="Run the real data field test (needs network access). Default: --no-real.",
     )
-    _add_seed(run, "the simulated test set")
+    _add_testset(run)
     run.set_defaults(handler=_eval_run)
 
     thresholds = eval_commands.add_parser(
         "thresholds",
         help="Find detection thresholds for one model.",
-        description="Find detection thresholds for one model from its ROC curve and "
-        "save them in results/optimal_thresholds.json.",
+        description="Find detection thresholds for one model from its ROC curve on a "
+        "fixed test set and save them in results/optimal_thresholds.json.",
     )
     _add_model(thresholds)
     thresholds.add_argument(
@@ -366,20 +431,20 @@ def build_parser():
         default=True,
         help="Save the thresholds. Default: --save.",
     )
-    _add_seed(thresholds, "the simulated test set")
+    _add_testset(thresholds)
     thresholds.set_defaults(handler=_eval_thresholds)
 
     compare = eval_commands.add_parser(
         "compare",
         help="Compare models in one ROC plot.",
-        description="Compare models in one ROC plot on the same simulated test set.",
+        description="Compare models in one ROC plot on the same fixed test set.",
     )
     compare.add_argument(
         "--model",
         action="append",
         help=f"One model to compare, repeatable: {MODEL_HELP}. Default: all models.",
     )
-    _add_seed(compare, "the simulated test set")
+    _add_testset(compare)
     compare.set_defaults(handler=_eval_compare)
 
     leaderboard = eval_commands.add_parser(

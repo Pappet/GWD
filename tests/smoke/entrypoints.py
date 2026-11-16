@@ -21,6 +21,8 @@ PIPELINE = {
     "generate": Stage(("data", "generate", "--n", str(NUM_SAMPLES), "--seed", SEED)),
     "validate": Stage(("data", "validate")),
     "train": Stage(("train", "--epochs", "1", "--seed", SEED)),
+    # P5.7: the fixed test set; evaluate, thresholds, and compare then load it.
+    "build_testset": Stage(("eval", "build-testset", "--seed", SEED)),
     "evaluate": Stage(("eval", "run", "--no-real", "--seed", SEED)),
     # Saves by default; the empty stdin shows that it no longer asks (EVAL-17).
     "thresholds": Stage(("eval", "thresholds", "--seed", SEED), stdin=""),

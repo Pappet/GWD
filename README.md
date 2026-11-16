@@ -127,8 +127,15 @@ CUDA_VISIBLE_DEVICES='' gwd train --epochs 10 --seed 1 --deterministic
 ### 3. Evaluation
 
 ```bash
-# ROC evaluation of the latest model on simulated data (offline)
+# Build the default fixed test set once (stress_v1, seed 0, n 1000); the commands below
+# also build it on first use and load it afterwards
+gwd eval build-testset
+
+# ROC evaluation of the latest model on the fixed test set (offline)
 gwd eval run
+
+# The same on the training distribution instead of the stress set
+gwd eval run --testset indist_v1
 
 # The same plus the field test on real GWOSC data (network)
 gwd eval run --real
@@ -143,7 +150,7 @@ gwd eval compare
 gwd eval leaderboard
 ```
 
-The latest model is the one with the newest timestamp in its name, `gwd_model_YYYYMMDD-HHMMSS.keras`; other `.keras` files are ordered by their modification time, with a warning. `gwd eval run`, `gwd eval thresholds`, and `gwd eval compare` take `--model` with `latest`, a model name, or a path to a `.keras` file; `compare` takes it more than once. `--seed` makes the simulated test set reproducible:
+The latest model is the one with the newest timestamp in its name, `gwd_model_YYYYMMDD-HHMMSS.keras`; other `.keras` files are ordered by their modification time, with a warning. `gwd eval run`, `gwd eval thresholds`, and `gwd eval compare` take `--model` with `latest`, a model name, or a path to a `.keras` file; `compare` takes it more than once. Since P5.7 all simulated numbers come from a fixed, hashed test set: `--testset` is `stress_v1` (the default, the old evaluation distribution `EVAL_V1`) or `indist_v1` (the training distribution `TRAIN_V1`), and `--seed` (default 0) and `--n` (default 1000) pick the set. It is drawn once into `data/eval/`, with its manifest and SHA-256 in `results/testsets/`, and loaded by every later command with the same three values; a set whose arrays no longer match the hash, or that is stale, stops the command with exit code 1 until `gwd eval build-testset --rebuild` (with the same `--testset`, `--seed`, and `--n`) draws it again. `gwd eval run` prints the metrics per peak SNR, optimal SNR, total mass, and noise source and marks bins outside the training ranges as `Extrapolation`; only runs on `stress_v1` add a leaderboard row.
 
 ```bash
 gwd eval run --model gwd_model_20251205-232013 --seed 1
@@ -182,8 +189,9 @@ All paths are below the project root, the folder with `pyproject.toml`. `gwd env
 |---|---|
 | `data/training/` | The training dataset: `sample_NNNNN.npy`, `labels.csv`, `manifest.json` |
 | `data/noise_background/` | Real noise chunks from `gwd data fetch-noise`, `real_noise_NNNN.npy` |
+| `data/eval/` | The fixed test sets, `<set>_<seed>_<n>.npz` (since P5.7) |
 | `models_registry/` | Trained models (`.keras`) and their metadata (`.json`) |
-| `results/` | `model_leaderboard.csv` and `optimal_thresholds.json` |
+| `results/` | `model_leaderboard.csv`, `optimal_thresholds.json`, and the test set manifests in `testsets/` |
 | `plots/` | `validation_dataset/`, `training/`, and `evaluation_models/` |
 
 Git ignores all of these folders; they exist only on the machine that made them. The legacy paths `gw_noise_background/`, `gw_training_data/`, `./model_leaderboard.csv`, and `analysis/model_leaderboard.csv` come from before the cleanup. The code uses none of them, with one exception: if `results/model_leaderboard.csv` does not exist, `analysis/model_leaderboard.csv` is copied there once. Keep the legacy paths; ignored files cannot be restored from Git.
@@ -192,7 +200,7 @@ Git ignores all of these folders; they exist only on the machine that made them.
 
 ## Scenarios and SNR
 
-Training, evaluation, and the Glitch Hunter draw their samples from three named scenarios, `TRAIN_V1`, `EVAL_V1`, and `APP_V1`, which differ in noise, masses, and SNR range. The samples are scaled to a peak SNR: the peak amplitude of the signal divided by the noise standard deviation, not a matched filter SNR. Since P5.5 `labels.csv` records it as `peak_snr` (and, as before, as `snr`, which stays for older readers) next to `optimal_snr`, the matched filter SNR of the signal: in white noise from its known standard deviation, in a real chunk against that chunk's Welch PSD in 20–300 Hz. Older datasets have only `snr`, which is read as the peak SNR. `gwd data validate` reports the median ratio `optimal_snr / peak_snr` per noise source, and `gwd eval run` reports SNR50 and SNR90 both as peak and as optimal SNR. The scenarios and both SNRs are described, with the known skews between them, in [docs/architecture.md](docs/architecture.md#scenarios-and-snr-definition-current-state-v1).
+Training, evaluation, and the Glitch Hunter draw their samples from three named scenarios, `TRAIN_V1`, `EVAL_V1`, and `APP_V1`, which differ in noise, masses, and SNR range. The samples are scaled to a peak SNR: the peak amplitude of the signal divided by the noise standard deviation, not a matched filter SNR. Since P5.5 `labels.csv` records it as `peak_snr` (and, as before, as `snr`, which stays for older readers) next to `optimal_snr`, the matched filter SNR of the signal: in white noise from its known standard deviation, in a real chunk against that chunk's Welch PSD in 20–300 Hz. Older datasets have only `snr`, which is read as the peak SNR. `gwd data validate` reports the median ratio `optimal_snr / peak_snr` per noise source, and `gwd eval run` reports SNR50 and SNR90 both as peak and as optimal SNR. Since P5.7 the evaluation runs on the fixed test set `stress_v1` (`EVAL_V1`) or `indist_v1` (`TRAIN_V1`) and reports the metrics per bin. The scenarios and both SNRs are described, with the known skews between them, in [docs/architecture.md](docs/architecture.md#scenarios-and-snr-definition-current-state-v1).
 
 ## Tests
 

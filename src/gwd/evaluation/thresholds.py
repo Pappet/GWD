@@ -10,7 +10,10 @@ Strategies:
 5. Fixed TPR: minimizes the FPR at a TPR of 90%
 
 Run it with ``gwd eval thresholds``; the results go to results/optimal_thresholds.json
-unless --no-save is given.
+unless --no-save is given. Since P5.7 the scores come from the part 'test' of a fixed,
+hashed test set (gwd.evaluation.testsets; --testset, --seed, --n, default stress_v1),
+and the JSON names that set and its SHA-256. P5.8 calibrates the threshold on the
+noise-only part calib_bg instead.
 """
 
 import datetime
@@ -21,18 +24,18 @@ import sys
 import matplotlib
 
 from gwd.config import (
+    DEFAULT_TESTSET,
     EVALUATION_MODELS_PLOTS_DIR,
     OPTIMAL_THRESHOLDS_FILE,
-    WAVEFORM_BACKEND,
+    TESTSET_SEED,
+    TESTSET_SIZE,
     ensure_dirs,
 )
-from gwd.core.waveforms import check_backend
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from gwd.data.injection import make_test_set
-from gwd.data.scenarios import EVAL_V1
+from gwd.evaluation import testsets
 from gwd.evaluation.metrics import find_optimal_thresholds
 from gwd.registry import load_model, resolve
 
@@ -184,8 +187,18 @@ def recommend_threshold(optimal_thresholds):
     print("\n" + "=" * 70)
 
 
-def run(model="latest", save=True):
-    """Find the thresholds of one model and save them unless save is False. Returns the exit code."""
+def run(
+    model="latest",
+    save=True,
+    testset=DEFAULT_TESTSET,
+    seed=TESTSET_SEED,
+    n=TESTSET_SIZE,
+):
+    """Find the thresholds of one model and save them unless save is False.
+
+    The scores come from the part 'test' of the test set testset, seed, n
+    (gwd.evaluation.testsets.build). Returns the exit code.
+    """
     print("=" * 70)
     print("🎯 THRESHOLD OPTIMIZATION TOOL")
     print("=" * 70)
@@ -197,17 +210,20 @@ def run(model="latest", save=True):
     except FileNotFoundError as error:
         print(f"❌ {error}")
         return 1
-    # The test set needs PyCBC; fail before the model takes its time to load.
-    check_backend(WAVEFORM_BACKEND)
+
+    # 2. The test set first: drawing it needs PyCBC, so a missing backend stops
+    # before the model takes its time to load.
+    try:
+        built = testsets.build(testset, n, seed)
+    except testsets.InvalidTestsetError as error:
+        print(f"❌ {error}", file=sys.stderr)
+        return 1
+    print("\n".join(testsets.describe(built)))
+    X_test, y_true = built.X, built.y
 
     loaded = load_model(model_path)
     name = os.path.basename(model_path)
     print(f"✓ Loaded: {name}")
-
-    # 2. Generate the test data
-    print(f"\n📊 Generating the test data ({EVAL_V1.name})...")
-    X_test, y_true = make_test_set(EVAL_V1, 500)
-    print(f"✓ {len(X_test)} samples generated")
 
     # 3. Predictions
     print("\n🧠 Computing predictions...")
@@ -233,6 +249,13 @@ def run(model="latest", save=True):
 
     output = {
         "model": name,
+        "testset": {
+            "name": built.spec.name,
+            "seed": built.seed,
+            "n": built.n,
+            "part": "test",
+            "sha256": built.sha256,
+        },
         "optimal_thresholds": {
             k: {
                 **v,
