@@ -426,7 +426,7 @@ def snr_examples(signal_samples):
 def create_visualizations(
     df, data_folder, output_folder=VALIDATION_DATASET_PLOTS_DIR, scenario=None
 ):
-    """Erstellt umfassende Visualisierungen des Datensatzes.
+    """Write the report plots of the dataset to output_folder.
 
     The SNR histogram marks the SNR range of scenario, if it is known. The samples
     shown are the first noise sample and the signal samples with the lowest, the
@@ -441,10 +441,10 @@ def create_visualizations(
     signal_samples = df[df["has_signal"] == 1]
     noise_samples = df[df["has_signal"] == 0]
 
-    print("\n5. VISUALISIERUNGEN:")
-    print(f"   Erstelle Plots in '{output_folder}/'...")
+    print("\n5. PLOTS:")
+    print(f"   Writing plots to '{output_folder}/'...")
 
-    # ========== PLOT 1: SNR Verteilung ==========
+    # ========== PLOT 1: SNR distribution ==========
     fig1, axes1 = plt.subplots(1, 2, figsize=(14, 5))
 
     # Histogram
@@ -475,8 +475,8 @@ def create_visualizations(
             label=f"{scenario.name} range",
         )
     axes1[0].set_xlabel("Peak SNR (peak amplitude / noise std)", fontsize=12)
-    axes1[0].set_ylabel("Anzahl Samples", fontsize=12)
-    axes1[0].set_title("SNR Verteilung", fontsize=14, fontweight="bold")
+    axes1[0].set_ylabel("Number of samples", fontsize=12)
+    axes1[0].set_title("SNR distribution", fontsize=14, fontweight="bold")
     axes1[0].legend()
     axes1[0].grid(True, alpha=0.3)
 
@@ -495,11 +495,11 @@ def create_visualizations(
     print("   ✅ 01_snr_distribution.png")
     plt.close()
 
-    # ========== PLOT 2: Physikalische Parameter ==========
+    # ========== PLOT 2: Physical parameters ==========
     fig2 = plt.figure(figsize=(16, 10))
     gs = gridspec.GridSpec(2, 3, figure=fig2, hspace=0.3, wspace=0.3)
 
-    # Masse 1 vs Masse 2
+    # Mass 1 vs mass 2
     ax1 = fig2.add_subplot(gs[0, 0])
     scatter = ax1.scatter(
         signal_samples["mass1"],
@@ -512,31 +512,31 @@ def create_visualizations(
     ax1.plot([0, 100], [0, 100], "r--", alpha=0.3, label="m1 = m2")
     ax1.set_xlabel("Mass 1 [M☉]", fontsize=11)
     ax1.set_ylabel("Mass 2 [M☉]", fontsize=11)
-    ax1.set_title("Massenverteilung", fontweight="bold")
+    ax1.set_title("Mass distribution", fontweight="bold")
     ax1.legend()
     ax1.grid(True, alpha=0.3)
     cbar1 = plt.colorbar(scatter, ax=ax1)
     cbar1.set_label("SNR", fontsize=10)
 
-    # Gesamtmasse Distribution
+    # Total mass distribution
     ax2 = fig2.add_subplot(gs[0, 1])
     total_mass = signal_samples["mass1"] + signal_samples["mass2"]
     ax2.hist(total_mass, bins=40, edgecolor="black", alpha=0.7, color="coral")
-    ax2.set_xlabel("Gesamtmasse [M☉]", fontsize=11)
-    ax2.set_ylabel("Anzahl", fontsize=11)
-    ax2.set_title("Gesamtmassen-Verteilung", fontweight="bold")
+    ax2.set_xlabel("Total mass [M☉]", fontsize=11)
+    ax2.set_ylabel("Count", fontsize=11)
+    ax2.set_title("Total mass distribution", fontweight="bold")
     ax2.grid(True, alpha=0.3)
 
-    # Massenverhältnis (q = m1/m2)
+    # Mass ratio (q = m1/m2)
     ax3 = fig2.add_subplot(gs[0, 2])
     mass_ratio = signal_samples["mass1"] / signal_samples["mass2"]
     ax3.hist(mass_ratio, bins=40, edgecolor="black", alpha=0.7, color="lightgreen")
-    ax3.set_xlabel("Massenverhältnis q = m1/m2", fontsize=11)
-    ax3.set_ylabel("Anzahl", fontsize=11)
-    ax3.set_title("Massenverhältnis-Verteilung", fontweight="bold")
+    ax3.set_xlabel("Mass ratio q = m1/m2", fontsize=11)
+    ax3.set_ylabel("Count", fontsize=11)
+    ax3.set_title("Mass ratio distribution", fontweight="bold")
     ax3.grid(True, alpha=0.3)
 
-    # Distanz Distribution
+    # Distance distribution
     # The distance has no effect on the sample (normalized chirp), so there is no
     # 'SNR vs distance' plot; this histogram shows only the drawn metadata.
     ax5 = fig2.add_subplot(gs[1, 0])
@@ -547,12 +547,12 @@ def create_visualizations(
         alpha=0.7,
         color="mediumpurple",
     )
-    ax5.set_xlabel("Distanz [Mpc]", fontsize=11)
-    ax5.set_ylabel("Anzahl", fontsize=11)
-    ax5.set_title("Distanz-Verteilung", fontweight="bold")
+    ax5.set_xlabel("Distance [Mpc]", fontsize=11)
+    ax5.set_ylabel("Count", fontsize=11)
+    ax5.set_title("Distance distribution (metadata only)", fontweight="bold")
     ax5.grid(True, alpha=0.3)
 
-    # Merger Time Distribution
+    # Merger time distribution
     ax6 = fig2.add_subplot(gs[1, 1])
     ax6.hist(
         signal_samples["merger_time"],
@@ -561,9 +561,9 @@ def create_visualizations(
         alpha=0.7,
         color="gold",
     )
-    ax6.set_xlabel("Merger Zeitpunkt [s]", fontsize=11)
-    ax6.set_ylabel("Anzahl", fontsize=11)
-    ax6.set_title("Merger Zeitpunkt-Verteilung", fontweight="bold")
+    ax6.set_xlabel("Merger time [s]", fontsize=11)
+    ax6.set_ylabel("Count", fontsize=11)
+    ax6.set_title("Merger time distribution", fontweight="bold")
     ax6.grid(True, alpha=0.3)
 
     plt.savefig(
@@ -574,13 +574,13 @@ def create_visualizations(
     print("   ✅ 02_physical_parameters.png")
     plt.close()
 
-    # ========== PLOT 3: Sample Visualisierung (verschiedene SNR) ==========
-    # Wähle repräsentative Samples aus
+    # ========== PLOT 3: Example samples (different SNR) ==========
+    # Pick representative samples
     samples_to_plot = []
 
-    # Nur Rauschen
+    # Noise only
     if len(noise_samples) > 0:
-        samples_to_plot.append(("Nur Rauschen", noise_samples.iloc[0]))
+        samples_to_plot.append(("Noise only", noise_samples.iloc[0]))
 
     for label, row in snr_examples(signal_samples):
         samples_to_plot.append((label, row))
@@ -597,18 +597,18 @@ def create_visualizations(
 
         ax.plot(time, data, linewidth=0.5, color="steelblue")
 
-        # Title mit Infos
+        # Title with the parameters
         if row["has_signal"] == 1:
             title = f"{label}: SNR={row['snr']:.2f} | M1={row['mass1']:.1f}M☉, M2={row['mass2']:.1f}M☉ | D={row['distance']:.0f}Mpc"
         else:
             title = f"{label}"
 
         ax.set_title(title, fontweight="bold", fontsize=11)
-        ax.set_xlabel("Zeit [s]", fontsize=10)
+        ax.set_xlabel("Time [s]", fontsize=10)
         ax.set_ylabel("Strain", fontsize=10)
         ax.grid(True, alpha=0.3)
 
-        # Merger-Zeitpunkt markieren (falls Signal)
+        # Mark the merger time (signal samples only)
         if row["has_signal"] == 1 and row["merger_time"] > 0:
             ax.axvline(
                 row["merger_time"],
@@ -629,12 +629,12 @@ def create_visualizations(
     print("   ✅ 03_sample_timeseries.png")
     plt.close()
 
-    # ========== PLOT 4: Spektrogramme ==========
-    # Wähle 3 interessante Samples für Spektrogramm
+    # ========== PLOT 4: Spectrograms ==========
+    # Noise only, the weakest and the strongest signal
     spec_samples = []
 
     if len(noise_samples) > 0:
-        spec_samples.append(("Nur Rauschen", noise_samples.iloc[0]))
+        spec_samples.append(("Noise only", noise_samples.iloc[0]))
 
     examples = snr_examples(signal_samples)
     if examples:
@@ -653,10 +653,10 @@ def create_visualizations(
         data = np.load(filepath)
         fs = SAMPLE_RATE
 
-        # Zeitreihe
+        # Time series
         time = np.linspace(0, DURATION, len(data))
         axes4[i, 0].plot(time, data, linewidth=0.5, color="steelblue")
-        axes4[i, 0].set_xlabel("Zeit [s]", fontsize=10)
+        axes4[i, 0].set_xlabel("Time [s]", fontsize=10)
         axes4[i, 0].set_ylabel("Strain", fontsize=10)
 
         if row["has_signal"] == 1:
@@ -674,15 +674,15 @@ def create_visualizations(
         axes4[i, 0].set_title(title_left, fontweight="bold", fontsize=11)
         axes4[i, 0].grid(True, alpha=0.3)
 
-        # Spektrogramm
+        # Spectrogram
         f, t, Sxx = signal.spectrogram(data, fs, nperseg=256)
         im = axes4[i, 1].pcolormesh(
             t, f, 10 * np.log10(Sxx + 1e-10), shading="gouraud", cmap="viridis"
         )
-        axes4[i, 1].set_ylabel("Frequenz [Hz]", fontsize=10)
-        axes4[i, 1].set_xlabel("Zeit [s]", fontsize=10)
-        axes4[i, 1].set_title("Spektrogramm", fontweight="bold", fontsize=11)
-        axes4[i, 1].set_ylim([0, 500])  # Fokus auf GW-relevanten Bereich
+        axes4[i, 1].set_ylabel("Frequency [Hz]", fontsize=10)
+        axes4[i, 1].set_xlabel("Time [s]", fontsize=10)
+        axes4[i, 1].set_title("Spectrogram", fontweight="bold", fontsize=11)
+        axes4[i, 1].set_ylim([0, 500])  # the band where the chirps are
         plt.colorbar(im, ax=axes4[i, 1], label="Power [dB]")
 
     plt.tight_layout()
@@ -692,23 +692,23 @@ def create_visualizations(
     print("   ✅ 04_spectrograms.png")
     plt.close()
 
-    # ========== PLOT 5: Korrelations-Heatmap ==========
+    # ========== PLOT 5: Correlation heatmap ==========
     if len(signal_samples) > 0:
         fig5, ax5 = plt.subplots(figsize=(10, 8))
 
-        # Korrelationsmatrix berechnen
+        # Correlation matrix
         corr_cols = ["snr", "mass1", "mass2", "distance", "merger_time"]
         corr_matrix = signal_samples[corr_cols].corr()
 
         im = ax5.imshow(corr_matrix, cmap="coolwarm", vmin=-1, vmax=1, aspect="auto")
 
-        # Achsen beschriften
+        # Axis labels
         ax5.set_xticks(range(len(corr_cols)))
         ax5.set_yticks(range(len(corr_cols)))
         ax5.set_xticklabels(corr_cols, rotation=45, ha="right")
         ax5.set_yticklabels(corr_cols)
 
-        # Werte in Zellen schreiben
+        # Values in the cells
         for i in range(len(corr_cols)):
             for j in range(len(corr_cols)):
                 ax5.text(
@@ -721,8 +721,8 @@ def create_visualizations(
                     fontsize=11,
                 )
 
-        ax5.set_title("Korrelation zwischen Parametern", fontweight="bold", fontsize=14)
-        plt.colorbar(im, ax=ax5, label="Korrelationskoeffizient")
+        ax5.set_title("Correlation between parameters", fontweight="bold", fontsize=14)
+        plt.colorbar(im, ax=ax5, label="Correlation coefficient")
         plt.tight_layout()
         plt.savefig(
             os.path.join(output_folder, "05_correlation_matrix.png"),
@@ -732,7 +732,7 @@ def create_visualizations(
         print("   ✅ 05_correlation_matrix.png")
         plt.close()
 
-    print(f"\n   ✅ Alle Visualisierungen erstellt in '{output_folder}/'")
+    print(f"\n   ✅ All plots written to '{output_folder}/'")
 
 
 def run(data_folder=DATA_DIR_TRAIN, output_folder=None):
