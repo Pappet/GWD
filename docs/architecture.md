@@ -152,8 +152,8 @@ Training, evaluation, and the Glitch Hunter draw from different distributions. P
 
 - Laptop `.venv`: Python 3.12.14, built from `~/gwd-env-pc.txt` (`pip freeze` of the PC environment without the `nvidia-*` packages) plus pytest 8.3.4.
 - Key versions: tensorflow 2.20.0, keras 3.12.0, numpy 1.26.4, pandas 2.3.3, pycbc 2.10.0, lalsuite 7.26.1, gwpy 3.0.13. All 9 models load.
-- `requirements-linux-py312.lock` (since P2.1) holds these pins. It was compiled with `~/gwd-env-pc.txt` without `nvidia-*` as constraints and matches the laptop `.venv`, which has ruff 0.17.5 since P2.2.
-- CI (since P2.2, `.github/workflows/ci.yml`): job `test` on every push and pull request installs `-c requirements-linux-py312.lock -e '.[physics,gwdata,dev]'` (PyCBC, no TensorFlow), runs `ruff format --check . && ruff check .`, then `GWD_REQUIRE_PYCBC=1 pytest -m 'not slow and not network and not apps'`. Job `slow` runs only on `workflow_dispatch` with the full lockfile and `pytest -m 'slow or apps or golden'`.
+- `requirements-linux-py312.lock` (since P2.1) holds these pins. It was compiled with `~/gwd-env-pc.txt` without `nvidia-*` as constraints and matches the laptop `.venv`, which has ruff 0.17.5 since P2.2. The README describes how to install from it and how to update it (P7.3).
+- CI (since P2.2, `.github/workflows/ci.yml`): job `test` on every push and pull request first checks that the lockfile matches `pyproject.toml` (since P7.3), then installs `-c requirements-linux-py312.lock -e '.[physics,gwdata,dev]'` (PyCBC, no TensorFlow), runs `ruff format --check . && ruff check .`, then `GWD_REQUIRE_PYCBC=1 pytest -m 'not slow and not network and not apps'`. Job `slow` runs only on `workflow_dispatch` with the full lockfile and `pytest -m 'slow or apps or golden'`.
 - Commits use the noreply address, because GitHub rejects pushes with the private one.
 
 ### Decisions
@@ -235,5 +235,5 @@ Each step PR ticks its own step, so a tick takes effect when that PR is merged.
 | [ ] | P6.5 | Retrain and re-evaluate, switch to V2, archive old artifacts | |
 | [ ] | P7.1 | New README, `docs/evaluation.md`, documentation command test | |
 | [x] | P7.2 | License entry in `pyproject.toml` (D12) | #17 (done in P2.1) |
-| [ ] | P7.3 | CI on the lockfile, README on updating it (D7) | |
+| [x] | P7.3 | CI on the lockfile, README on updating it (D7) | #19 |
 | [ ] | P7.4 | Final check: end to end, empty allowlist, checklist | |
