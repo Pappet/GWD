@@ -6,6 +6,10 @@ file name, not the file's ctime: on Linux and WSL, ctime changes on chmod, copy,
 restore (apps:APPX-4). Files without a timestamp in the name fall back to their mtime,
 with a warning.
 
+Since P5.8 the metadata also holds the model's detection threshold (set_threshold,
+get_threshold): calibrated by ``gwd eval thresholds`` on the noise-only part calib_bg
+of a test set at a fixed false alarm rate (D10 = A).
+
 TensorFlow is imported only inside load_model, so importing this module stays light.
 """
 
@@ -17,7 +21,7 @@ import re
 import warnings
 from typing import Optional
 
-from gwd.config import MODELS_DIR
+from gwd.config import MODELS_DIR, THRESHOLD_FALLBACK
 
 MODEL_EXTENSION = ".keras"
 TIMESTAMP_FORMAT = "%Y%m%d-%H%M%S"
@@ -108,3 +112,76 @@ def write_metadata(model_path: str, metadata: dict) -> str:
     with open(path, "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=4)
     return path
+
+
+# The metadata keys that set_threshold writes; get_threshold reads "threshold".
+THRESHOLD_KEYS = (
+    "threshold",
+    "threshold_fpr",
+    "threshold_fpr_achieved",
+    "threshold_n_background",
+    "threshold_strategy",
+    "threshold_testset",
+    "threshold_date",
+)
+
+
+class MissingThresholdWarning(UserWarning):
+    """A model has no calibrated threshold, so the fallback is used."""
+
+
+def set_threshold(
+    model_path: str,
+    threshold: float,
+    target_fpr: float,
+    fpr_achieved: float,
+    n_background: int,
+    strategy: str,
+    testset: dict,
+) -> str:
+    """Store the model's detection threshold in its metadata and return the file's path.
+
+    testset names the set and part the threshold was calibrated on (name, seed, n, part,
+    sha256). The other metadata keys stay as they are; a model without a metadata file
+    gets one with only the threshold keys.
+    """
+    metadata = read_metadata(model_path) or {}
+    metadata.update(
+        {
+            "threshold": float(threshold),
+            "threshold_fpr": float(target_fpr),
+            "threshold_fpr_achieved": float(fpr_achieved),
+            "threshold_n_background": int(n_background),
+            "threshold_strategy": strategy,
+            "threshold_testset": dict(testset),
+            "threshold_date": datetime.datetime.now().isoformat(timespec="seconds"),
+        }
+    )
+    return write_metadata(model_path, metadata)
+
+
+def threshold_record(model_path: str) -> Optional[dict]:
+    """The threshold keys of the model's metadata, or None if it has no threshold."""
+    metadata = read_metadata(model_path) or {}
+    if metadata.get("threshold") is None:
+        return None
+    return {key: metadata.get(key) for key in THRESHOLD_KEYS}
+
+
+def get_threshold(model_path: str) -> float:
+    """The model's calibrated detection threshold.
+
+    A model without one (no metadata file, or metadata from before P5.8) gets
+    THRESHOLD_FALLBACK, with a MissingThresholdWarning that names the command to run.
+    """
+    record = threshold_record(model_path)
+    if record is None:
+        warnings.warn(
+            f"{model_name(model_path)} has no calibrated threshold; using "
+            f"{THRESHOLD_FALLBACK}. Run 'gwd eval thresholds --model "
+            f"{model_name(model_path)} --save' to calibrate one.",
+            MissingThresholdWarning,
+            stacklevel=2,
+        )
+        return float(THRESHOLD_FALLBACK)
+    return float(record["threshold"])

@@ -94,6 +94,14 @@ DEFAULT_TESTSET = "stress_v1"  # = EVAL_V1, comparable with the numbers before P
 TESTSET_SEED = 0
 TESTSET_SIZE = 1000  # samples of the balanced part 'test'; calib_bg has as many
 
+# --- DETECTION THRESHOLD (P5.8, D10 = A) ---
+# gwd eval thresholds calibrates one threshold per model on the noise-only part calib_bg
+# of a test set, at this false alarm rate, and stores it in the model's metadata
+# (gwd.registry.set_threshold). evaluate, compare, and the Glitch Hunter read it with
+# gwd.registry.get_threshold; a model without one gets THRESHOLD_FALLBACK, with a warning.
+THRESHOLD_TARGET_FPR = 0.01
+THRESHOLD_FALLBACK = 0.5
+
 # --- TRAINING DEFAULTS ---
 # gwd train overrides them with --epochs, --batch-size, --lr, and --patience.
 EPOCHS = 40  # upper limit; early stopping usually ends sooner
