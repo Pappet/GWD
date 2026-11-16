@@ -24,7 +24,7 @@ MODEL_HELP = (
 def seed_everything(seed):
     """Seed Python's random and the global numpy RNG, for the eval commands.
 
-    A minimal stand-in until the eval commands pass an rng explicitly (P5.6, P5.7).
+    A minimal stand-in until the eval commands pass an rng explicitly (P5.7).
     gwd.core takes an rng since P5.3, and gwd.data.injection passes it the global RNG
     when the caller gives none, so this seed reaches it. seed=None changes nothing, so
     runs stay unseeded as before. gwd data generate and gwd train pass the seed to
@@ -111,7 +111,9 @@ def _train(args):
         "learning_rate": args.lr,
         "patience": args.patience,
         "mixed_precision": args.mixed_precision or None,
-        # train() seeds Python, numpy, and TensorFlow and records the seed.
+        "deterministic": args.deterministic or None,
+        # train() seeds Python, numpy, TensorFlow, and the split and records the
+        # seed; without --seed it draws one.
         "seed": args.seed,
     }
     cfg = TrainConfig(
@@ -186,11 +188,11 @@ def _env(args):
 # --- parser ---
 
 
-def _add_seed(parser, what):
+def _add_seed(parser, what, default="unseeded"):
     parser.add_argument(
         "--seed",
         type=int,
-        help=f"Seed for {what}. Default: unseeded.",
+        help=f"Seed for {what}. Default: {default}.",
     )
 
 
@@ -316,7 +318,17 @@ def build_parser():
         help="Train with mixed_float16 even without a GPU. Default: mixed_float16 "
         "only if TensorFlow finds a GPU, else float32.",
     )
-    _add_seed(train, "Python, numpy, and TensorFlow")
+    train.add_argument(
+        "--deterministic",
+        action="store_true",
+        help="Also make TensorFlow's ops deterministic, so the same --seed gives the "
+        "same model on the CPU (slower; not guaranteed on a GPU).",
+    )
+    _add_seed(
+        train,
+        "Python, numpy, TensorFlow, and the train/val/test split",
+        "a drawn seed, printed and recorded in the model's .json",
+    )
     train.set_defaults(handler=_train)
 
     # gwd eval ...

@@ -1,4 +1,7 @@
-"""Training: no side effects on import, precision only with a GPU or on request (P3.7)."""
+"""Training: no side effects on import, precision only with a GPU or on request (P3.7).
+
+Since P5.6 also: the three-way split, the seed, float32 loading, and the metadata.
+"""
 
 import datetime
 import json
@@ -78,7 +81,9 @@ def test_train_restores_the_policy_and_records_it(tmp_path, monkeypatch):
 
     # EVAL_V1 has white noise only, so the test does not read data/noise_background/.
     data = tmp_path / "data"
-    generate_dataset(16, str(data), EVAL_V1, rng=np.random.RandomState(1))
+    generate_dataset(
+        16, str(data), EVAL_V1, rng=np.random.RandomState(1), noise_dir=str(tmp_path)
+    )
     manifest = json.loads((data / "manifest.json").read_text())
     cfg = train.TrainConfig(
         data_folder=str(data),
@@ -107,12 +112,55 @@ def test_train_restores_the_policy_and_records_it(tmp_path, monkeypatch):
     # P4.1: what was trained on, and how long.
     assert (metadata["epochs_trained"], metadata["best_epoch"]) == (1, 1)
     assert metadata["seed"] == 3
+    # P5.6: the seed, the split, the data, and val and test kept apart.
+    assert (metadata["seed_drawn"], metadata["deterministic"]) == (False, False)
+    assert metadata["dataset_hash"] == train.load_data(str(data)).sha256
+    assert metadata["split_grouped"] is True
+    split = metadata["split"]
+    assert split["train"] + split["val"] + split["test"] == 16
+    assert min(split["train"], split["val"], split["test"]) >= 1
+    assert (split["val_fraction"], split["test_fraction"]) == (0.15, 0.15)
+    assert split["grouped_by"] == "noise_file"
+    for key in ("val_accuracy", "val_loss", "test_accuracy", "test_loss"):
+        assert isinstance(metadata[key], float), key
+    # One epoch: the best epoch is the last one.
+    assert metadata["val_loss"] == metadata["metrics"]["final_val_loss"]
+    assert "test_set_accuracy" not in metadata["metrics"]
     assert metadata["dataset_scenario"] == "EVAL_V1"
     assert metadata["waveform_backend"] == manifest["waveform_backend"]
     assert metadata["real_noise_fraction"] == 0.0
     digest = provenance.sha256_file(data / "manifest.json")
     assert metadata["dataset_manifest_sha256"] == digest
     assert registry.read_metadata(run.model_path) == metadata
+
+
+@pytest.mark.slow
+def test_a_seed_with_deterministic_ops_repeats_the_run(tmp_path, monkeypatch):
+    """P5.6 on the CPU: the same seed gives the same val_loss; no seed draws one."""
+    from gwd.data.generate import generate_dataset
+    from gwd.data.scenarios import EVAL_V1
+
+    data = tmp_path / "data"
+    generate_dataset(16, str(data), EVAL_V1, seed=1, noise_dir=str(tmp_path))
+    monkeypatch.setattr(tf.config, "list_physical_devices", lambda kind=None: [])
+
+    def run(seed, name):
+        cfg = train.TrainConfig(
+            data_folder=str(data),
+            models_dir=str(tmp_path / name),
+            plots_dir=str(tmp_path / "plots"),
+            epochs=1,
+            batch_size=8,
+            seed=seed,
+            deterministic=True,
+        )
+        return json.loads(open(train.train(cfg).config_path).read())
+
+    first, second, drawn = run(1, "a"), run(1, "b"), run(None, "c")
+    assert abs(first["val_loss"] - second["val_loss"]) < 1e-6
+    assert first["test_accuracy"] == second["test_accuracy"]
+    assert first["deterministic"] is True
+    assert (drawn["seed_drawn"], isinstance(drawn["seed"], int)) == (True, True)
 
 
 def test_a_dataset_without_manifest_is_recorded_as_unknown(tmp_path):
@@ -157,12 +205,41 @@ def small_dataset(tmp_path):
 def test_load_data_loads_every_sample_in_order(small_dataset):
     from gwd.data.preprocessing import normalize
 
-    X, y = train.load_data(str(small_dataset))
-    assert X.shape == (8, 16384, 1)
-    assert list(y) == [1, 0] * 4
-    np.testing.assert_array_equal(
-        X[5, :, 0], normalize(np.load(small_dataset / "sample_00005.npy"))
-    )
+    data = train.load_data(str(small_dataset))
+    assert data.X.shape == (8, 16384, 1)
+    assert data.X.dtype == np.float32
+    assert list(data.y) == [1, 0] * 4
+    assert list(data.labels["filename"]) == [f"sample_{i:05d}.npy" for i in range(8)]
+    sample = np.load(small_dataset / "sample_00005.npy")
+    expected = normalize(sample.astype(np.float64)).astype(np.float32)
+    np.testing.assert_array_equal(data.X[5, :, 0], expected)
+
+
+def test_load_data_reads_float64_datasets_from_before_p56(small_dataset):
+    from gwd.data.preprocessing import normalize
+
+    for path in small_dataset.glob("sample_*.npy"):
+        np.save(path, np.load(path).astype(np.float64))
+    data = train.load_data(str(small_dataset))
+    assert data.X.dtype == np.float32
+    sample = np.load(small_dataset / "sample_00002.npy")
+    np.testing.assert_array_equal(data.X[2, :, 0], normalize(sample).astype(np.float32))
+
+
+def test_the_dataset_hash_follows_the_data(small_dataset):
+    first = train.load_data(str(small_dataset)).sha256
+    assert train.load_data(str(small_dataset)).sha256 == first
+    path = small_dataset / "sample_00004.npy"
+    sample = np.load(path)
+    sample[100] += 1.0
+    np.save(path, sample)
+    assert train.load_data(str(small_dataset)).sha256 != first
+
+
+def test_a_drawn_seed_fits_numpy():
+    seeds = {train.draw_seed() for _ in range(20)}
+    assert len(seeds) > 1
+    assert all(0 <= seed < 2**32 for seed in seeds)
 
 
 @pytest.mark.parametrize(
