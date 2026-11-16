@@ -48,7 +48,7 @@ REQUIRED_COLUMNS = (
 NUMERIC_COLUMNS = REQUIRED_COLUMNS[1:]
 # The files gwd.data.generate writes; any other one in the folder is not checked.
 SAMPLE_PATTERN = "sample_*.npy"
-# float64 as written today; float32 is accepted for P5.6.
+# float32 as written since P5.6; float64 datasets from before stay valid.
 SAMPLE_DTYPES = (np.dtype(np.float32), np.dtype(np.float64))
 
 

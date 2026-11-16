@@ -65,6 +65,9 @@ DURATION = 4.0  # seconds per sample
 N_SAMPLES = int(SAMPLE_RATE * DURATION)  # 16384 values per sample
 INPUT_SHAPE = (N_SAMPLES, 1)  # (time steps, channels)
 SAMPLES_FOR_TRAINING = 10000
+# dtype of the sample files gwd data generate writes since P5.6 (float64 before).
+# 16384 float32 values are 65 536 bytes of data per file; float64 files stay readable.
+SAMPLE_DTYPE = "float32"
 
 # The waveform backend of the pipeline (datasets, test sets, evaluation). gwd.core reads
 # no config, so the callers pass it on. Without PyCBC the pipeline stops with

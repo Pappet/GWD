@@ -27,7 +27,9 @@ def test_dataset_structure(pipeline_home):
 
     sample = np.load(training / labels["filename"].iloc[0])
     assert sample.shape == (SAMPLE_LENGTH,)
-    assert sample.dtype == np.float64
+    # P5.6: float32, 65 536 bytes of data per file.
+    assert sample.dtype == np.float32
+    assert sample.nbytes == 65536
 
 
 def test_dataset_records_backend_and_noise_source(pipeline_home):
