@@ -128,6 +128,19 @@ def test_field_test_texts_are_written_as_given(tmp_path):
     assert row["Real_Noise_FAR"] == "2 false alarms in 0.0556 h"
 
 
+def test_appending_keeps_the_older_rows_as_written(tmp_path):
+    """'n/a' (no field test) and '0.9000' must not turn into an empty cell and '0.9'."""
+    leaderboard = tmp_path / "leaderboard.csv"
+    for real in ({"events_text": "n/a", "far_text": "n/a"}, REAL_METRICS):
+        update_leaderboard_roc(
+            "model.keras", sim_metrics(roc_auc=0.9), real, str(leaderboard), "x.json"
+        )
+    with leaderboard.open(newline="") as f:
+        first = list(csv.DictReader(f))[0]
+    assert (first["Real_Events_Found"], first["Real_Noise_FAR"]) == ("n/a", "n/a")
+    assert first["ROC_AUC"] == "0.9000"
+
+
 def test_rows_are_appended(tmp_path):
     write_row(tmp_path)
     write_row(tmp_path)

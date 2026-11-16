@@ -9,6 +9,14 @@ import pandas as pd  # type: ignore
 from gwd.config import LEADERBOARD_FILE, LEGACY_LEADERBOARD_FILES, ensure_dirs
 
 
+def read_leaderboard(path):
+    """The leaderboard as strings, exactly as written: 'n/a' and 'N/A' stay text.
+
+    pandas would read them as NaN and write them back as empty cells.
+    """
+    return pd.read_csv(path, dtype=str, keep_default_na=False)
+
+
 def migrate_legacy_leaderboard(leaderboard_file: str = LEADERBOARD_FILE) -> None:
     """Copy the old leaderboard to the configured path once. Nothing is deleted.
 
@@ -68,7 +76,7 @@ def update_leaderboard_roc(
     ensure_dirs(os.path.dirname(os.path.abspath(leaderboard_file)))
 
     if os.path.exists(leaderboard_file):
-        df_old = pd.read_csv(leaderboard_file)
+        df_old = read_leaderboard(leaderboard_file)
         df_combined = pd.concat([df_old, df_new], ignore_index=True)
         df_combined.to_csv(leaderboard_file, index=False)
     else:
@@ -87,7 +95,7 @@ def show():
         )
         return 0
 
-    df = pd.read_csv(LEADERBOARD_FILE)
+    df = read_leaderboard(LEADERBOARD_FILE)
     # Display only: the values in the CSV are based on an invalid baseline
     df["Physik_Gap"] = "-"
 
