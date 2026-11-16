@@ -112,6 +112,37 @@ def test_the_curve_does_not_jump_when_the_mirror_slider_keeps_its_value():
     np.testing.assert_array_equal(state.ax_sensitivity.lines[0].get_ydata(), before)
 
 
+def test_the_designer_shows_the_aligo_reference_curve():
+    """P5.4: PyCBC's aLIGOZeroDetHighPower replaces the invented 'LIGO Design' curve."""
+    pytest.importorskip("pycbc")
+    from gwd.core.interferometer import reference_asd
+
+    fig, state = interferometer_designer.build_figure()
+    lines = {line.get_label(): line for line in state.ax_sensitivity.lines}
+    assert "LIGO Design" not in lines
+    reference = lines[interferometer_designer.REFERENCE_LABEL]
+    np.testing.assert_array_equal(reference.get_ydata(), reference_asd(state.sim.freq))
+    info = state.ax_info.texts[0].get_text()
+    assert "ASD / aLIGO @100 Hz: 270" in info
+    # The reference stays when a slider moves.
+    state.slider_laser.set_val(400)
+    labels = [line.get_label() for line in state.ax_sensitivity.lines]
+    assert interferometer_designer.REFERENCE_LABEL in labels
+
+
+def test_without_pycbc_the_designer_has_no_reference_and_says_so(monkeypatch):
+    monkeypatch.setitem(sys.modules, "pycbc", None)
+    fig, state = interferometer_designer.build_figure()
+    assert state.reference is None
+    assert [line.get_label() for line in state.ax_sensitivity.lines] == [
+        "Your detector"
+    ]
+    texts = [text.get_text() for text in state.ax_sensitivity.texts]
+    assert interferometer_designer.NO_REFERENCE_NOTE in texts
+    assert "needs PyCBC" in state.ax_info.texts[0].get_text()
+    assert draw_without_warnings(fig) == []
+
+
 def draw_without_warnings(fig):
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
