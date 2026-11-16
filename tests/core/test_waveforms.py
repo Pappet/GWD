@@ -12,20 +12,17 @@ import sys
 import numpy as np
 import pytest
 
-from gwd.core import waveforms
+from gwd.core import timebase, waveforms
+from gwd.core.constants import M_SUN, C, G
 from gwd.core.waveforms import WaveformBackendError, generate_chirp
 
 FS = 4096
 DURATION = 4.0
 T_MERGER = 3.6
 
-G = 6.674e-11
-C = 2.998e8
-M_SUN = 1.989e30
-
 
 def time_axis():
-    return np.arange(int(FS * DURATION)) / FS
+    return timebase.time_axis(FS, DURATION)
 
 
 def zero_crossing_frequency(t, strain, t_eval):
@@ -232,9 +229,12 @@ def test_an_unknown_backend_is_refused():
 
 def test_an_unknown_approximant_raises_instead_of_falling_back(needs_pycbc):
     """CORE-4: before P5.2 any PyCBC error gave a Newton chirp with a warning."""
-    with pytest.raises(WaveformBackendError, match="GibtEsNicht") as raised:
+    with pytest.raises(WaveformBackendError, match="NoSuchApproximant") as raised:
         generate_chirp(
-            time_axis(), t_merger=T_MERGER, backend="pycbc", approximant="GibtEsNicht"
+            time_axis(),
+            t_merger=T_MERGER,
+            backend="pycbc",
+            approximant="NoSuchApproximant",
         )
     assert raised.value.__cause__ is not None
 
