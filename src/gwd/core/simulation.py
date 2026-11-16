@@ -3,6 +3,7 @@
 import numpy as np
 
 from . import waveforms
+from .constants import LASER_WAVELENGTH
 from .noise import generate_colored_noise
 
 
@@ -16,9 +17,8 @@ class TimeDomainSimulator:
         # The waveform backend, 'pycbc' or 'newton'. The caller chooses it (P5.2).
         waveforms.check_backend(backend)
         self.backend = backend
-        self.c = 299792458
         self.arm_length = 4000
-        self.laser_wavelength = 1064e-9
+        self.laser_wavelength = LASER_WAVELENGTH
 
         self.duration = duration
         self.sample_rate = sample_rate

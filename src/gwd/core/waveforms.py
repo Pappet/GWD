@@ -17,6 +17,8 @@ import importlib.metadata
 
 import numpy as np
 
+from .constants import M_SUN, MPC, C, G
+
 BACKENDS = ("pycbc", "newton")
 
 PYCBC_INSTALL_HINT = (
@@ -243,14 +245,9 @@ def _pycbc_chirp(
 def _newton_chirp(time_array, t_merger, mass1, mass2, distance_mpc, normalize):
     # Newtonian approximation: formulas for the inspiral (before the merger)
 
-    # Constants
-    G = 6.674e-11  # gravitational constant
-    c = 2.998e8  # speed of light
-    Msun = 1.989e30  # solar mass in kg
-
-    # Chirp mass
-    ch_mass = (mass1 * mass2) ** 0.6 / (mass1 + mass2) ** 0.2 * Msun
-    dist_m = distance_mpc * 3.086e22  # megaparsec in meters
+    # Chirp mass in kg, distance in m
+    ch_mass = (mass1 * mass2) ** 0.6 / (mass1 + mass2) ** 0.2 * M_SUN
+    dist_m = distance_mpc * MPC
 
     # Time to merger (tau)
     tau = np.clip(t_merger - time_array, 0.0001, None)
@@ -259,19 +256,19 @@ def _newton_chirp(time_array, t_merger, mass1, mass2, distance_mpc, normalize):
     # f(tau) ~ tau^(-3/8)
     freq_newton = (
         (5 / (256 * np.pi)) ** (3 / 8)
-        * (G * ch_mass / c**3) ** (-5 / 8)
+        * (G * ch_mass / C**3) ** (-5 / 8)
         * tau ** (-3 / 8)
     )
 
     # Amplitude (strain); CORE-3: 4 times too large
     # h(tau) ~ 1/D * tau^(-1/4)
     amp_prefactor = (
-        (4 / dist_m) * (G * ch_mass / c**2) ** (5 / 4) * (5 / (c * tau)) ** (1 / 4)
+        (4 / dist_m) * (G * ch_mass / C**2) ** (5 / 4) * (5 / (C * tau)) ** (1 / 4)
     )
 
     # Phase
     # phi(tau) ~ tau^(5/8)
-    phase = -2 * (5 * G * ch_mass / c**3) ** (-5 / 8) * tau ** (5 / 8)
+    phase = -2 * (5 * G * ch_mass / C**3) ** (-5 / 8) * tau ** (5 / 8)
 
     strain_out = amp_prefactor * np.cos(phase)
 
