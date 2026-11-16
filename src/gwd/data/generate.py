@@ -5,6 +5,8 @@ waveform_backend ('pycbc' or 'newton', empty without signal), noise_source ('rea
 'gaussian'), and noise_file (the chunk's file name, empty for Gaussian noise). The new
 columns come after the old seven, so readers that select columns by name are not
 affected. manifest.json records how the dataset was made, see gwd.data.provenance.
+Since P5.6 the samples are stored as float32 (gwd.config.SAMPLE_DTYPE); they are still
+drawn in float64, so labels.csv is unchanged.
 
 The chirps come from gwd.config.WAVEFORM_BACKEND ('pycbc'). Without PyCBC,
 generate_dataset raises gwd.core.waveforms.WaveformBackendError before it touches the
@@ -22,6 +24,7 @@ from gwd.config import (
     DATA_DIR_NOISE,
     DATA_DIR_TRAIN,
     LABELS_FILE,
+    SAMPLE_DTYPE,
     SAMPLES_FOR_TRAINING,
     WAVEFORM_BACKEND,
     ensure_dirs,
@@ -149,7 +152,8 @@ def generate_dataset(
         params = sample.params
 
         filename = f"sample_{i:05d}.npy"
-        np.save(os.path.join(output_folder, filename), sample.data)
+        # Drawn in float64, stored as SAMPLE_DTYPE (float32 since P5.6).
+        np.save(os.path.join(output_folder, filename), sample.data.astype(SAMPLE_DTYPE))
 
         if sample.waveform_backend:
             signal_backends[sample.waveform_backend] += 1

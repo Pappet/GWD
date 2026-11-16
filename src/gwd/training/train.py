@@ -4,17 +4,23 @@ Importing this module changes nothing: the timestamp, the model name, the paths,
 the precision policy come into being when train() runs. The plot uses a matplotlib
 Figure without pyplot, so no backend is chosen. The hyperparameter defaults are in
 gwd.config, and gwd train overrides them.
+
+Since P5.6 the dataset is split three ways by gwd.training.split: val steers early
+stopping, the checkpoint, and the learning rate, and test is evaluated exactly once,
+with the best epoch, after training. Every run is seeded: with cfg.seed, or with a
+seed drawn at the start, and the seed goes into the model's metadata.
 """
 
 import datetime
+import hashlib
 import os
+import secrets
 import sys
 from dataclasses import dataclass
-from typing import Optional
+from typing import NamedTuple, Optional
 
 import numpy as np
 import tensorflow as tf
-from sklearn.model_selection import train_test_split
 from tensorflow.keras import callbacks, models
 
 from gwd.config import (
@@ -29,6 +35,7 @@ from gwd.config import (
     REDUCE_LR_PATIENCE,
     TEST_SPLIT,
     TRAINING_PLOTS_DIR,
+    VAL_SPLIT,
     ensure_dirs,
 )
 from gwd.data.preprocessing import normalize
@@ -46,6 +53,7 @@ from gwd.registry import (
     write_metadata,
 )
 from gwd.training.model import ARCHITECTURE, build_model
+from gwd.training.split import split_dataset
 
 
 @dataclass(frozen=True)
@@ -61,8 +69,21 @@ class TrainConfig:
     patience: int = EARLY_STOPPING_PATIENCE
     # True forces mixed_float16; otherwise only a GPU turns it on (D7).
     mixed_precision: bool = False
-    # Seeds Python, numpy, and TensorFlow when train() starts; None leaves them alone.
+    # Seeds Python, numpy, TensorFlow, and the split when train() starts; None draws
+    # a seed, which the metadata records like a given one (P5.6).
     seed: Optional[int] = None
+    # True also turns on tf.config.experimental.enable_op_determinism() (P5.6). It
+    # stays on for the rest of the process; full determinism holds on the CPU only.
+    deterministic: bool = False
+
+
+class LoadedData(NamedTuple):
+    """A dataset as load_data() returns it."""
+
+    X: np.ndarray  # float32, (n_samples, n_timesteps, 1), each sample z-scored
+    y: np.ndarray  # labels, 0 or 1
+    labels: object  # labels.csv as a DataFrame
+    sha256: str  # dataset_hash in the metadata: labels.csv and every sample
 
 
 @dataclass(frozen=True)
@@ -86,6 +107,11 @@ def new_run(models_dir, now=None):
         model_path=model_path,
         config_path=metadata_path(model_path),
     )
+
+
+def draw_seed():
+    """A random seed for a run without --seed, in the range numpy accepts."""
+    return secrets.randbelow(2**32)
 
 
 def choose_precision(mixed_precision=False, gpus=None):
@@ -145,12 +171,17 @@ def load_data(data_folder=DATA_DIR_TRAIN):
     dtype, NaN or Inf, an orphan, a manifest that does not match) stops the run with
     InvalidDatasetError, which names the files. Nothing is skipped, cut, or padded.
 
+    The samples go into one preallocated float32 array (P5.6). Each is z-scored in
+    float64 first, so float32 and float64 files (before P5.6) are read the same way.
+    The same pass hashes the data: the SHA-256 of labels.csv's bytes, then of the
+    dtype and the raw bytes of every sample in the order of labels.csv. It names the
+    data a model was trained on, also for a dataset without manifest.json.
+
     Args:
         data_folder: Dataset folder with labels.csv.
 
     Returns:
-        X: array of shape (n_samples, n_timesteps, 1), each sample z-scored
-        y: array of labels (0 or 1)
+        LoadedData(X, y, labels, sha256)
     """
     print("📂 Loading dataset...")
     csv_path = os.path.join(data_folder, LABELS_FILE)
@@ -161,11 +192,17 @@ def load_data(data_folder=DATA_DIR_TRAIN):
         labels = read_labels(data_folder)
     except LABELS_READ_ERRORS:
         raise InvalidDatasetError(data_folder, check_integrity(data_folder)) from None
-    X = np.empty((len(labels), N_SAMPLES))
+    X = np.empty((len(labels), N_SAMPLES), dtype=np.float32)
+    digest = hashlib.sha256()
+    with open(csv_path, "rb") as f:
+        digest.update(f.read())
 
     def keep(position, data):
+        # check_integrity calls this in the order of labels.csv.
+        digest.update(data.dtype.str.encode())
+        digest.update(np.ascontiguousarray(data).tobytes())
         # Z-score with the default eps, as before
-        X[position] = normalize(data)
+        X[position] = normalize(data.astype(np.float64))
 
     findings = check_integrity(data_folder, on_sample=keep)
     if findings:
@@ -180,50 +217,66 @@ def load_data(data_folder=DATA_DIR_TRAIN):
         f"   - Samples without signal: {len(y) - np.sum(y)} ({(len(y) - np.sum(y)) / len(y) * 100:.1f}%)"
     )
 
-    return X, y
+    return LoadedData(X, y, labels, digest.hexdigest())
 
 
-def save_experiment_config(history_obj, final_acc, cfg, run, policy):
+def save_experiment_config(history_obj, test, cfg, run, policy, run_seed, data, split):
     """
     Save the metadata of a run as .json next to the model, so it can be traced later.
 
     Args:
         history_obj: Keras History object of the training
-        final_acc: test set accuracy
+        test: (loss, accuracy) of the best epoch on the test part
         cfg: TrainConfig of the run
         run: Run with the name and the .json path
         policy: Name of the Keras precision policy the model was trained with
+        run_seed: The seed the run used, cfg.seed or a drawn one
+        data: LoadedData of the run
+        split: gwd.training.split.Split of the run
     """
     history = history_obj.history
-    # The values of the last epoch
-    final_train_acc = history["accuracy"][-1]
-    final_val_acc = history["val_accuracy"][-1]
-    final_train_loss = history["loss"][-1]
-    final_val_loss = history["val_loss"][-1]
+    best = int(np.argmin(history["val_loss"]))
+    test_loss, test_acc = test
 
     config = {
         "model_name": run.name,
         "timestamp": run.timestamp,
         "dataset_folder": cfg.data_folder,
         **dataset_provenance(cfg.data_folder),
-        "seed": cfg.seed,
+        "dataset_hash": data.sha256,
+        # One seed for Python, numpy, TensorFlow, and the split (P5.6).
+        "seed": run_seed,
+        "seed_drawn": cfg.seed is None,
+        "deterministic": cfg.deterministic,
         # epochs is the maximum; early stopping can end the run before it.
         "epochs": cfg.epochs,
         "epochs_trained": len(history["loss"]),
         # The saved weights are those of this epoch (1-based, lowest val_loss).
-        "best_epoch": int(np.argmin(history["val_loss"])) + 1,
+        "best_epoch": best + 1,
         "batch_size": cfg.batch_size,
         "learning_rate": cfg.learning_rate,
         "early_stopping_patience": cfg.patience,
         "precision_policy": policy,
-        "test_split": TEST_SPLIT,
+        "split_grouped": split.grouped,
+        "split": {
+            "val_fraction": VAL_SPLIT,
+            "test_fraction": TEST_SPLIT,
+            "grouped_by": "noise_file" if split.grouped else None,
+            "groups": split.n_groups,
+            **split.sizes(),
+        },
         "architecture": ARCHITECTURE,
+        # val: the best epoch, which steered the training; test: evaluated once.
+        "val_accuracy": float(history["val_accuracy"][best]),
+        "val_loss": float(history["val_loss"][best]),
+        "test_accuracy": float(test_acc),
+        "test_loss": float(test_loss),
         "metrics": {
-            "final_training_acc": float(final_train_acc),
-            "final_val_acc": float(final_val_acc),
-            "final_training_loss": float(final_train_loss),
-            "final_val_loss": float(final_val_loss),
-            "test_set_accuracy": float(final_acc),
+            # The values of the last epoch, which can come after the best one.
+            "final_training_acc": float(history["accuracy"][-1]),
+            "final_val_acc": float(history["val_accuracy"][-1]),
+            "final_training_loss": float(history["loss"][-1]),
+            "final_val_loss": float(history["val_loss"][-1]),
         },
         "note": "Training with automatic versioning",
     }
@@ -297,25 +350,30 @@ def train(cfg=None):
         The Run with the name and the paths of the saved model and its .json.
     """
     cfg = cfg or TrainConfig()
-    if cfg.seed is not None:
-        # Seeds Python's random, numpy, and TensorFlow.
-        tf.keras.utils.set_random_seed(cfg.seed)
+    run_seed = draw_seed() if cfg.seed is None else cfg.seed
+    # Seeds Python's random, numpy, and TensorFlow; the split takes it too.
+    tf.keras.utils.set_random_seed(run_seed)
+    source = "drawn, pass --seed to repeat" if cfg.seed is None else "--seed"
+    print(f"Seed: {run_seed} ({source})")
+    if cfg.deterministic:
+        tf.config.experimental.enable_op_determinism()
+        print("Deterministic ops: on (repeatable on the CPU)")
     policy, reason = choose_precision(cfg.mixed_precision)
     print(f"Precision: {policy} ({reason})")
     previous = tf.keras.mixed_precision.global_policy()
     tf.keras.mixed_precision.set_global_policy(policy)
     try:
-        return _train_and_save(cfg, policy)
+        return _train_and_save(cfg, policy, run_seed)
     finally:
         tf.keras.mixed_precision.set_global_policy(previous)
 
 
-def _train_and_save(cfg, policy):
-    """Load the data, train, evaluate the best epoch, and save model, plot, and .json."""
+def _train_and_save(cfg, policy, run_seed):
+    """Load and split the data, train, test the best epoch once, and save everything."""
     run = new_run(cfg.models_dir)
 
     # Load and split the data
-    X, y = load_data(cfg.data_folder)
+    data = load_data(cfg.data_folder)
     provenance = dataset_provenance(cfg.data_folder)
     if provenance["dataset_scenario"] == UNKNOWN_V1:
         print(
@@ -328,13 +386,18 @@ def _train_and_save(cfg, policy):
             f"{provenance['waveform_backend']}, real noise "
             f"{provenance['real_noise_fraction']:.0%}"
         )
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=TEST_SPLIT, random_state=42, stratify=y
-    )
+    split = split_dataset(data.labels, run_seed)
+    X_train, y_train = data.X[split.train], data.y[split.train]
+    X_val, y_val = data.X[split.val], data.y[split.val]
+    X_test, y_test = data.X[split.test], data.y[split.test]
+    # The parts are copies; drop the full array so only they stay in memory.
+    data = data._replace(X=None)
 
-    print("\n📊 Data split:")
-    print(f"   - Training: {len(X_train)} Samples")
-    print(f"   - Test: {len(X_test)} Samples")
+    how = "grouped by noise_file" if split.grouped else "ungrouped"
+    print(f"\n📊 Data split ({how}, {split.n_groups} groups):")
+    print(f"   - Training: {len(X_train)} samples")
+    print(f"   - Validation: {len(X_val)} samples (early stopping, checkpoint, LR)")
+    print(f"   - Test: {len(X_test)} samples (evaluated once at the end)")
 
     # Build the model
     input_shape = (X_train.shape[1], 1)
@@ -373,7 +436,7 @@ def _train_and_save(cfg, policy):
         y_train,
         epochs=cfg.epochs,
         batch_size=cfg.batch_size,
-        validation_data=(X_test, y_test),
+        validation_data=(X_val, y_val),
         callbacks=my_callbacks,
         verbose=1,
     )
@@ -386,14 +449,16 @@ def _train_and_save(cfg, policy):
         history, os.path.join(cfg.plots_dir, f"training_history_{run.timestamp}.png")
     )
 
-    # Final evaluation
-    print("\n📈 Final evaluation:")
+    # The only evaluation on the test part
+    print("\n📈 Final evaluation (best epoch, test part):")
     loss, acc = best_model.evaluate(X_test, y_test, verbose=0)
     print(f"   - Test Loss: {loss:.4f}")
     print(f"   - Test Accuracy: {acc * 100:.2f}%")
 
     # Save the metadata
-    save_experiment_config(history, acc, cfg, run, policy)
+    save_experiment_config(
+        history, (loss, acc), cfg, run, policy, run_seed, data, split
+    )
 
     print("\n✅ Training finished!")
     print(f"   - Model: {run.model_path}")

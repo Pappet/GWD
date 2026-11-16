@@ -80,6 +80,15 @@ def test_the_manifest_describes_the_dataset(tmp_path, noise_dir):
     assert (manifest["git_commit"], manifest["git_dirty"]) == (commit, dirty)
 
 
+def test_samples_are_float32_with_65536_bytes_of_data(tmp_path, noise_dir):
+    """DATA-21 (P5.6): float32 instead of float64, half the size."""
+    out, _, _ = generate(tmp_path, noise_dir, n=2)
+    for name in ("sample_00000.npy", "sample_00001.npy"):
+        sample = np.load(out / name)
+        assert (sample.dtype, sample.shape) == (np.float32, (N_SAMPLES,))
+        assert sample.nbytes == 65536
+
+
 def test_the_same_data_gives_the_same_manifest(tmp_path, noise_dir):
     first = generate(tmp_path / "a", noise_dir)[2]
     second = generate(tmp_path / "b", noise_dir)[2]

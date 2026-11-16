@@ -65,6 +65,9 @@ DURATION = 4.0  # seconds per sample
 N_SAMPLES = int(SAMPLE_RATE * DURATION)  # 16384 values per sample
 INPUT_SHAPE = (N_SAMPLES, 1)  # (time steps, channels)
 SAMPLES_FOR_TRAINING = 10000
+# dtype of the sample files gwd data generate writes since P5.6 (float64 before).
+# 16384 float32 values are 65 536 bytes of data per file; float64 files stay readable.
+SAMPLE_DTYPE = "float32"
 
 # The waveform backend of the pipeline (datasets, test sets, evaluation). gwd.core reads
 # no config, so the callers pass it on. Without PyCBC the pipeline stops with
@@ -86,4 +89,7 @@ BATCH_SIZE = 128
 LEARNING_RATE = 5e-4  # Adam
 EARLY_STOPPING_PATIENCE = 5  # epochs without a better val_loss before stopping
 REDUCE_LR_PATIENCE = 3  # epochs without a better val_loss before halving the rate
-TEST_SPLIT = 0.2  # held-out share, also the validation data until P5.6
+# The three-way split of gwd train (P5.6): 70 % train, 15 % val, 15 % test, grouped by
+# noise chunk (gwd.training.split). Until P5.6, one 20 % share was val and test at once.
+VAL_SPLIT = 0.15  # steers early stopping, the checkpoint, and the learning rate
+TEST_SPLIT = 0.15  # evaluated once, with the best epoch, after training
