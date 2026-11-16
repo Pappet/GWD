@@ -8,7 +8,12 @@ import datetime
 import matplotlib
 import numpy as np
 
-from config import EVALUATION_MODELS_PLOTS_DIR, LEADERBOARD_FILE, MODELS_DIR
+from config import (
+    EVALUATION_MODELS_PLOTS_DIR,
+    LEADERBOARD_FILE,
+    MODELS_DIR,
+    ensure_dirs,
+)
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -271,6 +276,7 @@ def evaluate_simulation_with_roc(model):
     )
 
     plt.suptitle("Comprehensive Model Evaluation", fontsize=16, fontweight="bold")
+    ensure_dirs(EVALUATION_MODELS_PLOTS_DIR)
     plt.savefig(
         os.path.join(
             EVALUATION_MODELS_PLOTS_DIR, f"plot_evaluate_model_with_roc_{TIMESTAMP}.png"

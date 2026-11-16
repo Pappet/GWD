@@ -8,11 +8,10 @@ sys.path.append(
 import numpy as np
 from gwpy.timeseries import TimeSeries
 
-from config import DATA_DIR_NOISE
+from config import DATA_DIR_NOISE, ensure_dirs
 
 # Output Ordner für das echte Rauschen
 OUTPUT_DIR = DATA_DIR_NOISE
-os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # Ein Zeitraum im O3b Run, wo definitiv keine Events waren
 # GPS 1262304018 = Jan 2020
@@ -54,6 +53,7 @@ def fetch_and_slice():
 
         print(f"✂️ Schneide in {num_chunks} Trainings-Schnipsel...")
 
+        ensure_dirs(OUTPUT_DIR)
         for i in range(num_chunks):
             chunk = data[i * chunk_len : (i + 1) * chunk_len]
 

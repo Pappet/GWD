@@ -5,7 +5,13 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))) 
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 )  # project root
-from config import DATA_DIR_TRAIN, LABELS_FILE, MODELS_DIR, TRAINING_PLOTS_DIR
+from config import (
+    DATA_DIR_TRAIN,
+    LABELS_FILE,
+    MODELS_DIR,
+    TRAINING_PLOTS_DIR,
+    ensure_dirs,
+)
 
 # --- 1. LOGGING BEREINIGEN (Muss vor dem TensorFlow Import stehen!) ---
 # 0 = Alle Nachrichten (Standard)
@@ -239,6 +245,7 @@ def plot_history(history):
     plt.grid(True, alpha=0.3)
 
     plt.tight_layout()
+    ensure_dirs(TRAINING_PLOTS_DIR)
     plot_path = os.path.join(TRAINING_PLOTS_DIR, f"training_history_{TIMESTAMP}.png")
     plt.savefig(plot_path, dpi=150)
     plt.close()
@@ -282,7 +289,8 @@ def main():
     print(f"\n🚀 Starte Training: {MODEL_NAME}")
     print(f"💾 Speicherort: {MODELS_DIR}")
 
-    # Training
+    # Training (the checkpoint callback writes into MODELS_DIR)
+    ensure_dirs(MODELS_DIR)
     history = model.fit(
         X_train,
         y_train,

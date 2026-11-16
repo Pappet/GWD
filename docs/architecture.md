@@ -31,7 +31,7 @@ The target is one installable package, `gwd`, in `src/gwd/` (D8).
 
 | Component | Target | Responsibility |
 |---|---|---|
-| config | `src/gwd/config.py` | Project root, paths, and constants. Nothing happens on import. |
+| config | `src/gwd/config.py` | Project root, paths, and constants. Nothing happens on import; writers call `ensure_dirs()` first. |
 | core | `src/gwd/core/` | Physics: waveforms, noise, SNR, interferometer learning model, time domain simulator. No file or network access. |
 | data | `src/gwd/data/` | Scenarios, the one injection, the one filter chain, GWOSC access, dataset writing and validation. |
 | registry | `src/gwd/registry.py` | The one place that finds, selects, and loads models. Metadata and per-model thresholds. |
@@ -42,7 +42,9 @@ The target is one installable package, `gwd`, in `src/gwd/` (D8).
 
 `core/interferometer.py` and `core/simulation.py` stay in core on purpose. Whether app-specific physics belongs there is a design question (`APP-14`), and the import rules below keep the boundary.
 
-Today, modules find each other through `sys.path` edits with generic top-level names such as `config`, `utils`, and `dataset` (`hygiene:HYG-M5`). Since P2.1, tests and scripts both import `gwd.core` (`CORE-5`). The move below removes the `sys.path` edits.
+Today, modules find each other through `sys.path` edits with generic top-level names such as `config`, `utils`, and `dataset` (`hygiene:HYG-M5`). Since P2.1, tests and scripts both import `gwd.core` (`CORE-5`). Since P2.3, the root `config.py` is only a shim for `gwd.config`. The move below removes the `sys.path` edits.
+
+**Project root (since P2.3).** `gwd.config` takes `GWD_HOME` if it is set and not blank, and then warns once (`Using GWD_HOME=...`). Otherwise it takes the nearest folder above `src/gwd/config.py` that contains a `pyproject.toml`, which is the repo root in the editable install. If there is none, the import fails and asks for `GWD_HOME`. Without `GWD_HOME`, all paths are the same as before P2.3 (`tests/test_config_paths.py`).
 
 ## Import rules
 
@@ -203,7 +205,7 @@ Each step PR ticks its own step, so a tick takes effect when that PR is merged.
 | [x] | P1.6 | Normalize line endings | #15 |
 | [x] | P2.1 | `pyproject.toml`, lockfile, `gwd_core` → `gwd.core`, update tests | #17 |
 | [x] | P2.2 | ruff baseline, format commit, lean CI | #18 |
-| [ ] | P2.3 | `config` → `gwd/config.py`, `ensure_dirs()` instead of folders on import | |
+| [x] | P2.3 | `config` → `gwd/config.py`, `ensure_dirs()` instead of folders on import | #20 |
 | [ ] | P2.4 | Move data and training scripts, menu independent of working directory | |
 | [ ] | P2.5 | Move evaluation, utils, and apps; start of the registry | |
 | [ ] | P2.6 | Remove the shim and last `sys.path` edits; architecture test | |
