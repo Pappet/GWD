@@ -32,14 +32,13 @@ THRESHOLD = 0.15
 
 @pytest.fixture(scope="module")
 def small_sets(tmp_path_factory):
-    """Both standard sets with 16 samples, Newton chirps, in a tmp folder."""
+    """Both standard sets with 16 samples, PyCBC chirps, in a tmp folder."""
     root = tmp_path_factory.mktemp("sets")
     return {
         name: testsets.build(
             name,
             16,
             3,
-            backend="newton",
             data_dir=str(root / "eval"),
             manifest_dir=str(root / "manifests"),
             noise_dir=str(root / "noise"),
@@ -133,7 +132,7 @@ def test_every_test_set_adds_a_row_that_names_it(stubbed, small_sets, monkeypatc
     ]
     assert [s["scenario"] for s in sets] == ["TRAIN_V1", "EVAL_V1"]
     assert {s["noise_source"] for s in sets} == {"gaussian"}
-    assert sets[1]["backend"].startswith("newton")
+    assert sets[1]["backend"].startswith("pycbc ")
 
 
 def test_a_changed_test_set_ends_with_exit_code_1(stubbed, monkeypatch, capsys):
@@ -151,7 +150,7 @@ def test_a_changed_test_set_ends_with_exit_code_1(stubbed, monkeypatch, capsys):
 def test_without_pycbc_the_evaluation_stops_before_loading_the_model(
     stubbed, monkeypatch
 ):
-    """P5.2: no Newton test sets; the error names the install command."""
+    """P5.2: no fallback test sets; the error names the install command."""
     monkeypatch.setitem(sys.modules, "pycbc", None)
     monkeypatch.setattr(
         evaluate, "load_model", lambda path: pytest.fail("model loaded")

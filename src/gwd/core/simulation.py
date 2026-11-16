@@ -13,7 +13,7 @@ class TimeDomainSimulator:
     """
 
     def __init__(self, duration=0.5, sample_rate=4096, *, backend, rng, noise_psd):
-        # The waveform backend, 'pycbc' or 'newton'. The caller chooses it (P5.2).
+        # The waveform backend, 'pycbc' (the only one since P6.1). The caller names it.
         waveforms.check_backend(backend)
         self.backend = backend
         # The noise is drawn from rng, a numpy Generator or RandomState (P5.3).

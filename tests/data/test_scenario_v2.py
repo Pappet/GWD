@@ -11,7 +11,7 @@ optimal SNR.
 
 V2 conditions with gwpy and draws its noise from the aLIGO PSD of PyCBC; without them
 these tests skip (CI installs both and sets GWD_REQUIRE_PYCBC=1). The chirps come from
-the Newton backend where the waveform does not matter, which needs no PyCBC.
+PyCBC too (until P6.1 some tests drew them with the deleted numpy-only backend).
 """
 
 import dataclasses
@@ -188,9 +188,7 @@ def test_every_sample_is_normalized_whatever_the_noise(noise):
     V2 normalizes the conditioned sum with eps 0, so both noise types give std 1."""
     rng = np.random.RandomState(0)
     for has_signal in (False, True, False, True):
-        sample = injection.make_sample(
-            NOISES[noise], rng, has_signal=has_signal, backend="newton"
-        )
+        sample = injection.make_sample(NOISES[noise], rng, has_signal=has_signal)
         assert sample.data.shape == (N_SAMPLES,)
         assert sample.noise_kind == noise
         assert abs(np.mean(sample.data)) < 1e-12
@@ -229,9 +227,7 @@ def test_the_pads_keep_the_filter_ringing_out(noise):
 
 def test_v1_samples_are_unchanged_by_v2():
     """V1 still draws as before: no conditioning of the signal, the same stream."""
-    sample = injection.make_sample(
-        TRAIN_V1, np.random.RandomState(0), has_signal=True, backend="newton"
-    )
+    sample = injection.make_sample(TRAIN_V1, np.random.RandomState(0), has_signal=True)
     reference = np.random.RandomState(0)
     reference.rand()
     np.testing.assert_array_equal(
@@ -253,7 +249,6 @@ def v2_sets(tmp_path_factory):
             name,
             40,
             5,
-            backend="newton",
             data_dir=str(root / "eval"),
             manifest_dir=str(root / "manifests"),
             noise_dir=str(root / "noise"),
@@ -336,7 +331,6 @@ def test_a_v2_dataset_validates(tmp_path, capsys):
         TRAIN_V2,
         seed=1,
         noise_dir=str(tmp_path / "none"),
-        backend="newton",
     )
     printed = capsys.readouterr().out
     assert "simulated aLIGO design noise" in printed

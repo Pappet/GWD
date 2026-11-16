@@ -153,22 +153,16 @@ def test_a_scenario_without_real_noise_says_so(tmp_path, noise_dir, capsys):
     assert "WARNING" not in err
 
 
-def test_newton_chosen_on_purpose_gets_a_loud_warning(tmp_path, noise_dir, capsys):
-    """Only tests and the golden values pass backend='newton'; gwd data generate never."""
+def test_the_deleted_newton_backend_is_refused_before_writing(tmp_path, noise_dir):
+    """P6.1 (D1 = A): only 'pycbc' is left; the old name is an error, not a fallback."""
     out = tmp_path / "out"
-    generate_dataset(4, str(out), seed=7, noise_dir=str(noise_dir), backend="newton")
-    labels = pd.read_csv(out / "labels.csv", keep_default_na=False)
-    manifest = json.loads((out / "manifest.json").read_text())
-    out, err = capsys.readouterr()
-    assert "Backend: newton | Noise:" in out
-    assert "the waveform backend is the Newtonian approximation" in err
-    assert manifest["waveform_backend"] == "newton"
-    assert manifest["signal_backends"] == {"newton": 2}
-    assert set(labels.loc[labels["has_signal"] == 1, "waveform_backend"]) == {"newton"}
+    with pytest.raises(ValueError, match="Unknown waveform backend 'newton'"):
+        generate_dataset(4, str(out), noise_dir=str(noise_dir), backend="newton")
+    assert not out.exists()
 
 
 def test_without_pycbc_nothing_is_written_or_removed(tmp_path, noise_dir, monkeypatch):
-    """P5.2: no silent Newton dataset; the old dataset stays as it was."""
+    """P5.2: no silent fallback dataset; the old dataset stays as it was."""
     out, _, _ = generate(tmp_path, noise_dir, n=4)
     before = {p.name: p.read_bytes() for p in out.iterdir()}
     monkeypatch.setitem(sys.modules, "pycbc", None)

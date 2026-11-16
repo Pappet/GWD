@@ -255,16 +255,12 @@ def test_a_provider_fallback_is_recorded_as_white_noise():
     assert sample.noise_kind == "white" and sample.noise_file is None
 
 
-def test_the_backend_is_passed_on_and_does_not_change_the_draws():
-    """Newton is only ever chosen on purpose; the random stream is the same."""
-    pycbc = injection.make_sample(TRAIN_V1, np.random.RandomState(4), has_signal=True)
-    newton = injection.make_sample(
-        TRAIN_V1, np.random.RandomState(4), has_signal=True, backend="newton"
-    )
-    assert (pycbc.waveform_backend, newton.waveform_backend) == ("pycbc", "newton")
-    assert pycbc.params == newton.params
-    np.testing.assert_array_equal(pycbc.noise, newton.noise)
-    assert not np.array_equal(pycbc.signal, newton.signal)
+def test_the_deleted_newton_backend_is_refused():
+    """P6.1 (D1 = A): 'pycbc' is the only backend; the old name raises."""
+    with pytest.raises(ValueError, match="Unknown waveform backend"):
+        injection.make_sample(
+            TRAIN_V1, np.random.RandomState(4), has_signal=True, backend="newton"
+        )
 
 
 def test_without_pycbc_a_signal_sample_raises(monkeypatch):

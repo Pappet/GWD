@@ -1,7 +1,7 @@
 """Write a training dataset: samples, labels.csv, and manifest.json (P4.1).
 
 labels.csv has one row per sample. Since P4.1 it also has the columns
-waveform_backend ('pycbc' or 'newton', empty without signal), noise_source ('real' or
+waveform_backend ('pycbc', empty without signal), noise_source ('real' or
 'gaussian'), and noise_file (the chunk's file name, empty for Gaussian noise). The new
 columns come after the old seven, so readers that select columns by name are not
 affected. Since P5.5 two more follow: peak_snr, the peak SNR the signal was scaled to
@@ -122,9 +122,9 @@ def generate_dataset(
     from np.random.RandomState(seed), which gives the same samples as seeding the
     global RNG with it; rng is used instead if given. Without either, the global numpy
     RNG is used (see gwd.data.injection), and the manifest records the seed as None.
-    backend is the waveform backend; gwd data generate always uses the default, and
-    only tests and the golden values pass 'newton'. It is checked first, so a missing
-    PyCBC raises WaveformBackendError before anything is removed or written.
+    backend is the waveform backend, 'pycbc', the only one since P6.1. It is checked
+    first, so a missing PyCBC raises WaveformBackendError before anything is removed
+    or written.
     Returns the path of manifest.json.
     """
     if rng is not None and seed is not None:

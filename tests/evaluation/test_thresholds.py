@@ -80,13 +80,12 @@ class ConstantModel:
 
 @pytest.fixture(scope="module")
 def small_set(tmp_path_factory):
-    """stress_v1 with 64 samples per part, Newton chirps, in a tmp folder."""
+    """stress_v1 with 64 samples per part, PyCBC chirps, in a tmp folder."""
     root = tmp_path_factory.mktemp("sets")
     return testsets.build(
         "stress_v1",
         64,
         5,
-        backend="newton",
         data_dir=str(root / "eval"),
         manifest_dir=str(root / "manifests"),
         noise_dir=str(root / "noise"),

@@ -1,8 +1,9 @@
 """Fixed, hashed test sets: cache, hash, stale sets, bins, and streams (P5.7).
 
 Every set here is built with an empty noise folder, so only with Gaussian noise; the
-in-process tests pass tmp folders and the Newton backend (numpy only, fast), and the
-CLI test builds with PyCBC in a tmp GWD_HOME. Nothing reads or writes the real data/
+in-process tests pass tmp folders, and the CLI test builds in a tmp GWD_HOME; all draw
+their chirps with PyCBC (since P6.1 the only backend; before, the in-process tests used
+the numpy-only one). Nothing reads or writes the real data/
 or results/. The V1 sets are tested here; the V2 sets of P6.2 (conditioned, with the
 aLIGO PSD, so with gwpy and PyCBC) in tests/data/test_scenario_v2.py.
 """
@@ -34,9 +35,7 @@ def folders(root):
 
 
 def build(root, name="indist_v1", n=N, seed=SEED, **options):
-    return testsets.build(
-        name, n, seed, backend="newton", **{**folders(root), **options}
-    )
+    return testsets.build(name, n, seed, **{**folders(root), **options})
 
 
 @pytest.fixture(scope="module")

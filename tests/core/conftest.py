@@ -33,8 +33,8 @@ def needs_pycbc():
 def backend(request):
     """The waveform backend a test passes explicitly; 'pycbc' skips without PyCBC.
 
-    Since P5.2 the backend is an argument and nothing falls back to Newton, so a test
-    on 'pycbc' runs PyCBC or fails with WaveformBackendError.
+    Since P5.2 the backend is an argument and nothing falls back, so a test on 'pycbc'
+    runs PyCBC or fails with WaveformBackendError. Since P6.1 'pycbc' is the only one.
     """
     if request.param == "pycbc":
         require_pycbc()

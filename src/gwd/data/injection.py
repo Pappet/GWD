@@ -20,9 +20,9 @@ The default is np.random, the global RNG, as before. It is passed on to gwd.core
 (white noise, random masses), which has no RNG of its own since P5.3.
 
 The chirps come from the backend gwd.config.WAVEFORM_BACKEND ('pycbc'). Without PyCBC,
-make_sample raises gwd.core.waveforms.WaveformBackendError (P5.2); there is no fallback
-to the Newtonian approximation. The backend argument exists so the golden values and
-tests can draw numpy-only Newton chirps on purpose.
+make_sample raises gwd.core.waveforms.WaveformBackendError (P5.2); there is no
+fallback. Since P6.1 'pycbc' is the only backend; the argument stays, so the backend
+is still named and recorded.
 
 Every signal sample also gets its optimal (matched filter) SNR, measured after the
 scaling and without drawing from rng (P5.5, measure_optimal_snr). The peak SNR still
@@ -117,7 +117,7 @@ class Sample:
     snr: float  # the peak SNR (V1: scaled to, V2: measured); 0.0 without signal
     noise_kind: str  # "real", "white", or "aligo" (V2)
     noise_file: Optional[str] = None  # file name of the real chunk, None for white
-    waveform_backend: Optional[str] = None  # "pycbc" or "newton"; None without signal
+    waveform_backend: Optional[str] = None  # "pycbc"; None without signal
     optimal_snr: float = 0.0  # measured, see measure_optimal_snr; 0.0 without signal
 
     @property
