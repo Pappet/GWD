@@ -1,7 +1,7 @@
 """gwd env: what this installation runs with (P3.6).
 
-Prints versions, the installed extras, the waveform backend of the pipeline and of the
-demo apps, the resolved paths, and the matplotlib backend. Availability is checked with
+Prints versions, the installed extras, the waveform backend, the resolved paths, and
+the matplotlib backend. Availability is checked with
 importlib.util.find_spec and the installed package metadata, so TensorFlow and gwpy are
 never imported. The one exception is PyCBC: only importing it shows whether it works.
 """
@@ -104,14 +104,17 @@ def main():
 
     if pycbc_works():
         _line("Pipeline", backend_label(WAVEFORM_BACKEND))
-        _line("Demo apps", backend_label("pycbc"))
+        _line("Demo apps", backend_label(WAVEFORM_BACKEND))
     else:
         _line(
             "Pipeline",
             f"{WAVEFORM_BACKEND} MISSING: gwd data generate and gwd eval run, "
             "thresholds, and compare stop (pip install -e . on Linux or WSL)",
         )
-        _line("Demo apps", "newton (Newtonian approximation, physically inaccurate)")
+        _line(
+            "Demo apps",
+            "the waveform explorer stops; the Glitch Hunter has real data only",
+        )
 
     print("\nPaths:")
     from gwd import config

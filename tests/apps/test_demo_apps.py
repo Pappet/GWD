@@ -50,28 +50,45 @@ def test_the_noise_plot_rescales_after_the_sliders_move():
     assert top == pytest.approx(high, rel=0.2)
 
 
-def test_without_pycbc_the_explorer_uses_newton_and_says_so(monkeypatch):
-    """P5.2: the demo app chooses Newton on purpose and names it in the window."""
+def test_without_pycbc_the_explorer_exits_with_1_and_the_install_hint(tmp_path):
+    """P6.1 (D1 = A): no Newton approximation any more; it stops like the pipeline."""
+    code = "\n".join(
+        [
+            "import os, sys",
+            f"os.environ[{HEADLESS_OK!r}] = '1'",
+            "sys.modules['pycbc'] = None",
+            "from gwd.cli import main",
+            "sys.exit(main(['app', 'waveform']))",
+        ]
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env={**os.environ, "GWD_HOME": str(tmp_path), "MPLBACKEND": "Agg"},
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == waveform_explorer.EXIT_NO_PYCBC == 1, result.stderr
+    assert "Waveform explorer:" in result.stderr
+    assert "pip install -e ." in result.stderr
+    assert "use WSL" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_without_pycbc_build_figure_raises(monkeypatch):
+    from gwd.core.waveforms import WaveformBackendError
+
     monkeypatch.setitem(sys.modules, "pycbc", None)
-    fig, state = waveform_explorer.build_figure()
-    assert state.backend == "newton"
-    assert state.sim.backend == "newton"
-    assert "Newton" in state.backend_text.get_text()
-    assert "physically inaccurate" in state.backend_text.get_text()
-    assert state.backend_text in fig.texts
-    # P5.4: the noise comes from the 1/f stand-in, and the noise plot says so.
-    assert state.sim.noise_psd is waveform_explorer.STAND_IN_PSD
-    assert "stand-in" in state.ax_noise.get_title()
-    state.s_mass1.set_val(50)
-    assert np.all(np.isfinite(state.line_strain.get_ydata()))
-    assert draw_without_warnings(fig) == []
+    with pytest.raises(WaveformBackendError):
+        waveform_explorer.build_figure()
 
 
-def test_with_pycbc_the_explorer_uses_pycbc():
+def test_the_explorer_names_its_pycbc_version():
     pytest.importorskip("pycbc")
     fig, state = waveform_explorer.build_figure()
     assert state.backend == "pycbc"
     assert state.backend_text.get_text().startswith("Waveforms: pycbc ")
+    assert state.backend_text in fig.texts
 
 
 def test_with_pycbc_the_explorer_draws_noise_from_the_aligo_psd():

@@ -6,13 +6,12 @@ The physics comes from gwd.core.simulation.TimeDomainSimulator.
 build_figure() builds the figure and its widgets without showing it, so tests can move
 the sliders under Agg. main() shows it.
 
-The chirps come from PyCBC if it can be imported. Without it, for example on native
-Windows, the explorer chooses the Newtonian approximation on purpose and says so in its
-window (P5.2, default of D1); the pipeline has no such fallback.
+The chirps come from PyCBC, as in the pipeline (gwd.config.WAVEFORM_BACKEND). Without
+PyCBC, main() exits with code 1 and the install hint, like the pipeline. Until P6.1 the
+explorer drew a physically inaccurate approximation instead (D1 = A removed it).
 
 The noise is drawn from the aLIGO design PSD above 10 Hz (gwd.core.interferometer,
-P5.4); the noise slider multiplies its amplitude. Without PyCBC a 1/f stand-in with the
-aLIGO level at 100 Hz takes its place, and the noise plot says so.
+P5.4); the noise slider multiplies its amplitude.
 """
 
 import sys
@@ -24,47 +23,22 @@ import numpy as np
 from matplotlib.widgets import Button, Slider
 
 from gwd.apps._backend import require_interactive_backend
-from gwd.config import SAMPLE_RATE
-from gwd.core.interferometer import (
-    REFERENCE_PSD_NAME,
-    reference_available,
-    reference_psd,
-)
-from gwd.core.noise import pink_psd
+from gwd.config import SAMPLE_RATE, WAVEFORM_BACKEND
+from gwd.core.interferometer import REFERENCE_PSD_NAME, reference_psd
 from gwd.core.simulation import TimeDomainSimulator
-from gwd.core.waveforms import backend_label, pycbc_available
+from gwd.core.waveforms import WaveformBackendError, backend_label, check_backend
 
-NEWTON_NOTE = (
-    "Newton approximation, physically inaccurate: PyCBC is not installed. "
-    "Install it on Linux or WSL with pip install -e '.[physics]'."
-)
+# Exit code of main() without PyCBC, as gwd.cli returns for the pipeline.
+EXIT_NO_PYCBC = 1
 
 # The noise starts at 10 Hz: below, the aLIGO design PSD rises so steeply that its
 # noise (std ~6e-21 in 0.5 s instead of ~3e-22) would hide the chirp.
 NOISE_LOW_FREQ_CUTOFF = 10.0
-# Without PyCBC: a 1/f stand-in at the aLIGO design level at 100 Hz (3.9e-24 / sqrt(Hz)).
-# Only the level is taken from aLIGO; the shape is not a detector's.
-STAND_IN_PSD = partial(pink_psd, psd_at_f_ref=3.9e-24**2, f_ref=100.0)
+NOISE_PSD = partial(reference_psd, low_freq_cutoff=NOISE_LOW_FREQ_CUTOFF)
+NOISE_LABEL = f"aLIGO design PSD ({REFERENCE_PSD_NAME}) above 10 Hz"
 
 # Start values of the sliders
 START_PARAMS = {"mass1": 30, "mass2": 30, "distance": 400, "noise_level": 1.0}
-
-
-def choose_backend():
-    """'pycbc' if PyCBC can be imported, else 'newton', with the note for the window."""
-    if pycbc_available():
-        return "pycbc", f"Waveforms: {backend_label('pycbc')}"
-    return "newton", NEWTON_NOTE
-
-
-def choose_noise_psd():
-    """The noise PSD and its label: the aLIGO design PSD, or the 1/f stand-in."""
-    if reference_available():
-        return (
-            partial(reference_psd, low_freq_cutoff=NOISE_LOW_FREQ_CUTOFF),
-            f"aLIGO design PSD ({REFERENCE_PSD_NAME}) above 10 Hz",
-        )
-    return STAND_IN_PSD, "1/f stand-in, not a detector PSD (PyCBC is missing)"
 
 
 def build_figure(rng=None):
@@ -74,15 +48,16 @@ def build_figure(rng=None):
     the sliders, the reset button, the waveform backend, the text that names it, and
     the label of the noise PSD.
     rng is the numpy Generator the noise is drawn from; None takes an unseeded one.
+    Without PyCBC it raises gwd.core.waveforms.WaveformBackendError.
     """
-    backend, note = choose_backend()
-    noise_psd, noise_label = choose_noise_psd()
+    backend = WAVEFORM_BACKEND
+    noise_label = NOISE_LABEL
     sim = TimeDomainSimulator(
         duration=0.5,
         sample_rate=SAMPLE_RATE,
         backend=backend,
         rng=np.random.default_rng() if rng is None else rng,
-        noise_psd=noise_psd,
+        noise_psd=NOISE_PSD,
     )
     gui_params = dict(START_PARAMS)
 
@@ -93,13 +68,7 @@ def build_figure(rng=None):
         fontweight="bold",
     )
     backend_text = fig.text(
-        0.5,
-        0.945,
-        note,
-        ha="center",
-        fontsize=10,
-        color="black" if backend == "pycbc" else "red",
-        fontweight="normal" if backend == "pycbc" else "bold",
+        0.5, 0.945, f"Waveforms: {backend_label(backend)}", ha="center", fontsize=10
     )
 
     gs = fig.add_gridspec(4, 2, hspace=0.4, wspace=0.3)
@@ -238,10 +207,13 @@ def build_figure(rng=None):
 
 def main():
     require_interactive_backend("Waveform explorer")
+    try:
+        check_backend(WAVEFORM_BACKEND)
+    except WaveformBackendError as error:
+        print(f"❌ Waveform explorer: {error}", file=sys.stderr)
+        sys.exit(EXIT_NO_PYCBC)
     # The widgets only react while fig and state are referenced.
     fig, state = build_figure()
-    if state.backend == "newton":
-        print(NEWTON_NOTE, file=sys.stderr)
     plt.show()
 
 
