@@ -277,7 +277,7 @@ Each step PR ticks its own step, so a tick takes effect when that PR is merged.
 | [x] | P4.3 | Real data field test: padding, honest counting, only with `--real` | #36 |
 | [ ] | P4.4 | Untangle Glitch Hunter: GUI, sources, audio; fix threading; modes | |
 | [x] | P4.5 | Testable demo apps | #34 |
-| [ ] | P4.6 | Validator and loading: full integrity and range checks | |
+| [x] | P4.6 | Validator and loading: full integrity and range checks | #37 |
 | [x] | P5.1 | Physics tests with real asserts | #26 |
 | [ ] | P5.2 | Explicit waveform backend, no silent fallback in the pipeline | |
 | [ ] | P5.3 | Core details: `time_axis`, `rng`, `t_merger` check, constants, dead code | |
