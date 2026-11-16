@@ -17,7 +17,7 @@ apps: use core, data, and registry      cli: the gwd command      main.py: menu
 
 | Component | Folder | What it does |
 |---|---|---|
-| core | `src/gwd/core/` | Physics: waveforms (PyCBC; a Newtonian approximation that only the waveform explorer uses without PyCBC), noise, the interferometer learning model, a time domain simulator. No file or network access. |
+| core | `src/gwd/core/` | Physics: waveforms (PyCBC), noise, the interferometer learning model, a time domain simulator. No file or network access. |
 | data | `src/gwd/data/` | Scenarios, signal injection, conditioning and normalization, GWOSC access, dataset generation with a manifest, validation, the noise download. |
 | training | `src/gwd/training/` | The CNN and its training. |
 | evaluation | `src/gwd/evaluation/` | ROC evaluation, threshold calibration, model comparison, the leaderboard. |
@@ -30,7 +30,7 @@ apps: use core, data, and registry      cli: the gwd command      main.py: menu
 
 ## Installation
 
-GWD needs Python 3.11 or newer. Use Linux or WSL: PyCBC, the waveform backend, is not available on Windows. Without PyCBC, `gwd data generate`, `gwd eval run`, `gwd eval thresholds`, and `gwd eval compare` stop with exit code 1 and print how to install it; the waveform explorer then runs with a Newtonian approximation that it marks as physically inaccurate in its window, and with 1/f stand-in noise; the interferometer designer has no aLIGO reference curve; and the Glitch Hunter starts with its simulation off and shows only real GWOSC data.
+GWD needs Python 3.11 or newer and PyCBC, its only waveform backend, which is a base dependency. Use Linux or WSL: PyCBC is not available on native Windows, so `pip install` leaves it out there. macOS is not tested. Without PyCBC, `gwd data generate`, `gwd eval run`, `gwd eval thresholds`, `gwd eval compare`, and the waveform explorer stop with exit code 1 and print how to install it; the interferometer designer has no aLIGO reference curve; and the Glitch Hunter starts with its simulation off and shows only real GWOSC data.
 
 ```bash
 # A fresh virtual environment
@@ -44,15 +44,14 @@ pip install -e '.[all,dev]'
 gwd env
 ```
 
-The base install has numpy, scipy, pandas, matplotlib, scikit-learn, and tabulate. The extras add what single commands need:
+The base install has numpy, scipy, pandas, matplotlib, scikit-learn, tabulate, and (except on Windows) pycbc. PyCBC draws the waveforms of `gwd data generate`, `gwd eval run`, `gwd eval thresholds`, `gwd eval compare`, the waveform explorer, and the Glitch Hunter's simulation, and the aLIGO design curve (`aLIGOZeroDetHighPower`) of the two demo apps; there is no fallback. Until P6.1 it was the `physics` extra. The extras add what single commands need:
 
 | Extra | Installs | Needed for |
 |---|---|---|
-| `physics` | pycbc (not on Windows) | PyCBC waveforms: `gwd data generate`, `gwd eval run`, `gwd eval thresholds`, `gwd eval compare`, and the Glitch Hunter's simulation. There is no fallback; only the waveform explorer uses a Newtonian approximation without it. The aLIGO design curve (`aLIGOZeroDetHighPower`) of the two demo apps. |
 | `gwdata` | gwpy | `gwd data fetch-noise`, the field test of `gwd eval run`, and real data in the Glitch Hunter |
 | `ml` | tensorflow | `gwd train`, `gwd eval run`, `gwd eval thresholds`, `gwd eval compare`, and 'Ask AI' in the Glitch Hunter |
 | `dev` | pytest, ruff | Tests and linting |
-| `all` | `physics`, `gwdata`, and `ml` | |
+| `all` | `gwdata` and `ml` | |
 
 For an NVIDIA GPU, TensorFlow offers `pip install 'tensorflow[and-cuda]'`; this project does not install it for you. Without a GPU, training runs on the CPU, by default in float32.
 
@@ -229,10 +228,10 @@ python -m pytest
 |---|---|
 | `slow` | The end-to-end test `tests/test_e2e.py` (the full pipeline as `gwd` commands, then the Glitch Hunter with the trained model and its saved threshold), and a few TensorFlow tests; minutes on a CPU |
 | `apps` | The apps under the Agg backend, without a window |
-| `golden` | Stored golden values of the waveforms (Newton and PyCBC), the noise, the SNR scaling, a small dataset, and the interferometer |
+| `golden` | Stored golden values of the PyCBC waveform, the noise, the SNR scaling, a small dataset, and the interferometer |
 | `network` | A real download from GWOSC |
 
-The end-to-end, smoke, and golden tests run in a temporary `GWD_HOME`. Tests that need TensorFlow or gwpy are skipped without them. `GWD_REQUIRE_PYCBC=1` makes a missing PyCBC fail the PyCBC tests in `tests/core/` and `tests/golden/` instead of skipping them. The tests that generate datasets or test sets need PyCBC, as the pipeline does. `tests/test_docs_commands.py` checks that every `gwd` command in this README and in `docs/` parses, and that every relative link works.
+The end-to-end, smoke, and golden tests run in a temporary `GWD_HOME`. Tests that need TensorFlow or gwpy are skipped without them. `GWD_REQUIRE_PYCBC=1` makes a missing PyCBC fail the PyCBC tests in `tests/core/` instead of skipping them. Every test that draws a chirp, generates a dataset or test set, or measures the golden values needs PyCBC, as the pipeline does. `tests/test_docs_commands.py` checks that every `gwd` command in this README and in `docs/` parses, and that every relative link works.
 
 CI (`.github/workflows/ci.yml`) runs on every push and pull request: the lockfile check, `ruff format --check . && ruff check .`, and `pytest -m 'not slow and not network and not apps'` with PyCBC but without TensorFlow. The slow, app, and golden tests run in a second job that is started by hand.
 
