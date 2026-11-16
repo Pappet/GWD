@@ -91,7 +91,7 @@ Before the cleanup, the scripts in `src/` found each other through `sys.path` ed
 
 Since P2.6, `tests/test_architecture.py` enforces these rules. It parses every module in `src/gwd/` and `main.py` with `ast` and counts an import as lazy only inside a function body; a `try` block at module level is not lazy. The standard library is always allowed, and anything not listed under "May import" fails, so the test also limits where tensorflow, gwpy, and pycbc may appear at all. Dynamic imports (`__import__`, `importlib`) are not checked. Since P3.4, a separate check fails on any gwpy import statement outside `data/gwosc.py` and `data/preprocessing.py`, lazy or not, in any component including cli. The same test fails on any `sys.path` edit in `src/`, `tests/`, or `main.py`, and on two byte-identical `.py` files (empty `__init__.py` files excepted, `HYG-1`).
 
-Known violations are in the test's `ALLOWLIST`, each with its finding ID and the step that removes it. An entry that no longer matches a real violation fails the test, so the list can only shrink. It must be empty by P7.4. It had 12 entries at P2.6, 8 at P3.3, 5 at P3.4, 3 at P3.6, 2 at P3.7, and 1 at P4.1. Since P5.2 it is empty: `core/waveforms.py` imports PyCBC only inside a function, when a chirp needs it (`CORE-17`).
+Known violations are in the test's `ALLOWLIST`, each with its finding ID and the step that removes it. An entry that no longer matches a real violation fails the test, so the list can only shrink. It is empty since P5.2, as P7.4 requires, and must stay empty. It had 12 entries at P2.6, 8 at P3.3, 5 at P3.4, 3 at P3.6, 2 at P3.7, and 1 at P4.1. Since P5.2 it is empty: `core/waveforms.py` imports PyCBC only inside a function, when a chirp needs it (`CORE-17`).
 
 
 | Component | May import | Must not import |
@@ -271,7 +271,7 @@ The cleanup plan left these out on purpose. They are possible follow-up projects
 | **D2** | SNR definition for V2? | B: optimal SNR drives V2. V1 stays. | Default applies | P6.2, P6.5 |
 | **D3** | Noise for V2? | B: simulated noise. Real noise (P6.3) is parked. | Default applies | P6.2, P6.3, P6.5 |
 | **D4** | Glitch Hunter: game, tool, or both? | A: "Training" and "Challenge" modes. | Default applies | P4.4, P5.7 |
-| **D5** | Rewrite or drop the Matched Filter baseline? | B: `Physik_Gap` is dropped. | Default applies | P5.8, P6.4 |
+| **D5** | Rewrite or drop the Matched Filter baseline? | B: `Physik_Gap` is dropped, and so is P6.4 (since P7.4). | Default applies | P5.8, P6.4 |
 | **D6** | Interferometer: learning model or calibrated? | A: honestly labeled learning model. | Default applies | P4.5, P5.4 |
 | **D7** | Python version, lockfile, mixed precision? | B: Python ≥ 3.11, CI on 3.12, plus a lockfile. Like A, mixed precision only with a GPU (since P3.7). | Decided | P2.1, P3.7, P7.3 |
 | **D8** | One package or three? Keep the menu? | A: one package `gwd`, one command `gwd`, `main.py` as a menu. | Decided | P2.1 onward |
@@ -290,7 +290,7 @@ The cleanup plan left these out on purpose. They are possible follow-up projects
 
 ## Step checklist
 
-Each step PR ticks its own step, so a tick takes effect when that PR is merged.
+Each step PR ticks its own step, so a tick takes effect when that PR is merged. Every open step is bound to an open decision or an action of the owner. The final check of P7.4 (`tests/test_e2e.py`, the empty `ALLOWLIST`, only the xfails of Newton (CORE-2, CORE-3, CORE-8, until D1) and `test_known_skew` (V1)) is repeated when a P6 step runs later.
 
 | Done | Step | Title | PR |
 |---|---|---|---|
@@ -333,12 +333,12 @@ Each step PR ticks its own step, so a tick takes effect when that PR is merged.
 | [x] | P5.6 | Training: grouped three-way split, seeds, float32, full metadata | #41 |
 | [x] | P5.7 | Fixed, hashed test sets; metrics per SNR bin, mass bin, and noise type | #44 |
 | [x] | P5.8 | Per-model threshold at fixed FPR; leaderboard v2 with raw numbers | #45 |
-| [ ] | P6.1 | Delete or correct the Newton backend (D1) | |
+| [ ] | P6.1 | Delete or correct the Newton backend (D1) | Open: waits on D1 (A is effectively decided; the owner confirms). Planned as a separate, optional PR on top of #47 |
 | [x] | P6.2 | Scenario V2: inject first, then condition together | #46 |
-| [ ] | P6.3 | Real noise for V2 (D3) | |
-| [ ] | P6.4 | Rewrite the Matched Filter baseline (D5) | |
-| [ ] | P6.5 | Retrain and re-evaluate, switch to V2, archive old artifacts | |
+| [ ] | P6.3 | Real noise for V2 (D3) | Open: parked, because the default of D3 (B: simulated noise) applies |
+| [x] | P6.4 | Rewrite the Matched Filter baseline (D5) | #47 (D5 = B: dropped; one sentence in `docs/evaluation.md`) |
+| [ ] | P6.5 | Retrain and re-evaluate, switch to V2, archive old artifacts | Open: the owner, on the GPU; waits on the confirmation of D2 and D3 |
 | [x] | P7.1 | New README, `docs/evaluation.md`, documentation command test | #35 |
 | [x] | P7.2 | License entry in `pyproject.toml` (D12) | #17 (done in P2.1) |
 | [x] | P7.3 | CI on the lockfile, README on updating it (D7) | #19 |
-| [ ] | P7.4 | Final check: end to end, empty allowlist, checklist | |
+| [x] | P7.4 | Final check: end to end, empty allowlist, checklist | #47 |
