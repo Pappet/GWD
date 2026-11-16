@@ -301,8 +301,8 @@ def build_parser():
     run.add_argument(
         "--real",
         action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Run the real data field test (needs network access). Default: --real.",
+        default=False,
+        help="Run the real data field test (needs network access). Default: --no-real.",
     )
     _add_seed(run, "the simulated test set")
     run.set_defaults(handler=_eval_run)
