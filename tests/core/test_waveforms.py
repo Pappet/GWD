@@ -177,17 +177,26 @@ def test_realistic_chirp_contains_the_merger(backend):
     assert np.max(np.abs(strain)) == pytest.approx(np.max(np.abs(reference)), rel=0.01)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="CORE-15: t_merger outside the window is accepted silently",
-)
-def test_t_merger_outside_the_window_raises(backend):
-    try:
-        generate_chirp(time_axis(), t_merger=10.0, backend=backend)
-    except ValueError:
-        return
-    raise AssertionError("t_merger=10 s in a 4 s window gave no ValueError")
+@pytest.mark.parametrize("t_merger", [10.0, DURATION, -0.1])
+def test_t_merger_outside_the_window_raises(backend, t_merger):
+    """CORE-15: before P5.3 t_merger was moved to the edge of the window silently."""
+    with pytest.raises(ValueError, match="outside the time axis"):
+        generate_chirp(time_axis(), t_merger=t_merger, backend=backend)
+
+
+def test_t_merger_on_the_edges_of_the_window_is_accepted(backend):
+    t = time_axis()
+    for t_merger in (t[0], t[-1]):
+        strain, _ = generate_chirp(t, t_merger=t_merger, backend=backend)
+        assert np.all(np.isfinite(strain))
+
+
+def test_the_default_merger_time_counts_from_the_start_of_the_axis(backend):
+    """CORE-15: the default was 0.9 * t[-1], which assumed t[0] = 0."""
+    t = 1000.0 + time_axis()
+    strain, _ = generate_chirp(t, backend=backend, normalize=False)
+    t_peak = t[np.argmax(np.abs(strain))]
+    assert abs(t_peak - (t[0] + 0.9 * (t[-1] - t[0]))) <= 1e-3
 
 
 def test_importing_the_module_prints_nothing_and_imports_no_pycbc():

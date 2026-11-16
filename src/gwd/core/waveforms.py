@@ -105,7 +105,9 @@ def generate_chirp(
     Args:
         time_array: Time axis of the simulation, equally spaced, for example
                     gwd.core.timebase.time_axis(4096, 4.0).
-        t_merger: Merger time in seconds. If None, 90% of the time span.
+        t_merger: Merger time in seconds, on the scale of time_array; it must lie
+                  in [time_array[0], time_array[-1]]. If None, 90% of the span
+                  after time_array[0].
         backend: 'pycbc' or 'newton', required. The pipeline passes
                  gwd.config.WAVEFORM_BACKEND.
         mass1, mass2: Black hole masses in solar masses.
@@ -123,15 +125,20 @@ def generate_chirp(
             - frequency: np.array with the instantaneous frequency over time
 
     Raises:
-        ValueError: backend is not 'pycbc' or 'newton'.
+        ValueError: backend is not 'pycbc' or 'newton', or t_merger lies outside
+            time_array. Before P5.3 it was moved to the edge silently (CORE-15).
         WaveformBackendError: 'pycbc' and PyCBC is missing or fails for these
             parameters (for example an unknown approximant).
     """
     check_backend(backend)
 
-    # Default merger time if none is given
+    t0, t_end = time_array[0], time_array[-1]
     if t_merger is None:
-        t_merger = time_array[-1] * 0.9  # 90% of the time span
+        t_merger = t0 + 0.9 * (t_end - t0)
+    elif not t0 <= t_merger <= t_end:
+        raise ValueError(
+            f"t_merger={t_merger} s lies outside the time axis [{t0}, {t_end}] s"
+        )
 
     if backend == "pycbc":
         return _pycbc_chirp(
@@ -279,7 +286,7 @@ def _newton_chirp(time_array, t_merger, mass1, mass2, distance_mpc, normalize):
     freq_newton[mask_post_merger] = 0
 
     # Fade-in taper to avoid an abrupt start
-    strain_out *= 1 - np.exp(-10 * time_array)
+    strain_out *= 1 - np.exp(-10 * (time_array - time_array[0]))
 
     if normalize:
         m = np.max(np.abs(strain_out))
