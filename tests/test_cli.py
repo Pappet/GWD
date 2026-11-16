@@ -5,6 +5,7 @@ import ast
 import os
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 import numpy as np
@@ -291,19 +292,73 @@ def fake_training(monkeypatch, tmp_path):
     # The handler checks for labels.csv in the default dataset folder first.
     (tmp_path / "labels.csv").touch()
     monkeypatch.setattr("gwd.config.DATA_DIR_TRAIN", str(tmp_path))
-    for name in ("TF_CPP_MIN_LOG_LEVEL", "TF_ENABLE_ONEDNN_OPTS"):
+    clear_tf_environment(monkeypatch)
+    return fake
+
+
+def clear_tf_environment(monkeypatch):
+    for name in cli.TF_ENVIRONMENT:
         # setenv first, so monkeypatch also undoes what the handler sets.
         monkeypatch.setenv(name, "")
         monkeypatch.delenv(name)
-    return fake
 
 
 def test_train_without_options_uses_the_config_defaults(fake_training):
     assert cli.main(["train"]) == 0
     # Only what is given on the command line is passed; TrainConfig has the rest.
     assert fake_training.calls == [{}]
-    assert os.environ["TF_CPP_MIN_LOG_LEVEL"] == "2"
+    assert os.environ["TF_CPP_MIN_LOG_LEVEL"] == "3"
     assert os.environ["TF_ENABLE_ONEDNN_OPTS"] == "0"
+
+
+# Every handler that can load TensorFlow, with the function it hands over to.
+TENSORFLOW_COMMANDS = {
+    ("eval", "run"): "gwd.evaluation.evaluate.run",
+    ("eval", "thresholds"): "gwd.evaluation.thresholds.run",
+    ("eval", "compare"): "gwd.evaluation.compare.run",
+    ("app", "glitch-hunter"): "gwd.apps.glitch_hunter.app.main",
+}
+
+
+@pytest.fixture
+def tf_handlers(monkeypatch):
+    """Stub the functions of TENSORFLOW_COMMANDS; each records the environment it
+    sees, which is the one TensorFlow would be imported with."""
+    seen = {}
+    for command, target in TENSORFLOW_COMMANDS.items():
+        module_name, function = target.rsplit(".", 1)
+
+        def record(*args, _command=command, **kwargs):
+            seen[_command] = {name: os.environ.get(name) for name in cli.TF_ENVIRONMENT}
+            return 0
+
+        if command[0] == "app":
+            # A stand-in module, so the test needs no matplotlib GUI or app imports.
+            module = types.ModuleType(module_name)
+            setattr(module, function, record)
+            monkeypatch.setitem(sys.modules, module_name, module)
+        else:
+            monkeypatch.setattr(target, record)
+    clear_tf_environment(monkeypatch)
+    return seen
+
+
+@pytest.mark.parametrize("command", TENSORFLOW_COMMANDS)
+def test_every_tensorflow_command_quiets_tensorflow(tf_handlers, command):
+    """P3.7 set the variables in gwd train only; eval and the Glitch Hunter too now."""
+    assert cli.main(list(command)) == 0
+    assert tf_handlers[command] == cli.TF_ENVIRONMENT
+
+
+@pytest.mark.parametrize("command", TENSORFLOW_COMMANDS)
+def test_the_caller_tensorflow_environment_wins(tf_handlers, monkeypatch, command):
+    monkeypatch.setenv("TF_CPP_MIN_LOG_LEVEL", "0")
+    monkeypatch.setenv("TF_ENABLE_ONEDNN_OPTS", "1")
+    assert cli.main(list(command)) == 0
+    assert tf_handlers[command] == {
+        "TF_CPP_MIN_LOG_LEVEL": "0",
+        "TF_ENABLE_ONEDNN_OPTS": "1",
+    }
 
 
 def test_train_passes_the_overrides(fake_training, monkeypatch, tmp_path):
