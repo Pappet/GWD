@@ -19,9 +19,15 @@ The alarm threshold starts at the model's own threshold (gwd.registry.get_thresh
 calibrated by gwd eval thresholds at FPR 1 %, P5.8); a model without one starts at
 THRESHOLD_FALLBACK, with a warning, and so does the app without a model.
 
-The switch 'Scenario' chooses V1 or V2 for the simulation (P6.2): the same two modes,
-drawn from the V1 or the V2 scenarios. V1 is the start value until P6.5; V2 needs gwpy
-for its conditioning and is off without it.
+The switch 'Scenario' chooses V1, V2 (P6.2), or V3 for the simulation: the same two
+modes, drawn from the V1, V2, or V3 scenarios. The start value is the version of the
+model's training scenario (sources.start_version), else V1. V2 and V3 need gwpy for
+their conditioning and are off without it.
+
+Preprocessing (V3): real data get the model's preprocessing from its metadata
+(gwd.data.scenarios.preprocessing_of), so a model trained on TRAIN_V3 sees whitened
+real data; without a model they follow the scenario switch. A simulated sample of a
+version whose preprocessing the model was not trained with says so in its title.
 """
 
 import queue
@@ -43,6 +49,8 @@ from gwd.apps.glitch_hunter.sources import (
     SimSource,
     counterpart,
     gwpy_available,
+    start_version,
+    version_preprocessing,
 )
 from gwd.config import (
     DURATION,
@@ -55,6 +63,7 @@ from gwd.core.timebase import time_axis
 from gwd.core.waveforms import WaveformBackendError, check_backend
 from gwd.data.preprocessing import normalize
 from gwd.data.provenance import UNKNOWN_V1
+from gwd.data.scenarios import preprocessing_of
 from gwd.registry import load_model, model_name, read_metadata, resolve
 
 # The slider's range. The start threshold comes from the registry (start_threshold);
@@ -173,13 +182,16 @@ class GlitchHunterApp:
         v2_available=None,
     ):
         self.model = model
-        # V2 conditions its samples with gwpy (gwd.data.preprocessing.condition_array).
+        # V2 and V3 condition their samples with gwpy (preprocessing.condition_array).
         self.v2_available = gwpy_available() if v2_available is None else v2_available
         self.noise_warning = (
             training_noise_warning(metadata) if model is not None else None
         )
+        # What the model's input went through in training; None without a model.
+        self.preprocessing = preprocessing_of(metadata) if model is not None else None
         self.sim = sim
         self.real = real
+        self._sync_real_preprocessing()
         self.player = player or Player()
 
         self.time = time_axis(SAMPLE_RATE, DURATION)
@@ -305,6 +317,15 @@ class GlitchHunterApp:
 
     # --- samples ---
 
+    def _sync_real_preprocessing(self):
+        """Real data get the model's preprocessing; without a model, the switch's."""
+        if self.real is None:
+            return
+        if self.preprocessing is not None:
+            self.real.preprocessing = self.preprocessing
+        elif self.sim is not None:
+            self.real.preprocessing = version_preprocessing(self.sim.mode.version)
+
     def generate_new_sample(self, event):
         """Show a simulated sample of the current mode; a pending download goes stale."""
         if self.sim is None:
@@ -323,7 +344,7 @@ class GlitchHunterApp:
         self.generate_new_sample(None)
 
     def set_version(self, label):
-        """Switch the simulation to scenario V1 or V2, keep the mode, draw a new sample."""
+        """Switch the simulation to scenario V1, V2, or V3, keep the mode, draw anew."""
         if self.sim is None:
             return
         version = next(v for v in VERSIONS if version_label(v) == label)
@@ -332,6 +353,7 @@ class GlitchHunterApp:
         if version != 1 and not self.v2_available:
             return
         self.sim.mode = counterpart(self.sim.mode, version)
+        self._sync_real_preprocessing()
         modes = VERSIONS[version]
         for text, mode in zip(self.radio_mode.labels, modes):
             text.set_text(mode_label(mode))
@@ -422,13 +444,24 @@ class GlitchHunterApp:
     def _titles(self):
         """(plot title, spectrogram title) for the shown sample, by its source."""
         sample = self.sample
+        whitened = sample.preprocessing == "whiten_bandpass"
         if sample.source == "simulation":
             title = f"Simulated data: {sample.name}"
-            spec = f"Spectrogram (simulated, {sample.noise_kind} noise)"
+            spec = f"Spectrogram (simulated, {sample.noise_kind} noise" + (
+                ", whitened)" if whitened else ")"
+            )
         else:
             title = f"REAL DATA: {sample.name} ({DETECTOR})"
-            spec = f"Spectrogram (GWOSC {DETECTOR}, notched and band-passed)"
-        return f"{title}\n{sample.note}", spec
+            spec = f"Spectrogram (GWOSC {DETECTOR}, " + (
+                "whitened, notched and band-passed)"
+                if whitened
+                else "notched and band-passed)"
+            )
+        note = sample.note
+        mismatch = preprocessing_mismatch(self.preprocessing, sample)
+        if mismatch:
+            note += f"\n{mismatch}"
+        return f"{title}\n{note}", spec
 
     def _render_current_sample(self):
         """Draw self.sample. Only the GUI thread calls this."""
@@ -554,8 +587,18 @@ def mode_label(mode):
     return f"{mode.name} (hard: low SNR)"
 
 
+def preprocessing_mismatch(model_preprocessing, sample):
+    """A warning if the sample's preprocessing is not the model's, else None."""
+    if model_preprocessing is None or sample.preprocessing == model_preprocessing:
+        return None
+    return (
+        f"Note: the model was trained with '{model_preprocessing}', this sample has "
+        f"'{sample.preprocessing}': its score means little."
+    )
+
+
 def version_label(version):
-    """The radio button label of a scenario version: V1 or V2."""
+    """The radio button label of a scenario version: V1, V2, or V3."""
     return f"V{version}"
 
 
@@ -596,6 +639,11 @@ def main(model="latest"):
             print(warning)
         threshold = start_threshold(path)
         print(f"Alarm threshold: {threshold:.4g}")
+        print(f"Preprocessing of the model: {preprocessing_of(metadata)}")
+    version = start_version(metadata)
+    if sim is not None and version != sim.mode.version:
+        if version == 1 or gwpy_available():
+            sim.mode = counterpart(sim.mode, version)
     print(">>> Ready to hunt!")
 
     app = GlitchHunterApp(

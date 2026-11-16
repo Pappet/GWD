@@ -211,3 +211,33 @@ def test_event_count_text():
     assert EventCount(3, 4, 4).text == "3/4"
     assert EventCount(0, 0, 4).text == "n/a (0 of 4 loaded)"
     assert EventCount(2, 3, 4).text == "n/a (3 of 4 loaded)"
+
+
+# --- the model's preprocessing (V3) ---
+
+
+def test_the_field_test_whitens_for_a_whitening_model(fake_fetch, monkeypatch):
+    """Every window, events and noise, goes through conditioned_crop with the model's
+    preprocessing; the default stays the notch and band-pass chain."""
+    used = []
+    original = real_data.conditioned_crop
+
+    def spy(strain, fs, pad_s, **kwargs):
+        used.append(kwargs.get("preprocessing"))
+        return original(strain, fs, pad_s, **kwargs)
+
+    monkeypatch.setattr(real_data, "conditioned_crop", spy)
+    result = real_data.run_field_test(
+        ScoreModel(0.9), THRESHOLD, preprocessing="whiten_bandpass"
+    )
+    assert used == ["whiten_bandpass"] * (len(real_data.FIELD_TEST_EVENTS) + 1)
+    assert result["loaded"] == len(real_data.FIELD_TEST_EVENTS)
+    used.clear()
+    real_data.run_field_test(ScoreModel(0.9), THRESHOLD)
+    assert set(used) == {"bandpass"}
+
+
+def test_a_whitened_window_has_the_window_length_and_is_finite(fake_fetch):
+    window = real_data.load_window(1000, 1004, preprocessing="whiten_bandpass")
+    assert window.shape == (N_SAMPLES,)
+    assert np.all(np.isfinite(window)) and np.std(window) > 0

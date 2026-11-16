@@ -98,8 +98,9 @@ def test_indist_names_its_real_noise_share(stubbed, capsys):
 def test_the_field_test_is_named(stubbed, capsys, monkeypatch):
     calls = []
 
-    def field_test(model, threshold):
+    def field_test(model, threshold, preprocessing):
         calls.append(threshold)
+        assert preprocessing == "bandpass"
         return {"events_text": "4/4; OOD 0/1", "far_text": "0 false alarms in 0.0556 h"}
 
     monkeypatch.setattr(evaluate, "run_field_test", field_test)
@@ -276,7 +277,7 @@ def test_evaluate_uses_the_registry_threshold(small_sets, monkeypatch, tmp_path)
 
         monkeypatch.setattr(evaluate, name, spy)
 
-    def field_test(model, threshold):
+    def field_test(model, threshold, preprocessing):
         used.append(("run_field_test", threshold))
         return evaluate.NO_FIELD_TEST
 
@@ -363,3 +364,71 @@ def test_a_threshold_from_another_set_is_named(small_sets, tmp_path):
         evaluate.threshold_info(model), small_sets["stress_v1"]
     )
     assert "can differ" not in line
+
+
+# --- the model's preprocessing (V3) ---
+
+
+def write_metadata(tmp_path, **metadata):
+    """A metadata file for the stub model tmp_path / m.keras of the fixture stubbed."""
+    registry.write_metadata(str(tmp_path / "m.keras"), metadata)
+
+
+@pytest.mark.parametrize(
+    "metadata, asked, scored, preprocessing",
+    [
+        (
+            {"preprocessing": "whiten_bandpass"},
+            "indist_v2",
+            "indist_v3",
+            "whiten_bandpass",
+        ),
+        (
+            {"preprocessing": "whiten_bandpass"},
+            "stress_v3",
+            "stress_v3",
+            "whiten_bandpass",
+        ),
+        ({"dataset_scenario": "TRAIN_V2"}, "indist_v3", "indist_v2", "bandpass"),
+        ({}, "stress_v2", "stress_v2", "bandpass"),
+    ],
+)
+def test_the_model_gets_the_test_set_and_field_test_of_its_preprocessing(
+    stubbed,
+    monkeypatch,
+    tmp_path,
+    capsys,
+    small_sets,
+    metadata,
+    asked,
+    scored,
+    preprocessing,
+):
+    """A whitening model asked for a V2 set is scored on its V3 counterpart (the same
+    events), and the field test whitens the real data for it; old models keep today's
+    behaviour."""
+    write_metadata(tmp_path, **metadata)
+    built, field = [], []
+
+    def build(name, n, seed):
+        built.append(name)
+        return small_sets["stress_v1"]
+
+    def field_test(model, threshold, preprocessing):
+        field.append(preprocessing)
+        return evaluate.NO_FIELD_TEST
+
+    monkeypatch.setattr(evaluate.testsets, "build", build)
+    monkeypatch.setattr(evaluate, "run_field_test", field_test)
+    assert evaluate.run(real=True, testset=asked) == 0
+    assert built == [scored] and field == [preprocessing]
+    out = capsys.readouterr().out
+    assert f"Preprocessing of the model: {preprocessing}" in out
+    assert (f"scoring it on {scored}" in out) == (scored != asked)
+
+
+def test_a_whitening_model_on_a_v1_set_is_warned_about(stubbed, tmp_path, capsys):
+    write_metadata(tmp_path, preprocessing="whiten_bandpass")
+    assert evaluate.run(testset="stress_v1") == 0
+    out = capsys.readouterr().out
+    assert "has 'bandpass' and no counterpart with it" in out

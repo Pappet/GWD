@@ -40,6 +40,7 @@ from gwd.config import (
 )
 from gwd.data.preprocessing import normalize
 from gwd.data.provenance import UNKNOWN_V1, read_manifest
+from gwd.data.scenarios import DEFAULT_PREPROCESSING, SCENARIOS
 from gwd.data.validate import (
     LABELS_READ_ERRORS,
     InvalidDatasetError,
@@ -141,24 +142,33 @@ def dataset_provenance(data_folder):
     """What the model's metadata records about its dataset, from manifest.json.
 
     A dataset without a manifest was written before P4.1; every field is then
-    UNKNOWN_V1.
+    UNKNOWN_V1, except preprocessing. preprocessing is what the model's input went
+    through (gwd.data.scenarios.PREPROCESSINGS): that of the scenario, and
+    DEFAULT_PREPROCESSING for a dataset without a manifest (V1) or with an unknown
+    scenario. Evaluation and the Glitch Hunter read it back to preprocess the data
+    they give the model (gwd.data.scenarios.preprocessing_of).
     """
     manifest, digest = read_manifest(data_folder)
     if manifest is None:
-        return dict.fromkeys(
-            (
-                "dataset_manifest_sha256",
-                "dataset_scenario",
-                "waveform_backend",
-                "real_noise_fraction",
+        return {
+            **dict.fromkeys(
+                (
+                    "dataset_manifest_sha256",
+                    "dataset_scenario",
+                    "waveform_backend",
+                    "real_noise_fraction",
+                ),
+                UNKNOWN_V1,
             ),
-            UNKNOWN_V1,
-        )
+            "preprocessing": DEFAULT_PREPROCESSING,
+        }
+    scenario = SCENARIOS.get(manifest["scenario"])
     return {
         "dataset_manifest_sha256": digest,
         "dataset_scenario": manifest["scenario"],
         "waveform_backend": manifest["waveform_backend"],
         "real_noise_fraction": manifest["real_noise_fraction"],
+        "preprocessing": scenario.preprocessing if scenario else DEFAULT_PREPROCESSING,
     }
 
 
@@ -384,7 +394,8 @@ def _train_and_save(cfg, policy, run_seed):
         print(
             f"Dataset: {provenance['dataset_scenario']}, backend "
             f"{provenance['waveform_backend']}, real noise "
-            f"{provenance['real_noise_fraction']:.0%}"
+            f"{provenance['real_noise_fraction']:.0%}, preprocessing "
+            f"{provenance['preprocessing']}"
         )
     split = split_dataset(data.labels, run_seed)
     X_train, y_train = data.X[split.train], data.y[split.train]

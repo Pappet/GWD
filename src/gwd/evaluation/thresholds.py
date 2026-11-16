@@ -21,6 +21,10 @@ chosen on the part test, so their test numbers are optimistic, and nothing uses 
 3. Cost-based: weights the two error types differently
 4. Fixed FPR: maximizes the TPR at a given FPR limit (5% and 1%)
 5. Fixed TPR: minimizes the FPR at a TPR of 90%
+
+Since V3 the threshold is calibrated on data with the model's preprocessing
+(gwd.evaluation.testsets.set_for_model): a whitening model asked for indist_v2 or
+stress_v2 is calibrated on indist_v3 or stress_v3, and the metadata names that set.
 """
 
 import datetime
@@ -328,6 +332,12 @@ def run(
     except FileNotFoundError as error:
         print(f"❌ {error}")
         return 1
+
+    # The set with the model's preprocessing (V3): a counterpart of testset if needed.
+    testset, preprocessing, note = testsets.set_for_model(testset, model_path)
+    print(f"Preprocessing of the model: {preprocessing}")
+    if note:
+        print(note)
 
     # 2. The test set first: drawing it needs PyCBC, so a missing backend stops
     # before the model takes its time to load.

@@ -18,6 +18,10 @@ The counts are honest about what was measured:
 
 fetch_strain keeps a local copy of every downloaded file (cache=True), so a second run
 reads the data from disk.
+
+The data get the preprocessing the model was trained with (V3): "bandpass" (notches
+and band-pass, V1 and V2 models) or "whiten_bandpass", which first whitens each padded
+segment with its own Welch PSD (gwd.data.preprocessing.whiten_strain).
 """
 
 from dataclasses import dataclass
@@ -27,6 +31,7 @@ import numpy as np
 from gwd.config import N_SAMPLES, SAMPLE_RATE
 from gwd.data.gwosc import StrainError, event, fetch_strain
 from gwd.data.preprocessing import conditioned_crop, normalize
+from gwd.data.scenarios import DEFAULT_PREPROCESSING
 from gwd.evaluation.metrics import predict_labels
 
 DETECTOR = "H1"
@@ -82,14 +87,18 @@ NO_FIELD_TEST = {
 }
 
 
-def load_window(start, end, pad_s=PAD_S, detector=DETECTOR):
+def load_window(
+    start, end, pad_s=PAD_S, detector=DETECTOR, preprocessing=DEFAULT_PREPROCESSING
+):
     """Download [start, end) with pad_s on each side, condition it, crop the pads.
 
-    Returns (end - start) * SAMPLE_RATE samples. Raises StrainError (from fetch_strain,
-    or here if the cropped data have another length) instead of resizing.
+    preprocessing "whiten_bandpass" whitens the padded data with its own Welch PSD
+    before the conditioning. Returns (end - start) * SAMPLE_RATE samples. Raises
+    StrainError (from fetch_strain, or here if the cropped data have another length)
+    instead of resizing.
     """
     strain = fetch_strain(detector, start, end, pad_s=pad_s)
-    data = conditioned_crop(strain, SAMPLE_RATE, pad_s)
+    data = conditioned_crop(strain, SAMPLE_RATE, pad_s, preprocessing=preprocessing)
     expected = round((end - start) * SAMPLE_RATE)
     if len(data) != expected:
         raise StrainError(
@@ -104,12 +113,12 @@ def event_window(ev):
     return int(ev.gps - 2.0), int(ev.gps + 2.0)
 
 
-def score_events(model, events=FIELD_TEST_EVENTS):
+def score_events(model, events=FIELD_TEST_EVENTS, preprocessing=DEFAULT_PREPROCESSING):
     """Score each event's window. Returns {name: score}, None where loading failed."""
     scores = {}
     for ev in events:
         try:
-            window = load_window(*event_window(ev))
+            window = load_window(*event_window(ev), preprocessing=preprocessing)
         except Exception as error:
             print(f"   ⚠️ {ev.name} skipped: {error}")
             scores[ev.name] = None
@@ -131,13 +140,19 @@ def count_events(scores, threshold, events=FIELD_TEST_EVENTS):
     return tuple(counts)
 
 
-def count_false_alarms(model, threshold, start=NOISE_START, duration=NOISE_DURATION):
+def count_false_alarms(
+    model,
+    threshold,
+    start=NOISE_START,
+    duration=NOISE_DURATION,
+    preprocessing=DEFAULT_PREPROCESSING,
+):
     """Score the noise in windows of N_SAMPLES. Returns (false alarms, seconds analysed).
 
     Returns (None, 0) if the noise cannot be loaded.
     """
     try:
-        data = load_window(start, start + duration)
+        data = load_window(start, start + duration, preprocessing=preprocessing)
     except Exception as error:
         print(f"   ⚠️ Noise skipped: {error}")
         return None, 0
@@ -149,11 +164,19 @@ def count_false_alarms(model, threshold, start=NOISE_START, duration=NOISE_DURAT
     return int(predict_labels(scores, threshold).sum()), seconds
 
 
-def run_field_test(model, threshold, events=FIELD_TEST_EVENTS):
-    """Score the events and count the false alarms on real noise (network)."""
-    print(f"\n🌍 [REAL WORLD] Field test on real {DETECTOR} data (pad {PAD_S} s)...")
+def run_field_test(
+    model, threshold, events=FIELD_TEST_EVENTS, preprocessing=DEFAULT_PREPROCESSING
+):
+    """Score the events and count the false alarms on real noise (network).
 
-    scores = score_events(model, events)
+    preprocessing is the model's (gwd.data.scenarios.preprocessing_of).
+    """
+    print(
+        f"\n🌍 [REAL WORLD] Field test on real {DETECTOR} data (pad {PAD_S} s, "
+        f"preprocessing {preprocessing})..."
+    )
+
+    scores = score_events(model, events, preprocessing)
     in_range, ood = count_events(scores, threshold, events)
 
     print(f"\n   Event scores (detected at score >= {threshold}):")
@@ -169,7 +192,9 @@ def run_field_test(model, threshold, events=FIELD_TEST_EVENTS):
     print(f"   Outside (OOD):         {ood.text}")
 
     print(f"\n   Scoring {NOISE_DURATION} s of background noise...")
-    false_alarms, seconds = count_false_alarms(model, threshold)
+    false_alarms, seconds = count_false_alarms(
+        model, threshold, preprocessing=preprocessing
+    )
     far = far_text(false_alarms, seconds)
     print(f"   -> {far}")
 

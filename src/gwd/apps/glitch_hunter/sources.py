@@ -6,11 +6,15 @@ Nothing here draws or touches matplotlib, so a worker thread may call any of it.
   'Training' draws from TRAIN_V1, the training distribution, and is the start mode;
   'Challenge' draws from APP_V1, which is deliberately hard (decision D4). Since P6.2
   each mode also exists in scenario V2 (MODES_V2: TRAIN_V2 and APP_V2, simulated aLIGO
-  noise conditioned with the signal, optimal SNR); V1 stays the default until P6.5.
-  V2 needs gwpy for the conditioning.
+  noise conditioned with the signal, optimal SNR), and since V3 in scenario V3
+  (MODES_V3: TRAIN_V3 and APP_V3, the same whitened before the band-pass). V2 and V3
+  need gwpy for the conditioning. The app starts in the version of the model's
+  training scenario (start_version), else in DEFAULT_VERSION.
 - GwoscSource downloads a known event or a random stretch of O3 noise with a pad of
   PAD_S seconds on each side, conditions it as a whole, and crops the pads
-  (conditioned_crop), like the field test of gwd.evaluation.real_data (P4.3).
+  (conditioned_crop), like the field test of gwd.evaluation.real_data (P4.3). Its
+  preprocessing is that of the model ("whiten_bandpass" whitens with the Welch PSD of
+  the padded data first).
 """
 
 import importlib.util
@@ -24,7 +28,16 @@ from gwd.config import DURATION, N_SAMPLES, SAMPLE_RATE
 from gwd.data.gwosc import EVENTS, StrainError, fetch_strain
 from gwd.data.injection import make_sample, real_noise_provider
 from gwd.data.preprocessing import conditioned_crop, normalize
-from gwd.data.scenarios import APP_V1, APP_V2, TRAIN_V1, TRAIN_V2
+from gwd.data.scenarios import (
+    APP_V1,
+    APP_V2,
+    APP_V3,
+    DEFAULT_PREPROCESSING,
+    SCENARIOS,
+    TRAIN_V1,
+    TRAIN_V2,
+    TRAIN_V3,
+)
 
 DETECTOR = "H1"
 
@@ -47,7 +60,7 @@ EVENT_CLEARANCE_S = DURATION + 2 * PAD_S
 class Mode:
     """A simulation mode: its name in the GUI, its scenario, what it means, its version.
 
-    version is the scenario version (1 or 2); a mode name exists in both.
+    version is the scenario version (1, 2, or 3); a mode name exists in each.
     """
 
     name: str
@@ -85,9 +98,45 @@ CHALLENGE_V2 = Mode(
 )
 MODES_V2 = (TRAINING_V2, CHALLENGE_V2)
 
-# The modes of each scenario version; DEFAULT_VERSION is the start version.
-VERSIONS = {1: MODES, 2: MODES_V2}
+# The same modes in scenario V3: V2 whitened with the aLIGO PSD before the band-pass.
+TRAINING_V3 = Mode(
+    "Training",
+    TRAIN_V3,
+    "the V3 training distribution (TRAIN_V3): TRAIN_V2 whitened with the aLIGO PSD "
+    "before the band-pass, optimal SNR 4-20, masses 5-100 Msun",
+    version=3,
+)
+CHALLENGE_V3 = Mode(
+    "Challenge",
+    APP_V3,
+    "deliberately hard, inside TRAIN_V3 (APP_V3): 30/30 Msun at optimal SNR 4-8, "
+    "whitened",
+    version=3,
+)
+MODES_V3 = (TRAINING_V3, CHALLENGE_V3)
+
+# The modes of each scenario version; DEFAULT_VERSION is the start version without a
+# model or for a model whose training scenario is unknown.
+VERSIONS = {1: MODES, 2: MODES_V2, 3: MODES_V3}
 DEFAULT_VERSION = 1
+
+
+def start_version(metadata):
+    """The scenario version the simulation starts in: that of the model's training.
+
+    The version of the scenario named in the metadata's dataset_scenario if it is a
+    known one with Glitch Hunter modes, else DEFAULT_VERSION (no model, or a model
+    from before P4.1).
+    """
+    scenario = SCENARIOS.get((metadata or {}).get("dataset_scenario"))
+    if scenario is None or scenario.version not in VERSIONS:
+        return DEFAULT_VERSION
+    return scenario.version
+
+
+def version_preprocessing(version):
+    """The preprocessing of scenario version version's samples."""
+    return VERSIONS[version][0].scenario.preprocessing
 
 
 def mode_title(mode):
@@ -114,6 +163,7 @@ class LoadedSample:
     noise_kind: "white", "real", or "aligo" (simulation), "gwosc" for downloaded data.
     event: the gwd.data.gwosc.Event in the window, else None.
     note: the mode's note, or why the simulation stands in for a failed download.
+    preprocessing: what data went through: "bandpass" or "whiten_bandpass" (V3).
     """
 
     data: np.ndarray
@@ -126,6 +176,7 @@ class LoadedSample:
     noise_kind: str = "white"
     event: Optional[object] = None
     note: str = ""
+    preprocessing: str = DEFAULT_PREPROCESSING
 
     @property
     def out_of_distribution(self):
@@ -163,6 +214,7 @@ class SimSource:
             signal=sample.signal,
             noise_kind=sample.noise_kind,
             note=self.mode.note if note is None else note,
+            preprocessing=scenario.preprocessing,
         )
 
 
@@ -175,14 +227,23 @@ class GwoscSource:
     """Real H1 data from GWOSC: a known event or random O3 noise, 50/50.
 
     rng is a random.Random (default: the module random). fetch is the download
-    function, gwd.data.gwosc.fetch_strain; tests pass a fake.
+    function, gwd.data.gwosc.fetch_strain; tests pass a fake. preprocessing is what the
+    data go through, the model's (gwd.data.scenarios.preprocessing_of).
     """
 
-    def __init__(self, detector=DETECTOR, pad_s=PAD_S, rng=None, fetch=None):
+    def __init__(
+        self,
+        detector=DETECTOR,
+        pad_s=PAD_S,
+        rng=None,
+        fetch=None,
+        preprocessing=DEFAULT_PREPROCESSING,
+    ):
         self.detector = detector
         self.pad_s = pad_s
         self.rng = rng or random
         self.fetch = fetch or fetch_strain
+        self.preprocessing = preprocessing
 
     def pick(self):
         """Choose (start, end, event): a known event's window or a noise window.
@@ -202,14 +263,20 @@ class GwoscSource:
             if all(abs(start - e.gps) > EVENT_CLEARANCE_S for e in EVENTS):
                 return start, start + int(DURATION)
 
-    def load(self, start, end):
+    def load(self, start, end, preprocessing=None):
         """Download [start, end) with the pads, condition it whole, crop the pads.
 
-        Returns N_SAMPLES values normalized with eps=0 (the conditioned strain has a std
-        near 1e-21, so an eps would dominate). Raises StrainError instead of resizing.
+        preprocessing defaults to self.preprocessing. Returns N_SAMPLES values
+        normalized with eps=0 (the conditioned strain has a std near 1e-21, so an eps
+        would dominate). Raises StrainError instead of resizing.
         """
         strain = self.fetch(self.detector, start, end, pad_s=self.pad_s)
-        data = conditioned_crop(strain, SAMPLE_RATE, self.pad_s)
+        data = conditioned_crop(
+            strain,
+            SAMPLE_RATE,
+            self.pad_s,
+            preprocessing=preprocessing or self.preprocessing,
+        )
         if len(data) != N_SAMPLES:
             raise StrainError(
                 f"{self.detector} {start}-{end}: {len(data)} samples after the crop, "
@@ -219,8 +286,10 @@ class GwoscSource:
 
     def draw(self):
         """Download one window. Raises whatever the download or the check raises."""
+        # Read once: the GUI thread may change it while this runs in a worker thread.
+        preprocessing = self.preprocessing
         start, end, event = self.pick()
-        data = self.load(start, end)
+        data = self.load(start, end, preprocessing)
         if event is None:
             name, note = f"Real noise, O3, GPS {start}", "no known event in the window"
         else:
@@ -236,4 +305,5 @@ class GwoscSource:
             noise_kind="gwosc",
             event=event,
             note=note,
+            preprocessing=preprocessing,
         )

@@ -11,6 +11,10 @@ The sets are defined in gwd.data.scenarios.TESTSETS (default of D4):
 - indist_v2 and stress_v2 (P6.2): TRAIN_V2 (simulated aLIGO noise, conditioned with
   the signal, optimal SNR 4-20), and the same with an extrapolation bin of optimal
   SNR 2-4 below it. Their training reference is TRAIN_V2.
+- indist_v3 and stress_v3 (V3): the V2 sets whitened before the band-pass. They draw
+  from the random streams of indist_v2 and stress_v2 (EvalSet.stream), so with the same
+  seed and n they hold the same events and noise; only the preprocessing differs.
+  Their training reference is TRAIN_V3.
 
 A set has two parts, drawn from separate random streams:
 
@@ -37,7 +41,8 @@ other noise chunks than data/noise_background/ holds now. build() never replaces
 cached set on its own; rebuild=True (gwd eval build-testset --rebuild) does.
 
 Random streams: each part draws from np.random.RandomState(MT19937(SeedSequence(seed,
-spawn_key=(SEED_STREAM, crc32(name), part)))). Training seeds the legacy MT19937 with
+spawn_key=(SEED_STREAM, crc32(stream), part)))), where stream is the set's
+EvalSet.stream_name: its own name, or for a V3 set the name of its V2 counterpart. Training seeds the legacy MT19937 with
 the integer itself (gwd data generate, np.random.seed in gwd train) or SeedSequence(seed)
 without a spawn key (the split, TensorFlow), so no training seed gives a test set
 stream. Nothing here touches the global numpy RNG.
@@ -75,7 +80,8 @@ from gwd.data.generate import NOISE_SOURCES
 from gwd.data.injection import make_sample, real_noise_files, real_noise_provider
 from gwd.data.preprocessing import normalize
 from gwd.data.provenance import TIME_AXIS, git_commit, package_version, sha256_file
-from gwd.data.scenarios import TESTSETS
+from gwd.data.scenarios import TESTSETS, counterpart_set, preprocessing_of
+from gwd.registry import read_metadata
 
 # Raise it whenever build() draws or stores differently, so old caches count as stale.
 TESTSET_FORMAT = 1
@@ -150,6 +156,52 @@ def get(name):
         ) from None
 
 
+def for_preprocessing(name, preprocessing):
+    """(the set a model with preprocessing is scored on, a note or None), for set name.
+
+    A model gets the preprocessing it was trained with (gwd.data.scenarios.
+    preprocessing_of). If the set name has another one, its counterpart with the same
+    draws is used instead (indist_v2 <-> indist_v3, stress_v2 <-> stress_v3: the same
+    events and noise, preprocessed for the model), and the note says so. If there is no
+    counterpart (the V1 sets for a whitening model), the set stays and the note warns
+    that the model sees preprocessing it was not trained with.
+    """
+    spec = get(name)
+    match = counterpart_set(spec, preprocessing)
+    if match is spec:
+        return spec.name, None
+    if match is None:
+        return spec.name, (
+            f"⚠️ The model expects preprocessing '{preprocessing}', but {spec.name} has "
+            f"'{spec.preprocessing}' and no counterpart with it; its scores on "
+            f"{spec.name} do not show what it does on data it was trained for."
+        )
+    return match.name, (
+        f"The model expects preprocessing '{preprocessing}': scoring it on "
+        f"{match.name}, the counterpart of {spec.name} with the same events and noise."
+    )
+
+
+def model_preprocessing(model_path):
+    """The preprocessing the model expects, from its metadata through the registry.
+
+    Models without the key (all trained before V3) get that of their dataset scenario,
+    or "bandpass", what they always got (gwd.data.scenarios.preprocessing_of).
+    """
+    return preprocessing_of(read_metadata(model_path))
+
+
+def set_for_model(name, model_path):
+    """(set name, preprocessing, note) for scoring the model at model_path on set name.
+
+    for_preprocessing() with the model's preprocessing: the counterpart of name with
+    the model's preprocessing, if name has another one.
+    """
+    preprocessing = model_preprocessing(model_path)
+    chosen, note = for_preprocessing(name, preprocessing)
+    return chosen, preprocessing, note
+
+
 def file_stem(name, seed, n):
     return f"{name}_{seed}_{n}"
 
@@ -164,7 +216,11 @@ def paths(name, seed, n, data_dir=None, manifest_dir=None):
 
 
 def part_rng(name, seed, part):
-    """The RandomState of one part of a set, disjoint from every training stream."""
+    """The RandomState of one part of a set, disjoint from every training stream.
+
+    name is the set's stream name (EvalSet.stream_name), which is its own name except
+    for the V3 sets, which draw from the streams of their V2 counterparts.
+    """
     key = (SEED_STREAM, zlib.crc32(name.encode()), PARTS.index(part))
     sequence = np.random.SeedSequence(seed, spawn_key=key)
     return np.random.RandomState(np.random.MT19937(sequence))
@@ -223,7 +279,7 @@ def _draw(spec, seed, n, noise_dir, backend):
         provider = real_noise_provider(noise_dir or DATA_DIR_NOISE)
 
     edges = spec.snr_edges()
-    rng = part_rng(spec.name, seed, "test")
+    rng = part_rng(spec.stream_name, seed, "test")
     X = np.empty((n, N_SAMPLES), dtype=SAMPLE_DTYPE)
     columns = {key: [] for key in ("y", "peak_snr", "optimal_snr", "mass1", "mass2")}
     columns.update(t_merger=[], noise_source=[], noise_file=[])
@@ -255,7 +311,7 @@ def _draw(spec, seed, n, noise_dir, backend):
         columns["noise_source"].append(NOISE_SOURCES[sample.noise_kind])
         columns["noise_file"].append(sample.noise_file or "")
 
-    rng = part_rng(spec.name, seed, "calib_bg")
+    rng = part_rng(spec.stream_name, seed, "calib_bg")
     calib = np.empty((n, N_SAMPLES), dtype=SAMPLE_DTYPE)
     calib_source, calib_file = [], []
     for i in range(n):
@@ -317,7 +373,9 @@ def build_manifest(spec, seed, n, arrays, sha256, path, noise_dir, backend):
         "name, dtype, shape, bytes",
         "file": os.path.abspath(path),
         "rng": "RandomState(MT19937(SeedSequence(seed, spawn_key=("
-        f"{SEED_STREAM:#x}, crc32(name), part))))",
+        f"{SEED_STREAM:#x}, crc32(stream), part))))",
+        "stream": spec.stream_name,
+        "preprocessing": spec.preprocessing,
         "time_axis": TIME_AXIS,
         "waveform_backend": backend_label(backend),
         "scenario_fields": spec.scenario.distribution(),

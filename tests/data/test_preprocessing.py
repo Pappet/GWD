@@ -4,7 +4,13 @@ import numpy as np
 import pytest
 
 from gwd.config import BANDPASS, DURATION, NOTCH_FREQS, SAMPLE_RATE
-from gwd.data.preprocessing import condition_strain, normalize
+from gwd.data.preprocessing import (
+    check_preprocessing,
+    condition_strain,
+    normalize,
+    welch_psd_on_grid,
+    whiten,
+)
 
 LINES_HZ = (60, 120, 180, 240)
 
@@ -91,3 +97,72 @@ def test_eps_dominates_on_raw_strain_so_strain_needs_eps_zero():
     strain = np.random.default_rng(4).normal(0.0, 1e-21, 16384)
     assert np.std(normalize(strain)) < 1e-9
     assert np.std(normalize(strain, eps=0.0)) == pytest.approx(1.0, rel=1e-9)
+
+
+# --- whitening (V3) ---
+
+
+def test_whiten_with_the_flat_psd_of_white_noise_divides_by_sigma():
+    """White noise of std sigma has the PSD 2 sigma^2 / fs; whitening gives x / sigma."""
+    rng = np.random.default_rng(1)
+    n, sigma = 4096, 3.0
+    x = rng.normal(0.0, sigma, n)
+    psd = np.full(n // 2 + 1, 2 * sigma**2 / SAMPLE_RATE)
+    white = whiten(x, SAMPLE_RATE, psd)
+    np.testing.assert_allclose(white, (x - x.mean()) / sigma, atol=1e-12)
+
+
+def test_whiten_is_linear_and_zeroes_bins_without_power():
+    rng = np.random.default_rng(2)
+    n = 2048
+    a, b = rng.normal(size=n), rng.normal(size=n)
+    freqs = np.fft.rfftfreq(n, 1 / SAMPLE_RATE)
+    psd = np.where(freqs < 10, 0.0, 1e-3 * (1 + freqs / 100))
+    np.testing.assert_allclose(
+        whiten(a + b, SAMPLE_RATE, psd),
+        whiten(a, SAMPLE_RATE, psd) + whiten(b, SAMPLE_RATE, psd),
+        atol=1e-12,
+    )
+    spectrum = np.fft.rfft(whiten(a, SAMPLE_RATE, psd))
+    assert np.all(np.abs(spectrum[freqs < 10]) < 1e-9)
+
+
+def test_whiten_rejects_a_psd_on_another_grid_and_a_long_taper():
+    x = np.zeros(1024)
+    with pytest.raises(ValueError, match="1024 samples need 513"):
+        whiten(x, SAMPLE_RATE, np.ones(512))
+    with pytest.raises(ValueError, match="taper"):
+        whiten(x, SAMPLE_RATE, np.ones(513), taper_s=1.0)
+
+
+def test_the_taper_leaves_the_middle_and_damps_the_ends():
+    n = 4 * SAMPLE_RATE
+    x = np.random.default_rng(3).normal(size=n)
+    psd = np.full(n // 2 + 1, 2 / SAMPLE_RATE)
+    plain = whiten(x, SAMPLE_RATE, psd)
+    tapered = whiten(x, SAMPLE_RATE, psd, taper_s=1.0)
+    middle = slice(SAMPLE_RATE + 1, 3 * SAMPLE_RATE - 1)
+    # The same up to the mean, which whitening removes (DC) and the taper changes.
+    assert np.std(tapered[middle] - plain[middle]) < 1e-9
+    assert np.abs(tapered[:4]).max() < 0.01 and np.abs(tapered[-4:]).max() < 0.01
+
+
+def test_the_welch_psd_of_white_noise_is_flat_and_robust_to_a_burst():
+    """The median average keeps a short loud burst from raising the estimate."""
+    rng = np.random.default_rng(4)
+    x = rng.normal(0.0, 1.0, 36 * SAMPLE_RATE)
+    psd = welch_psd_on_grid(x, SAMPLE_RATE)
+    freqs = np.fft.rfftfreq(len(x), 1 / SAMPLE_RATE)
+    band = (freqs >= 20) & (freqs <= 300)
+    assert psd.shape == (len(x) // 2 + 1,)
+    np.testing.assert_allclose(np.median(psd[band]) * SAMPLE_RATE / 2, 1.0, rtol=0.05)
+    burst = x.copy()
+    burst[18 * SAMPLE_RATE : 18 * SAMPLE_RATE + 400] += 50 * rng.normal(size=400)
+    loud = welch_psd_on_grid(burst, SAMPLE_RATE)
+    assert np.median(loud[band] / psd[band]) < 1.3
+
+
+def test_an_unknown_preprocessing_is_rejected():
+    assert check_preprocessing("whiten_bandpass") == "whiten_bandpass"
+    with pytest.raises(ValueError, match="whiten_bandpass"):
+        check_preprocessing("whiten")

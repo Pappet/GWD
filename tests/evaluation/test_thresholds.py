@@ -209,3 +209,21 @@ def test_calibrate_reports_tpr_and_fpr_on_test_with_n():
     assert result["calib_fpr"] == 0.01
     assert (result["test_tpr"], result["n_signal"]) == (pytest.approx(2 / 3), 3)
     assert (result["test_fpr"], result["n_noise"]) == (0.5, 2)
+
+
+def test_a_whitening_model_is_calibrated_on_the_whitened_counterpart(
+    stubbed, monkeypatch, small_set, capsys
+):
+    """V3: asked for indist_v2, a model trained on TRAIN_V3 is calibrated on indist_v3,
+    and its metadata names that set."""
+    registry.write_metadata(stubbed["path"], {"dataset_scenario": "TRAIN_V3"})
+    asked = []
+
+    def build(name, n, seed):
+        asked.append(name)
+        return small_set
+
+    monkeypatch.setattr(thresholds.testsets, "build", build)
+    assert thresholds.run(testset="indist_v2") == 0
+    assert asked == ["indist_v3"]
+    assert "Preprocessing of the model: whiten_bandpass" in capsys.readouterr().out

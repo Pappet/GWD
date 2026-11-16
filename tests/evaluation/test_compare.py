@@ -200,3 +200,42 @@ def test_score_models_marks_the_operating_point(monkeypatch):
     (curve,) = compare.score_models(["gwd_model_x"], y[:, None, None], y)
     assert (curve.threshold, curve.op_tpr, curve.op_fpr) == (0.5, 1.0, 0.0)
     assert curve.roc_auc == 1.0
+
+
+def test_a_whitening_model_is_scored_on_the_whitened_counterpart(
+    stubbed, monkeypatch, capsys
+):
+    """V3: with --testset indist_v2, a whitening model gets indist_v3 (same labels),
+    the others indist_v2; each set is built once and named in the title."""
+    names, log, figures = stubbed
+    built, seen = [], {}
+    build = compare.testsets.build
+
+    def record(name, n, seed):
+        built.append(name)
+        test_set = build(name, n, seed)
+        test_set.X = test_set.X + (100.0 if name == "indist_v3" else 0.0)
+        test_set.spec = compare.testsets.get(name)
+        return test_set
+
+    def set_for_model(name, path):
+        if path == "gwd_model_c":
+            return "indist_v3", "whiten_bandpass", "note for c"
+        return name, "bandpass", None
+
+    original = compare.score_models
+
+    def spy(paths, X_test, y_true, inputs=None):
+        for path in paths:
+            seen[path] = float((inputs or {}).get(path, X_test)[0, 0, 0])
+        return original(paths, X_test, y_true, inputs)
+
+    monkeypatch.setattr(compare.testsets, "build", record)
+    monkeypatch.setattr(compare.testsets, "set_for_model", set_for_model)
+    monkeypatch.setattr(compare, "score_models", spy)
+    assert compare.run(names, testset="indist_v2", seed=1, n=10) == 0
+    assert sorted(built) == ["indist_v2", "indist_v3"]
+    assert seen == {"gwd_model_a": 0.0, "gwd_model_b": 0.0, "gwd_model_c": 100.0}
+    assert "gwd_model_c: note for c" in capsys.readouterr().out
+    title = figures[0][1].axes[0].get_title()
+    assert "models with whiten_bandpass on indist_v3" in title
