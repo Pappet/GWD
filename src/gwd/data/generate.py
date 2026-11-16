@@ -19,6 +19,7 @@ from gwd.core.waveforms import (
     generate_astrophysical_chirp,
     generate_random_bbh_parameters,
 )
+from gwd.data.preprocessing import normalize
 
 REAL_NOISE_DIR = DATA_DIR_NOISE
 
@@ -64,8 +65,9 @@ def load_random_real_noise(length):
             else:
                 return generate_gaussian_noise(length, 1.0)
 
-        # WICHTIG: Normalisierung, damit SNR-Berechnung konsistent ist
-        data = (data - np.mean(data)) / (np.std(data) + 1e-10)
+        # Default eps as before. On raw strain (std ~1e-21) eps dominates, so the
+        # result has a std of ~1e-11, not 1. Kept as is (V1); see the P3.2 PR.
+        data = normalize(data)
         return data
     except Exception:
         return generate_gaussian_noise(length, 1.0)

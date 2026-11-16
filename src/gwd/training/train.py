@@ -8,6 +8,7 @@ from gwd.config import (
     TRAINING_PLOTS_DIR,
     ensure_dirs,
 )
+from gwd.data.preprocessing import normalize
 
 # --- 1. LOGGING BEREINIGEN (Muss vor dem TensorFlow Import stehen!) ---
 # 0 = Alle Nachrichten (Standard)
@@ -75,9 +76,8 @@ def load_data():
             file_path = os.path.join(DATA_FOLDER, row["filename"])
             data = np.load(file_path)
 
-            # Robustere Normalisierung
-            # WICHTIG: Addiere kleines Epsilon auch im Zähler, falls std sehr klein ist (selten)
-            data = (data - np.mean(data)) / (np.std(data) + 1e-10)
+            # Z-score with the default eps, as before
+            data = normalize(data)
 
             # Sicherstellen, dass die Länge stimmt (Clip/Pad)
             TARGET_LEN = N_SAMPLES

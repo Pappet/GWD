@@ -30,7 +30,7 @@ from sklearn.metrics import (
 
 from gwd.core.noise import generate_gaussian_noise
 from gwd.core.waveforms import generate_astrophysical_chirp
-from gwd.data.preprocessing import preprocess_real_data
+from gwd.data.preprocessing import condition_strain, normalize
 from gwd.evaluation.leaderboard import update_leaderboard_roc
 from gwd.registry import MODEL_HELP, load_model, resolve
 
@@ -101,7 +101,7 @@ def evaluate_simulation_with_roc(model):
         else:
             data = noise
 
-        data = (data - np.mean(data)) / np.std(data)
+        data = normalize(data)
         X_roc.append(data)
         y_true_roc.append(1 if has_sig else 0)
 
@@ -143,7 +143,7 @@ def evaluate_simulation_with_roc(model):
             t_m = np.random.uniform(2.0, 3.5)
             sig, _ = generate_astrophysical_chirp(time, t_merger=t_m)
             data = noise + (sig * snr)
-            data = (data - np.mean(data)) / np.std(data)
+            data = normalize(data)
             X_batch.append(data)
 
         X = np.array(X_batch).reshape(n_batch, len(time), 1)
@@ -314,12 +314,13 @@ def evaluate_real_world(model):
             t_end = int(gps + 2.0)
 
             strain = TimeSeries.fetch_open_data("H1", t_start, t_end, verbose=False)
-            data = preprocess_real_data(strain, SAMPLE_RATE)
+            data = condition_strain(strain, SAMPLE_RATE)
 
             expected = N_SAMPLES
             if len(data) != expected:
                 data = np.resize(data, expected)
-            data = (data - np.mean(data)) / np.std(data)
+            # eps=0: the conditioned strain has a std near 1e-21, eps would dominate
+            data = normalize(data, eps=0.0)
 
             pred = model.predict(data.reshape(1, expected, 1), verbose=0)[0][0]
             event_scores[name] = pred
@@ -349,14 +350,14 @@ def evaluate_real_world(model):
         long_strain = TimeSeries.fetch_open_data(
             "H1", REAL_NOISE_START, REAL_NOISE_START + REAL_NOISE_DUR, verbose=False
         )
-        clean_data = preprocess_real_data(long_strain, SAMPLE_RATE)
+        clean_data = condition_strain(long_strain, SAMPLE_RATE)
 
         step = N_SAMPLES
         num_cuts = len(clean_data) // step
 
         for i in range(num_cuts):
             segment = clean_data[i * step : (i + 1) * step]
-            segment = (segment - np.mean(segment)) / np.std(segment)
+            segment = normalize(segment, eps=0.0)
 
             pred = model.predict(segment.reshape(1, step, 1), verbose=0)[0][0]
             if pred > THRESHOLD:

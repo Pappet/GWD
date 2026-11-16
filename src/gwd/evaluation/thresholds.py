@@ -30,6 +30,7 @@ from sklearn.metrics import f1_score, precision_recall_curve, roc_curve
 
 from gwd.core.noise import generate_gaussian_noise
 from gwd.core.waveforms import generate_astrophysical_chirp
+from gwd.data.preprocessing import normalize
 from gwd.registry import MODEL_HELP, load_model, resolve
 
 TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -52,7 +53,7 @@ def generate_test_data(n_samples=500):
         else:
             data = noise
 
-        data = (data - np.mean(data)) / np.std(data)
+        data = normalize(data)
         X.append(data)
         y.append(1 if has_sig else 0)
 
