@@ -32,7 +32,6 @@ CHIRP = {
     "distance_mpc": 400,
     "normalize": False,
 }
-CHIRP_SAMPLES = [1000, 4000, 8000, 11000, 12000]
 NOISE_SAMPLES = [0, 1, 100, 8192, 16383]
 FIXED_INPUT_SAMPLES = [0, 100, 250, 500, 999]
 
@@ -71,13 +70,6 @@ def _seed():
 
     random.seed(SEED)
     np.random.seed(SEED)
-
-
-def _measure_newton(time, waveforms):
-    strain, freq = waveforms.generate_chirp(time, backend="newton", **CHIRP)
-    summary = _summary(strain, CHIRP_SAMPLES)
-    summary["f_at_peak"] = float(freq[summary["argmax_abs"]])
-    return summary
 
 
 def _measure_noise(noise):
@@ -126,11 +118,9 @@ def _measure_dataset(dataset):
     import pandas as pd
 
     _seed()
-    # Newton on purpose: the dataset values stay numpy-only (P5.2). The pipeline itself
-    # always draws with PyCBC.
-    dataset.generate_dataset(
-        NUM_DATASET_SAMPLES, dataset.DATA_DIR_TRAIN, backend="newton"
-    )
+    # PyCBC, as in the pipeline: since P6.1 it is the only backend (D1 = A). Until then
+    # the dataset was drawn with the numpy-only backend, which P6.1 deleted.
+    dataset.generate_dataset(NUM_DATASET_SAMPLES, dataset.DATA_DIR_TRAIN)
     # keep_default_na: empty cells (no backend, no chunk) stay "" instead of NaN.
     labels = pd.read_csv(
         os.path.join(dataset.DATA_DIR_TRAIN, "labels.csv"), keep_default_na=False
@@ -185,26 +175,21 @@ def _measure(output):
         )
 
     time = time_axis(4096, 4.0)
-    # Everything except the PyCBC section passes backend="newton", the numpy-only path.
+    # PyCBC is required (since P6.1): the dataset and the PyCBC section draw with it,
+    # and measuring fails without it.
     measured = {
-        "newton": _measure_newton(time, waveforms),
         "noise": _measure_noise(noise),
         "scaling": _measure_scaling(snr),
         "dataset": _measure_dataset(dataset),
         "interferometer": _measure_interferometer(interferometer),
+        "pycbc": _measure_pycbc(time, waveforms),
     }
-    pycbc = waveforms.pycbc_available()
-    measured["pycbc"] = _measure_pycbc(time, waveforms) if pycbc else None
 
     Path(output).write_text(json.dumps(measured))
 
 
 def _write_values():
     measured = measure_in_temp_home()
-    if measured["pycbc"] is None:
-        sys.exit(
-            "Refusing to write values.py: pycbc is missing, so the PyCBC values would be lost."
-        )
     versions = ", ".join(
         f"{name} {importlib.metadata.version(name)}"
         for name in ("pycbc", "lalsuite", "numpy")

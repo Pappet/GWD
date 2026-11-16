@@ -11,6 +11,7 @@ from .values import GOLDEN
 pytestmark = pytest.mark.golden
 
 EXACT_RTOL = 1e-9
+DATASET_RTOL = 1e-6
 REGEN = os.path.join(os.path.dirname(__file__), "regen.py")
 
 
@@ -19,37 +20,36 @@ def measured():
     return measure_in_temp_home()
 
 
-def assert_matches(observed, expected, path=""):
-    """Numbers must match within EXACT_RTOL, everything else exactly."""
+def assert_matches(observed, expected, path="", rtol=EXACT_RTOL):
+    """Numbers must match within rtol, everything else exactly."""
     if isinstance(expected, dict):
         assert list(observed) == list(expected), path
         for key in expected:
-            assert_matches(observed[key], expected[key], f"{path}.{key}")
+            assert_matches(observed[key], expected[key], f"{path}.{key}", rtol)
     elif isinstance(expected, list):
         assert len(observed) == len(expected), path
         for i, (obs, exp) in enumerate(zip(observed, expected)):
-            assert_matches(obs, exp, f"{path}[{i}]")
+            assert_matches(obs, exp, f"{path}[{i}]", rtol)
     elif isinstance(expected, float):
-        assert np.isclose(observed, expected, rtol=EXACT_RTOL, atol=0.0), (
+        assert np.isclose(observed, expected, rtol=rtol, atol=0.0), (
             f"{path}: {observed} != {expected}"
         )
     else:
         assert observed == expected, path
 
 
-@pytest.mark.parametrize(
-    "section", ["newton", "noise", "scaling", "dataset", "interferometer"]
-)
+@pytest.mark.parametrize("section", ["noise", "scaling", "interferometer"])
 def test_numpy_only_values_are_unchanged(measured, section):
     assert_matches(measured[section], GOLDEN[section], section)
 
 
-def test_pycbc_values_are_within_tolerance(measured):
-    if measured["pycbc"] is None:
-        if os.environ.get("GWD_REQUIRE_PYCBC") == "1":
-            pytest.fail("pycbc missing, but GWD_REQUIRE_PYCBC=1 requires it")
-        pytest.skip("pycbc missing")
+def test_dataset_values_are_unchanged(measured):
+    """The dataset is drawn with PyCBC since P6.1, pinned by the lockfile; DATASET_RTOL
+    leaves room for rounding differences between machines, not for a changed draw."""
+    assert_matches(measured["dataset"], GOLDEN["dataset"], "dataset", DATASET_RTOL)
 
+
+def test_pycbc_values_are_within_tolerance(measured):
     observed, expected = measured["pycbc"], GOLDEN["pycbc"]
     assert abs(observed["peak_index"] - expected["peak_index"]) <= 1
     assert np.isclose(observed["max_abs_h"], expected["max_abs_h"], rtol=1e-3, atol=0.0)
