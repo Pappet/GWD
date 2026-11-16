@@ -6,8 +6,9 @@ import sys
 import numpy as np
 import pytest
 
-from gwd.config import N_SAMPLES
+from gwd.config import BANDPASS, N_SAMPLES, SAMPLE_RATE
 from gwd.core.population import random_bbh_params
+from gwd.core.snr import optimal_snr_welch
 from gwd.data import injection
 from gwd.data.scenarios import APP_V1, EVAL_V1, SCENARIOS, TRAIN_V1, Scenario
 
@@ -132,20 +133,47 @@ def test_noise_only_samples_have_no_signal_and_snr_zero():
     assert sample.data is sample.noise
 
 
+def test_white_noise_samples_get_the_analytic_optimal_snr():
+    sample = injection.make_sample(EVAL_V1, np.random.RandomState(6), has_signal=True)
+    assert sample.peak_snr == sample.snr
+    expected = np.sqrt(np.sum(sample.signal**2)) / injection.WHITE_NOISE_SIGMA
+    assert sample.optimal_snr == pytest.approx(expected, rel=1e-12)
+    # A 30/30 Msun chirp: rho_opt is about 13.5 times the peak SNR (P5.5).
+    assert sample.optimal_snr / sample.peak_snr == pytest.approx(13.5, rel=0.1)
+
+
+def test_real_noise_samples_get_the_optimal_snr_in_the_band(noise_folder):
+    provider = injection.real_noise_provider(noise_folder)
+    scenario = dataclasses.replace(TRAIN_V1, real_noise_fraction=1.0)
+    sample = injection.make_sample(
+        scenario, np.random.RandomState(2), has_signal=True, noise_provider=provider
+    )
+    assert sample.noise_kind == "real"
+    expected = optimal_snr_welch(sample.signal, sample.noise, SAMPLE_RATE, *BANDPASS)
+    assert sample.optimal_snr == expected > 0
+    # The test chunk is white, so the band only drops power: below the full-band value.
+    full = np.sqrt(np.sum(sample.signal**2)) / np.std(sample.noise)
+    assert 0.0 < sample.optimal_snr < full
+
+
+def test_noise_only_samples_have_optimal_snr_zero(noise_folder):
+    provider = injection.real_noise_provider(noise_folder)
+    for scenario in V1:
+        sample = injection.make_sample(
+            scenario,
+            np.random.RandomState(1),
+            has_signal=False,
+            noise_provider=provider,
+        )
+        assert sample.optimal_snr == 0.0 and sample.peak_snr == 0.0
+
+
 def test_train_draws_the_noise_choice_even_without_chunks():
     rng = np.random.RandomState(9)
     sample = injection.make_sample(TRAIN_V1, rng, has_signal=False)
     reference = np.random.RandomState(9)
     reference.rand()
     assert np.array_equal(sample.data, injection.white_noise(N_SAMPLES, reference))
-
-
-def test_noise_std_reference_scales_to_the_measured_noise_std():
-    noise = 3.0 * np.random.RandomState(1).normal(size=N_SAMPLES)
-    chirp = np.sin(np.linspace(0, 40, N_SAMPLES))
-    scaled, snr = injection.scale_signal_to_snr(chirp, noise, 4.0, "noise_std")
-    assert snr == 4.0
-    assert np.isclose(np.max(np.abs(scaled)), 4.0 * np.std(noise))
 
 
 def test_real_chunks_keep_the_v1_scale_skew(noise_folder):

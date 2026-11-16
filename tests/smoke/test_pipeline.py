@@ -10,7 +10,8 @@ from .entrypoints import NUM_SAMPLES, PIPELINE, SEED
 
 pytestmark = pytest.mark.slow
 
-LABEL_COLUMNS = 10  # 7 until P4.1, then waveform_backend, noise_source, noise_file
+# 7 until P4.1, then waveform_backend, noise_source, noise_file; P5.5 peak_snr, optimal_snr
+LABEL_COLUMNS = 12
 LEADERBOARD_COLUMNS = 12
 SAMPLE_LENGTH = 16384
 
@@ -41,6 +42,9 @@ def test_dataset_records_backend_and_noise_source(pipeline_home):
     # The pipeline home has no noise chunks.
     assert set(labels["noise_source"]) == {"gaussian"}
     assert set(labels["noise_file"]) == {""}
+    # P5.5: peak and optimal SNR, both > 0 for every signal sample.
+    assert (labels.loc[signal, ["peak_snr", "optimal_snr"]] > 0).all().all()
+    assert (labels["peak_snr"] == labels["snr"]).all()
 
     manifest = json.loads((training / "manifest.json").read_text())
     assert manifest["waveform_backend"]

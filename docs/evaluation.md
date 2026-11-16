@@ -46,7 +46,7 @@ All metrics come from the model's score, a number between 0 and 1 for each sampl
 - **FPR** = FP / (FP + TN): the share of noise samples that raise a false alarm.
 - **Accuracy** = (TP + TN) / all samples, at the operating point.
 - **Operating point:** TPR, FPR, accuracy, and the confusion matrix at the fixed threshold `THRESHOLD = 0.15` in `gwd.evaluation.evaluate`. A sample counts as detected if its score is ≥ the threshold (`predict_labels` in `gwd.evaluation.metrics`), as in scikit-learn's `roc_curve`.
-- **SNR50 and SNR90:** the first of the 15 SNR levels of the sensitivity curve at which at least 50% or 90% of the signal samples are detected at the operating point. If no level reaches the rate, the value is `N/A` in the output and `-` in the leaderboard. The SNR is the peak amplitude ratio described in [architecture.md](architecture.md#scenarios-and-snr-definition-current-state-v1), not a matched filter SNR.
+- **SNR50 and SNR90:** the first of the 15 SNR levels of the sensitivity curve at which at least 50% or 90% of the signal samples are detected at the operating point. If no level reaches the rate, the value is `N/A` in the output and `-` in the leaderboard. The levels are peak SNRs, the peak amplitude ratio described in [architecture.md](architecture.md#scenarios-and-snr-definition-current-state-v1), not a matched filter SNR. Since P5.5 `gwd eval run` also records the mean optimal (matched filter) SNR of the 50 samples of each level and reports SNR50 and SNR90 both ways: "Peak SNR50/90" is the level, "Optimal SNR50/90" the mean optimal SNR of that level's samples. For the 30/30 M☉ chirps of `EVAL_V1` in white noise the optimal SNR is about 13.5 times the peak SNR, and the run prints this factor. The summary at the end shows the peak and the optimal SNR90; the leaderboard stores the peak values only.
 
 Look at ROC AUC and the sensitivity together: a model with a higher AUC can still need a higher SNR to reach 90% detection. Accuracy alone can mislead on unbalanced data; the test sets here are balanced 50/50 on average.
 
@@ -66,9 +66,9 @@ Because of the padding, the `>=` rule, and the new texts, field test results sin
 1. ROC curve with the AUC, the chance diagonal, and the operating point.
 2. Precision-recall curve with the AP.
 3. Confusion matrix at the operating point.
-4. Sensitivity curve: detection rate against the injected SNR, with SNR50 and SNR90.
+4. Sensitivity curve: detection rate against the injected peak SNR, with SNR50 and SNR90; the top axis shows the optimal SNR (the factor above).
 5. Score distributions of the signal and noise samples, with the threshold.
-6. A table of ROC AUC, AP, accuracy, TPR, FPR, SNR50, and SNR90.
+6. A table of ROC AUC, AP, accuracy, TPR, FPR, and SNR50 and SNR90 as peak and as optimal SNR.
 
 `gwd eval thresholds` writes `plot_optimize_threshold_<timestamp>.png`: the ROC curve with the point of every strategy, TPR, FPR, and Youden's J against the threshold, and a table of the strategies.
 
@@ -122,8 +122,8 @@ Every `gwd eval run` appends one row to `results/model_leaderboard.csv`; old row
 | `Sim_Accuracy` | Accuracy at the operating point | percent, 1 decimal |
 | `TPR` | TPR at the operating point | percent, 2 decimals |
 | `FPR` | FPR at the operating point | percent, 2 decimals |
-| `Sim_SNR50` | SNR50 | 2 decimals, or `-` |
-| `Sim_SNR90` | SNR90 | 2 decimals, or `-` |
+| `Sim_SNR50` | Peak SNR50 (the optimal SNRs are not stored) | 2 decimals, or `-` |
+| `Sim_SNR90` | Peak SNR90 | 2 decimals, or `-` |
 | `Physik_Gap` | Always `-`, see below | `-` |
 | `Real_Events_Found` | Events found in the field test, inside the training range, then outside (OOD) | for example `4/4; OOD 0/1`; a group with a failed download reads `n/a (k of n loaded)`; `n/a` without `--real` |
 | `Real_Noise_FAR` | False alarms of the field test in the analysed noise | for example `3 false alarms in 0.0556 h`; `n/a (noise not loaded)` if the noise download failed, `n/a` without `--real` |

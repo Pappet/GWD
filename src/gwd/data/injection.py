@@ -23,6 +23,10 @@ The chirps come from the backend gwd.config.WAVEFORM_BACKEND ('pycbc'). Without 
 make_sample raises gwd.core.waveforms.WaveformBackendError (P5.2); there is no fallback
 to the Newtonian approximation. The backend argument exists so the golden values and
 tests can draw numpy-only Newton chirps on purpose.
+
+Every signal sample also gets its optimal (matched filter) SNR, measured after the
+scaling and without drawing from rng (P5.5, measure_optimal_snr). The peak SNR still
+drives V1; the optimal SNR is recorded so the difference can be seen.
 """
 
 import glob
@@ -34,6 +38,7 @@ from typing import Optional
 import numpy as np
 
 from gwd.config import (
+    BANDPASS,
     DATA_DIR_NOISE,
     DURATION,
     N_SAMPLES,
@@ -42,6 +47,7 @@ from gwd.config import (
 )
 from gwd.core import noise as core_noise
 from gwd.core.population import random_bbh_params
+from gwd.core.snr import optimal_snr_welch, optimal_snr_white, scale_signal_to_snr
 from gwd.core.timebase import time_axis
 from gwd.core.waveforms import generate_chirp
 from gwd.data.preprocessing import normalize
@@ -50,6 +56,8 @@ from gwd.data.preprocessing import normalize
 # draw it uniform in volume (gwd.core.population). Either way it does not change the
 # sample, because the chirp is normalized to peak 1 before scaling (metadata only).
 FIXED_DISTANCE_MPC = 400.0
+# Standard deviation of the white noise of every scenario.
+WHITE_NOISE_SIGMA = 1.0
 
 
 @dataclass(frozen=True)
@@ -63,17 +71,27 @@ class InjectionParams:
 
 @dataclass(frozen=True)
 class Sample:
-    """data = noise + signal. signal and params are None for a noise-only sample."""
+    """data = noise + signal. signal and params are None for a noise-only sample.
+
+    snr is the peak SNR the signal was scaled to (also as peak_snr), optimal_snr the
+    optimal SNR measured by measure_optimal_snr; both are 0.0 without signal.
+    """
 
     data: np.ndarray
     noise: np.ndarray
     signal: Optional[np.ndarray]
     has_signal: bool
     params: Optional[InjectionParams]
-    snr: float  # the SNR the signal was scaled to; 0.0 without signal
+    snr: float  # the peak SNR the signal was scaled to; 0.0 without signal
     noise_kind: str  # "real" or "white"
     noise_file: Optional[str] = None  # file name of the real chunk, None for white
     waveform_backend: Optional[str] = None  # "pycbc" or "newton"; None without signal
+    optimal_snr: float = 0.0  # measured, see measure_optimal_snr; 0.0 without signal
+
+    @property
+    def peak_snr(self):
+        """The peak SNR (max|signal| over the noise std): the same value as snr."""
+        return self.snr
 
 
 def _rng(rng):
@@ -81,33 +99,23 @@ def _rng(rng):
 
 
 def white_noise(length, rng=None):
-    """Unit white noise from gwd.core.noise.white_noise."""
-    return core_noise.white_noise(length, 1.0, rng=_rng(rng))
+    """White noise of std WHITE_NOISE_SIGMA (1) from gwd.core.noise.white_noise."""
+    return core_noise.white_noise(length, WHITE_NOISE_SIGMA, rng=_rng(rng))
 
 
-def scale_signal_to_snr(signal, noise, target_snr, reference="noise_std"):
-    """Scale signal to a peak SNR and return (scaled signal, SNR).
+def measure_optimal_snr(signal, noise, noise_kind):
+    """The optimal SNR of signal in the noise of a V1 sample (P5.5).
 
-    "noise_std" (TRAIN_V1): the peak becomes target_snr times the std of noise. A
-    signal without peak returns zeros and SNR 0.0.
-    "unit" (EVAL_V1, APP_V1): signal * target_snr. This is a peak SNR only because the
-    chirp has peak 1 and the white noise a nominal std of 1; the measured std is not
-    used.
+    White noise: analytically, optimal_snr_white(signal, WHITE_NOISE_SIGMA) over the
+    full band; the std is known, so it is not estimated from the noise.
+    Real noise: optimal_snr_welch against the Welch PSD of the chunk the sample uses,
+    restricted to BANDPASS (20-300 Hz). The chunk is band-passed but the V1 signal is
+    not, so above the band its PSD is near 0 and the SNR would explode
+    (evaluation:MISS-2). Both are measured on the scaled signal before normalization.
     """
-    if reference == "unit":
-        return signal * target_snr, target_snr
-
-    noise_level = np.std(noise)
-    if noise_level == 0:
-        noise_level = 1.0
-
-    sig_max = np.max(np.abs(signal))
-    if sig_max == 0:
-        return signal, 0.0
-
-    signal_normalized = signal / sig_max
-    scaled_signal = signal_normalized * target_snr * noise_level
-    return scaled_signal, target_snr
+    if noise_kind == "white":
+        return optimal_snr_white(signal, WHITE_NOISE_SIGMA)
+    return optimal_snr_welch(signal, noise, SAMPLE_RATE, *BANDPASS)
 
 
 def real_noise_files(folder=DATA_DIR_NOISE):
@@ -263,6 +271,7 @@ def make_sample(
         noise_kind,
         noise_file,
         backend,
+        measure_optimal_snr(signal, noise, noise_kind),
     )
 
 

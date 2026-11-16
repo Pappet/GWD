@@ -4,6 +4,10 @@ Model evaluation: ROC analysis on simulated data and an optional field test on r
 
 Run it with ``gwd eval run``; it writes one plot with six panels and adds a row to the
 leaderboard. The field test (gwd.evaluation.real_data) runs only with ``--real``.
+
+The sensitivity curve steps through peak SNR levels, the SNR EVAL_V1 scales to. Since
+P5.5 it also records the mean optimal (matched filter) SNR of the samples at each
+level, and SNR50 and SNR90 are reported in both; the leaderboard keeps the peak values.
 """
 
 import datetime
@@ -71,6 +75,30 @@ def metrics_box(rows, width=27):
     return "\n".join(lines)
 
 
+def sensitivity_curve(model, snr_levels, n_batch=50, threshold=THRESHOLD):
+    """(detection rates, mean optimal SNRs) of EVAL_V1 signal samples per peak SNR level.
+
+    Each level gets n_batch signal samples scaled to that peak SNR. The mean optimal
+    SNR of a level is the mean of Sample.optimal_snr, measured in gwd.data.injection.
+    """
+    rates, optimal = [], []
+    for snr in snr_levels:
+        samples = [
+            make_sample(EVAL_V1, has_signal=True, snr=snr) for _ in range(n_batch)
+        ]
+        X = np.array([normalize(sample.data) for sample in samples])
+        preds = model.predict(X.reshape(n_batch, N_SAMPLES, 1), verbose=0).flatten()
+        rates.append(detection_rate(preds, threshold))
+        optimal.append(float(np.mean([sample.optimal_snr for sample in samples])))
+    return rates, optimal
+
+
+def optimal_per_peak(snr_levels, optimal_snrs):
+    """The mean optimal SNR per unit of peak SNR over the curve; None without signal."""
+    total = float(np.sum(snr_levels))
+    return float(np.sum(optimal_snrs)) / total if total > 0 else None
+
+
 # ==========================================
 # TEST 1: SIMULATION WITH ROC ANALYSIS
 # ==========================================
@@ -108,23 +136,19 @@ def evaluate_simulation_with_roc(model):
     # --- B. Sensitivity curve (detection rate against SNR) ---
     print("   📈 Computing the sensitivity curve...")
     snr_levels = np.linspace(0.0, 2.5, 15)
-    detection_rates = []
+    detection_rates, optimal_snrs = sensitivity_curve(model, snr_levels)
 
-    for snr in snr_levels:
-        n_batch = 50
-        X_batch = []
-
-        for _ in range(n_batch):
-            sample = make_sample(EVAL_V1, has_signal=True, snr=snr)
-            X_batch.append(normalize(sample.data))
-
-        X = np.array(X_batch).reshape(n_batch, N_SAMPLES, 1)
-        preds = model.predict(X, verbose=0).flatten()
-        detection_rates.append(detection_rate(preds, THRESHOLD))
-
-    # SNR50 / SNR90: the first SNR level whose detection rate reaches 50% / 90%
+    # SNR50 / SNR90: the first SNR level whose detection rate reaches 50% / 90%,
+    # as peak SNR and as the mean optimal SNR of that level's samples (P5.5).
     snr_50 = snr_at_rate(snr_levels, detection_rates, 0.5)
     snr_90 = snr_at_rate(snr_levels, detection_rates, 0.9)
+    optimal_50 = snr_at_rate(np.array(optimal_snrs), detection_rates, 0.5)
+    optimal_90 = snr_at_rate(np.array(optimal_snrs), detection_rates, 0.9)
+    ratio = optimal_per_peak(snr_levels, optimal_snrs)
+    print(
+        f"   ✅ Optimal SNR per peak SNR ({EVAL_V1.name}, 30/30 M☉, white noise): "
+        f"{ratio:.1f}"
+    )
 
     # --- C. Confusion matrix at THRESHOLD ---
     y_pred = predict_labels(y_scores, THRESHOLD)
@@ -133,7 +157,8 @@ def evaluate_simulation_with_roc(model):
 
     # --- PLOTTING ---
     fig = plt.figure(figsize=(15, 10))
-    gs = fig.add_gridspec(2, 3, hspace=0.3, wspace=0.3)
+    # hspace leaves room for the optimal SNR axis on top of the sensitivity curve.
+    gs = fig.add_gridspec(2, 3, hspace=0.45, wspace=0.3)
 
     # 1. ROC curve (main plot)
     ax1 = fig.add_subplot(gs[0, 0])
@@ -176,7 +201,13 @@ def evaluate_simulation_with_roc(model):
         ax4.axvline(snr_50, color="orange", linestyle=":", label=f"SNR50={snr_50:.2f}")
     if snr_90 is not None:
         ax4.axvline(snr_90, color="red", linestyle=":", label=f"SNR90={snr_90:.2f}")
-    ax4.set_xlabel("Injected SNR", fontweight="bold")
+    ax4.set_xlabel("Injected peak SNR", fontweight="bold")
+    if ratio:
+        # The optimal SNR is about proportional to the peak SNR for fixed masses.
+        top = ax4.secondary_xaxis(
+            "top", functions=(lambda x: x * ratio, lambda x: x / ratio)
+        )
+        top.set_xlabel(f"Optimal SNR (≈ {ratio:.1f} × peak)")
     ax4.set_ylabel("Detection Probability", fontweight="bold")
     ax4.set_title("Sensitivity Curve", fontweight="bold")
     ax4.legend()
@@ -214,8 +245,10 @@ def evaluate_simulation_with_roc(model):
             ("TPR (Recall):", f"{op_tpr:.2%}"),
             ("FPR:", f"{op_fpr:.2%}"),
             None,
-            ("SNR50:", format_snr(snr_50)),
-            ("SNR90:", format_snr(snr_90)),
+            ("Peak SNR50:", format_snr(snr_50)),
+            ("Peak SNR90:", format_snr(snr_90)),
+            ("Optimal SNR50:", format_snr(optimal_50)),
+            ("Optimal SNR90:", format_snr(optimal_90)),
         ]
     )
 
@@ -246,6 +279,9 @@ def evaluate_simulation_with_roc(model):
         "acc": acc,
         "snr50": snr_50,
         "snr90": snr_90,
+        "optimal_snr50": optimal_50,
+        "optimal_snr90": optimal_90,
+        "optimal_per_peak": ratio,
         "roc_auc": roc_auc,
         "avg_precision": avg_precision,
         "tpr": op_tpr,
@@ -300,7 +336,8 @@ def run(model="latest", real=False):
     print(f"  Accuracy:             {sim_res['acc']:.1%}")
     print(f"  TPR (Sensitivity):    {sim_res['tpr']:.2%}")
     print(f"  FPR:                  {sim_res['fpr']:.2%}")
-    print(f"  SNR90:                {format_snr(sim_res['snr90'])}")
+    print(f"  Peak SNR90:           {format_snr(sim_res['snr90'])}")
+    print(f"  Optimal SNR90:        {format_snr(sim_res['optimal_snr90'])}")
     print(f"  Real Events Found:    {real_res['events_text']}")
     print(f"  Real Noise:           {real_res['far_text']}")
     print("=" * 70)

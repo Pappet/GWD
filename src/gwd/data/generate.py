@@ -4,7 +4,10 @@ labels.csv has one row per sample. Since P4.1 it also has the columns
 waveform_backend ('pycbc' or 'newton', empty without signal), noise_source ('real' or
 'gaussian'), and noise_file (the chunk's file name, empty for Gaussian noise). The new
 columns come after the old seven, so readers that select columns by name are not
-affected. manifest.json records how the dataset was made, see gwd.data.provenance.
+affected. Since P5.5 two more follow: peak_snr, the peak SNR the signal was scaled to
+(the old column snr stays, with the same value, as an alias for old readers), and
+optimal_snr, the optimal SNR measured by gwd.data.injection.measure_optimal_snr; both
+are 0 without signal. manifest.json records how the dataset was made, see gwd.data.provenance.
 Since P5.6 the samples are stored as float32 (gwd.config.SAMPLE_DTYPE); they are still
 drawn in float64, so labels.csv is unchanged.
 
@@ -169,6 +172,8 @@ def generate_dataset(
                 "waveform_backend": sample.waveform_backend or "",
                 "noise_source": NOISE_SOURCES[sample.noise_kind],
                 "noise_file": sample.noise_file or "",
+                "peak_snr": float(sample.peak_snr),
+                "optimal_snr": float(sample.optimal_snr),
             }
         )
 

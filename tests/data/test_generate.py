@@ -25,6 +25,7 @@ OLD_COLUMNS = [
     "distance",
 ]
 NEW_COLUMNS = ["waveform_backend", "noise_source", "noise_file"]
+SNR_COLUMNS = ["peak_snr", "optimal_snr"]  # since P5.5
 
 
 @pytest.fixture
@@ -47,7 +48,7 @@ def generate(tmp_path, noise_dir, n=20, scenario=TRAIN_V1, seed=7):
 
 def test_labels_name_backend_noise_source_and_chunk(tmp_path, noise_dir):
     _, labels, _ = generate(tmp_path, noise_dir)
-    assert list(labels.columns) == OLD_COLUMNS + NEW_COLUMNS
+    assert list(labels.columns) == OLD_COLUMNS + NEW_COLUMNS + SNR_COLUMNS
 
     signal = labels["has_signal"] == 1
     assert set(labels.loc[signal, "waveform_backend"]) == {"pycbc"}
@@ -58,6 +59,18 @@ def test_labels_name_backend_noise_source_and_chunk(tmp_path, noise_dir):
     chunks = {path.name for path in noise_dir.iterdir()}
     assert set(labels.loc[real, "noise_file"]) <= chunks
     assert set(labels.loc[~real, "noise_file"]) == {""}
+
+
+def test_labels_record_peak_and_optimal_snr(tmp_path, noise_dir):
+    _, labels, _ = generate(tmp_path, noise_dir)
+    signal = labels["has_signal"] == 1
+    # snr stays as an alias of peak_snr for readers from before P5.5.
+    assert (labels["peak_snr"] == labels["snr"]).all()
+    assert (labels.loc[signal, "optimal_snr"] > 0).all()
+    assert (labels.loc[~signal, ["peak_snr", "optimal_snr"]] == 0).all().all()
+    gaussian = signal & (labels["noise_source"] == "gaussian")
+    real = signal & (labels["noise_source"] == "real")
+    assert gaussian.any() and real.any()
 
 
 def test_the_manifest_describes_the_dataset(tmp_path, noise_dir):

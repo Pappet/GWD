@@ -277,13 +277,79 @@ def test_each_broken_case_gives_rc_1(pristine, tmp_path, capsys):
 def test_without_manifest_only_the_integrity_is_checked(dataset, capsys):
     (dataset / "manifest.json").unlink()
     labels = validate.read_labels(str(dataset))
-    labels.loc[labels.index[0], "snr"] = 99.0  # outside TRAIN_V1, but not checked
+    # Outside TRAIN_V1, but not checked; peak_snr is the alias of snr (P5.5).
+    labels.loc[labels.index[0], ["snr", "peak_snr"]] = 99.0
     labels.to_csv(dataset / "labels.csv", index=False)
     assert validate.check_dataset(str(dataset)) == ([], [], "unknown (v1)")
     assert validate.run(str(dataset)) == 0
     out = capsys.readouterr().out
     assert "Scenario: unknown (v1)" in out
     assert "DISTRIBUTION" not in out
+
+
+# --- the SNR columns of P5.5 ---
+
+
+def rewrite_labels(dataset, change):
+    labels = validate.read_labels(str(dataset))
+    change(labels)
+    labels.to_csv(dataset / "labels.csv", index=False)
+    (dataset / "manifest.json").unlink()  # its labels hash would be a second finding
+
+
+def test_the_snr_columns_of_a_generated_dataset_are_consistent(labels):
+    assert validate.check_snr_columns(labels) == []
+    signal = labels["has_signal"] == 1
+    assert (labels.loc[signal, "optimal_snr"] > labels.loc[signal, "peak_snr"]).all()
+
+
+@pytest.mark.parametrize(
+    "column, row, value, message",
+    [
+        ("peak_snr", 0, 1.5, "peak_snr different from snr"),
+        ("optimal_snr", 0, 0.0, "optimal_snr <= 0"),
+        ("optimal_snr", 1, 3.0, "noise sample(s) have a peak or optimal SNR"),
+        ("optimal_snr", 0, "high", "non-numeric"),
+    ],
+)
+def test_a_broken_snr_column_is_a_finding(dataset, column, row, value, message):
+    def change(labels):
+        labels[column] = labels[column].astype(object)
+        labels.loc[labels.index[row], column] = value
+
+    rewrite_labels(dataset, change)
+    findings = validate.check_integrity(str(dataset))
+    assert checks(findings) == ["snr"]
+    assert message in findings[0].message
+
+
+def test_one_snr_column_alone_is_a_finding(dataset):
+    rewrite_labels(
+        dataset, lambda labels: labels.drop(columns="optimal_snr", inplace=True)
+    )
+    findings = validate.check_integrity(str(dataset))
+    assert checks(findings) == ["snr"]
+    assert "lacks ['optimal_snr']" in findings[0].message
+
+
+def test_a_dataset_before_p5_5_reads_snr_as_the_peak_snr(dataset, capsys):
+    """Old labels.csv files have snr only: no finding, and the report says so."""
+    rewrite_labels(
+        dataset,
+        lambda labels: labels.drop(columns=["peak_snr", "optimal_snr"], inplace=True),
+    )
+    assert validate.check_integrity(str(dataset)) == []
+    assert validate.run(str(dataset)) == 0
+    out = capsys.readouterr().out
+    assert "peak_snr" in out
+    assert "optimal_snr: not recorded (dataset written before P5.5)." in out
+
+
+def test_the_report_names_both_snrs_and_their_ratio(dataset, capsys):
+    assert validate.run(str(dataset)) == 0
+    out = capsys.readouterr().out
+    assert "   optimal_snr " in out and "   peak_snr " in out
+    assert "Median optimal_snr / peak_snr by noise: gaussian " in out
 
 
 def test_missing_labels_gives_rc_1(tmp_path, capsys):

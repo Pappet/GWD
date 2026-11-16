@@ -5,6 +5,10 @@ files it does not list (orphans), and manifest.json, and returns a list of Findi
 check_distribution(labels, scenario) checks the signal samples against the ranges of
 the scenario the manifest names, and the class balance. A dataset without a manifest
 was written before P4.1; its scenario is unknown, so only its integrity is checked.
+Since P5.5 labels.csv also has peak_snr and optimal_snr; check_snr_columns checks them
+when they are there. Datasets written before have only snr, which is the peak SNR: the
+range check and the statistics read snr, which is in both, and the optimal SNR is
+reported as not recorded.
 run() prints both with the statistics and returns 1 if there is any finding.
 
 Usage:
@@ -46,6 +50,8 @@ REQUIRED_COLUMNS = (
     "distance",
 )
 NUMERIC_COLUMNS = REQUIRED_COLUMNS[1:]
+# Written since P5.5; snr stays as an alias of peak_snr, so old readers keep working.
+SNR_COLUMNS = ("peak_snr", "optimal_snr")
 # The files gwd.data.generate writes; any other one in the folder is not checked.
 SAMPLE_PATTERN = "sample_*.npy"
 # float32 as written since P5.6; float64 datasets from before stay valid.
@@ -132,6 +138,52 @@ def check_labels(labels):
     return findings
 
 
+def check_snr_columns(labels):
+    """Findings in the P5.5 columns peak_snr and optimal_snr; none if both are absent.
+
+    Both must be there together and numeric; peak_snr must equal snr, optimal_snr must
+    be > 0 for every signal sample, and both must be 0 for every noise sample.
+    """
+    present = [column for column in SNR_COLUMNS if column in labels.columns]
+    if not present:
+        return []
+    if len(present) != len(SNR_COLUMNS):
+        missing = sorted(set(SNR_COLUMNS) - set(present))
+        return [Finding("snr", f"{LABELS_FILE} has {present} but lacks {missing}")]
+    values = {
+        column: pd.to_numeric(labels[column], errors="coerce")
+        for column in ("snr", "has_signal", *SNR_COLUMNS)
+    }
+    findings = []
+    for column in SNR_COLUMNS:
+        bad = int((~np.isfinite(values[column])).sum())
+        if bad:
+            findings.append(
+                Finding("snr", f"column {column} has {bad} non-numeric value(s)")
+            )
+    if findings:
+        return findings
+    peak, snr = values["peak_snr"], values["snr"]
+    differs = int((~np.isclose(peak, snr, rtol=RANGE_RTOL, atol=0.0)).sum())
+    if differs:
+        findings.append(
+            Finding("snr", f"{differs} row(s) have peak_snr different from snr")
+        )
+    signal = values["has_signal"] == 1
+    not_positive = int((signal & ~(values["optimal_snr"] > 0)).sum())
+    if not_positive:
+        findings.append(
+            Finding("snr", f"{not_positive} signal sample(s) have optimal_snr <= 0")
+        )
+    noise = values["has_signal"] == 0
+    nonzero = int((noise & ((peak != 0) | (values["optimal_snr"] != 0))).sum())
+    if nonzero:
+        findings.append(
+            Finding("snr", f"{nonzero} noise sample(s) have a peak or optimal SNR")
+        )
+    return findings
+
+
 def check_sample(path):
     """(data, findings) of one sample file; data is None if a finding was made.
 
@@ -215,7 +267,8 @@ def check_manifest(folder, labels):
 def check_integrity(folder, on_sample=None):
     """Check a dataset folder and return a list of Finding; empty means it is intact.
 
-    Checked: labels.csv (columns, values, duplicates); every file it lists (exists,
+    Checked: labels.csv (columns, values, duplicates, and since P5.5 the SNR
+    columns, see check_snr_columns); every file it lists (exists,
     loads, shape, dtype, NaN/Inf, not all zeros); sample_*.npy files it does not list
     (orphans); and manifest.json against labels.csv and its scenario, if there is one.
     on_sample(position, data) is called for every sample without a finding, with its
@@ -231,6 +284,8 @@ def check_integrity(folder, on_sample=None):
     findings = check_labels(labels)
     if "filename" not in labels.columns or labels.empty:
         return findings
+    if not findings:
+        findings.extend(check_snr_columns(labels))
     for position, name in enumerate(labels["filename"]):
         data, sample_findings = check_sample(os.path.join(folder, str(name)))
         findings.extend(sample_findings)
@@ -350,6 +405,27 @@ def check_dataset(folder):
 # --- report ---
 
 STATISTIC_COLUMNS = ("snr", "mass1", "mass2", "merger_time", "distance")
+# The name each statistics row shows: snr is the peak SNR, in old and new datasets.
+STATISTIC_NAMES = {"snr": "peak_snr"}
+
+
+def optimal_per_peak(signal_rows):
+    """{noise_source: median of optimal_snr / peak_snr} of the signal samples.
+
+    Empty for a dataset without optimal_snr (written before P5.5). A dataset without
+    noise_source (before P4.1) has one entry, 'all'.
+    """
+    if "optimal_snr" not in signal_rows.columns or signal_rows.empty:
+        return {}
+    ratio = pd.to_numeric(signal_rows["optimal_snr"], errors="coerce") / pd.to_numeric(
+        signal_rows["snr"], errors="coerce"
+    )
+    if "noise_source" not in signal_rows.columns:
+        return {"all": float(ratio.median())}
+    return {
+        str(source): float(group.median())
+        for source, group in ratio.groupby(signal_rows["noise_source"])
+    }
 
 
 def print_statistics(labels, scenario):
@@ -380,20 +456,34 @@ def print_statistics(labels, scenario):
     ranges = signal_ranges(scenario) if scenario is not None else {}
     print("\n2. SIGNAL PARAMETERS (signal samples):")
     print(f"   {'column':<12} {'min':>10} {'median':>10} {'max':>10}   scenario range")
-    for column in STATISTIC_COLUMNS:
+    columns = list(STATISTIC_COLUMNS)
+    if "optimal_snr" in labels.columns:
+        columns.insert(1, "optimal_snr")
+    for column in columns:
         values = pd.to_numeric(signal_rows[column], errors="coerce")
         low_high = ranges.get(column)
         bound = f"{low_high[0]:g} – {low_high[1]:g}" if low_high else "–"
+        name = STATISTIC_NAMES.get(column, column)
         print(
-            f"   {column:<12} {values.min():>10.4g} {values.median():>10.4g} "
+            f"   {name:<12} {values.min():>10.4g} {values.median():>10.4g} "
             f"{values.max():>10.4g}   {bound}"
         )
+    print(
+        "   peak_snr (labels.csv: snr, since P5.5 also peak_snr) is the peak amplitude over "
+        "the noise std, not a matched filter SNR."
+    )
+    ratios = optimal_per_peak(signal_rows)
+    if ratios:
+        text = ", ".join(f"{source} {value:.1f}" for source, value in ratios.items())
+        print(
+            "   optimal_snr is the matched filter SNR (white noise: analytic; real "
+            "noise: Welch PSD of the chunk, 20-300 Hz)."
+        )
+        print(f"   Median optimal_snr / peak_snr by noise: {text}")
+    else:
+        print("   optimal_snr: not recorded (dataset written before P5.5).")
     if scenario is None:
         return
-    print(
-        f"   snr is a {scenario.snr_kind} SNR (peak amplitude over noise std), not a "
-        "matched filter SNR."
-    )
     print(
         "   distance does not change the sample: the chirp is normalized before "
         "it is scaled to the SNR."
@@ -477,15 +567,32 @@ def create_visualizations(
         )
     axes1[0].set_xlabel("Peak SNR (peak amplitude / noise std)", fontsize=12)
     axes1[0].set_ylabel("Number of samples", fontsize=12)
-    axes1[0].set_title("SNR distribution", fontsize=14, fontweight="bold")
+    axes1[0].set_title("Peak SNR distribution", fontsize=14, fontweight="bold")
     axes1[0].legend()
     axes1[0].grid(True, alpha=0.3)
 
-    # Box Plot
-    axes1[1].boxplot([signal_samples["snr"]], tick_labels=["Signal SNR"])
-    axes1[1].set_ylabel("SNR", fontsize=12)
-    axes1[1].set_title("SNR Box Plot", fontsize=14, fontweight="bold")
-    axes1[1].grid(True, alpha=0.3, axis="y")
+    if "optimal_snr" in signal_samples.columns:
+        # Optimal against peak SNR (P5.5): the slope differs with masses and noise.
+        sources = (
+            signal_samples["noise_source"]
+            if "noise_source" in signal_samples.columns
+            else pd.Series("all", index=signal_samples.index)
+        )
+        for source, group in signal_samples.groupby(sources):
+            axes1[1].scatter(
+                group["snr"], group["optimal_snr"], s=8, alpha=0.5, label=str(source)
+            )
+        axes1[1].set_xlabel("Peak SNR", fontsize=12)
+        axes1[1].set_ylabel("Optimal SNR", fontsize=12)
+        axes1[1].set_title("Optimal vs. peak SNR", fontsize=14, fontweight="bold")
+        axes1[1].legend(title="noise")
+        axes1[1].grid(True, alpha=0.3)
+    else:
+        # Box Plot (datasets before P5.5 have no optimal_snr)
+        axes1[1].boxplot([signal_samples["snr"]], tick_labels=["Signal peak SNR"])
+        axes1[1].set_ylabel("Peak SNR", fontsize=12)
+        axes1[1].set_title("Peak SNR box plot", fontsize=14, fontweight="bold")
+        axes1[1].grid(True, alpha=0.3, axis="y")
 
     plt.tight_layout()
     plt.savefig(
@@ -517,7 +624,7 @@ def create_visualizations(
     ax1.legend()
     ax1.grid(True, alpha=0.3)
     cbar1 = plt.colorbar(scatter, ax=ax1)
-    cbar1.set_label("SNR", fontsize=10)
+    cbar1.set_label("Peak SNR", fontsize=10)
 
     # Total mass distribution
     ax2 = fig2.add_subplot(gs[0, 1])
