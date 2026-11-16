@@ -9,7 +9,7 @@ This document describes how GWD evaluates a trained CNN today: the commands, the
 | Command | What it does | Writes |
 |---|---|---|
 | `gwd eval build-testset` | Draws a fixed test set once, or loads and checks it if it exists | `data/eval/<set>_<seed>_<n>.npz`, `results/testsets/<set>_<seed>_<n>.json` |
-| `gwd eval thresholds` | Calibrates one model's threshold at FPR 1% on the part `calib_bg` of a fixed test set; shows six reference strategies on `test` | the threshold in the model's `.json` in `models_registry/`; one plot; `results/optimal_thresholds.json` |
+| `gwd eval thresholds` | Calibrates one model's threshold at FPR 1% on the part `calib_bg` of a fixed test set; shows six reference strategies on `test` | the threshold in the model's `.json` in `models_registry/`; one plot; `results/thresholds/<model name>.json` |
 | `gwd eval run` | ROC analysis of one model on a fixed test set at the model's threshold, also per bin; with `--real` also the field test on real data (network) | one plot with six panels; one row in `results/leaderboard_v2.csv` |
 | `gwd eval compare` | ROC curves of several models on the same fixed test set, each with its operating point at its own threshold | two plots |
 | `gwd eval leaderboard` | Prints leaderboard v2, one table per test set, best ROC AUC first | nothing |
@@ -122,7 +122,7 @@ With `--save`, the default, the threshold goes into the model's metadata (`gwd.r
 
 `gwd eval run`, `gwd eval compare`, and the Glitch Hunter read it with `gwd.registry.get_threshold`. A model without a threshold, such as every model trained before P5.8, gets 0.5 and a warning that names the command; calibrate each old model once, for example `gwd eval thresholds --model gwd_model_20251205-232013 --save`, or all of them with the loop in the [README](../README.md#3-evaluation). A threshold calibrated on one test set can be used on another; `gwd eval run` then says that the FPR on its set can differ from the target. A model trained after its last calibration is a new file and needs its own.
 
-`gwd eval thresholds` also writes a report of the last run to `results/optimal_thresholds.json`, which nothing reads:
+`gwd eval thresholds` also writes a report to `results/thresholds/<model name>.json` (`THRESHOLD_REPORTS_DIR` in `gwd.config`), one per model, and prints its path; a later run of the same model replaces it, and nothing reads it. Until this change every run overwrote the single file `results/optimal_thresholds.json`, so after a loop over the models only the last report was left; that file is no longer written, and an existing one stays as it is. A report looks like this:
 
 ```json
 {

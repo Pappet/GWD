@@ -67,6 +67,10 @@ LEGACY_LEADERBOARD_FILES = (
     os.path.join(ROOT_DIR, "model_leaderboard.csv"),
 )
 LABELS_FILE = "labels.csv"  # relative to DATA_DIR_TRAIN
+# gwd eval thresholds writes one report per model, <model name>.json, into this folder.
+THRESHOLD_REPORTS_DIR = os.path.join(RESULTS_DIR, "thresholds")
+# The single report that every gwd eval thresholds overwrote before. Nothing writes or
+# reads it any more; an existing file stays as it is.
 OPTIMAL_THRESHOLDS_FILE = os.path.join(RESULTS_DIR, "optimal_thresholds.json")
 
 # --- CONSTANTS ---

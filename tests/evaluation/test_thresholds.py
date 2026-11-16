@@ -5,6 +5,9 @@ set), never on the part test. Everything runs on synthetic scores or stub models
 tmp folder; nothing reads or writes the real models_registry/ or results/.
 """
 
+import json
+import os
+
 import numpy as np
 import pytest
 
@@ -106,7 +109,7 @@ def stubbed(monkeypatch, tmp_path, small_set):
         thresholds, "EVALUATION_MODELS_PLOTS_DIR", str(tmp_path / "plots")
     )
     monkeypatch.setattr(
-        thresholds, "OPTIMAL_THRESHOLDS_FILE", str(tmp_path / "results" / "t.json")
+        thresholds, "THRESHOLD_REPORTS_DIR", str(tmp_path / "results" / "thresholds")
     )
     return state
 
@@ -148,6 +151,28 @@ def test_the_threshold_never_comes_from_test(stubbed, small_set, monkeypatch):
     stubbed["model"] = PeakModel()
     assert thresholds.run() == 0
     assert registry.get_threshold(stubbed["path"]) == first
+
+
+def test_each_model_gets_its_own_report(stubbed, tmp_path, capsys):
+    """A loop over models keeps every report; before, each run overwrote the last."""
+    first = stubbed["path"]
+    second = str(tmp_path / "models_registry" / "gwd_model_20260202-000000.keras")
+    assert thresholds.run() == 0
+    stubbed["path"] = second
+    assert thresholds.run() == 0
+    reports = tmp_path / "results" / "thresholds"
+    assert sorted(p.name for p in reports.iterdir()) == [
+        "gwd_model_20260101-000000.json",
+        "gwd_model_20260202-000000.json",
+    ]
+    for path in (first, second):
+        report = json.loads((reports / f"{registry.model_name(path)}.json").read_text())
+        assert report["model"] == os.path.basename(path)
+        assert report["calibrated"]["threshold"] == registry.get_threshold(path)
+    assert f"Report saved to {reports / 'gwd_model_20260202-000000.json'}" in (
+        capsys.readouterr().out
+    )
+    assert not (tmp_path / "results" / "optimal_thresholds.json").exists()
 
 
 def test_no_save_writes_nothing(stubbed, tmp_path):

@@ -9,7 +9,8 @@ threshold whose false alarm rate on calib_bg is at most THRESHOLD_TARGET_FPR (1 
 With --save (the default) it stores the threshold, the target and the reached FPR, the
 strategy, and the test set with its SHA-256 in the model's metadata
 (gwd.registry.set_threshold), where gwd eval run, gwd eval compare, and the Glitch Hunter
-read it, and it writes a report to results/optimal_thresholds.json.
+read it, and it writes a report to results/thresholds/<model name>.json, one per model
+(results/optimal_thresholds.json, which every run overwrote, is no longer written).
 
 It then reports the TPR and FPR of that threshold on the part test, with n. The six
 strategies of find_optimal_thresholds are still shown for reference, but they are
@@ -33,9 +34,9 @@ import numpy as np
 from gwd.config import (
     DEFAULT_TESTSET,
     EVALUATION_MODELS_PLOTS_DIR,
-    OPTIMAL_THRESHOLDS_FILE,
     TESTSET_SEED,
     TESTSET_SIZE,
+    THRESHOLD_REPORTS_DIR,
     THRESHOLD_TARGET_FPR,
     ensure_dirs,
 )
@@ -46,12 +47,17 @@ import matplotlib.pyplot as plt
 from gwd import registry
 from gwd.evaluation import testsets
 from gwd.evaluation.metrics import find_optimal_thresholds, rate_at, threshold_at_fpr
-from gwd.registry import load_model, resolve
+from gwd.registry import load_model, model_name, resolve
 
 # The strategy that gwd eval thresholds saves in the registry.
 STRATEGY = "fixed_fpr on calib_bg"
 
 TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+
+
+def report_path(model_path):
+    """The report of one model: results/thresholds/<model name>.json."""
+    return os.path.join(THRESHOLD_REPORTS_DIR, model_name(model_path) + ".json")
 
 
 def visualize_thresholds(y_true, y_scores, optimal_thresholds, roc_data, calibrated):
@@ -381,10 +387,11 @@ def run(
         },
     }
 
-    ensure_dirs(os.path.dirname(OPTIMAL_THRESHOLDS_FILE))
-    with open(OPTIMAL_THRESHOLDS_FILE, "w") as f:
+    report = report_path(model_path)
+    ensure_dirs(os.path.dirname(report))
+    with open(report, "w") as f:
         json.dump(output, f, indent=2)
-    print(f"✓ Report saved to {OPTIMAL_THRESHOLDS_FILE}")
+    print(f"✓ Report saved to {report}")
     return 0
 
 

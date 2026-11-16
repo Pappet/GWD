@@ -427,7 +427,8 @@ def build_parser():
         description="Calibrate one model's detection threshold on the noise-only part "
         "calib_bg of a fixed test set, at a false alarm rate of 1%, and save it in the "
         "model's metadata in models_registry/, where gwd eval run, gwd eval compare, "
-        "and the Glitch Hunter read it. Also writes results/optimal_thresholds.json.",
+        "and the Glitch Hunter read it. Also writes a report to "
+        "results/thresholds/<model name>.json, one per model.",
     )
     _add_model(thresholds)
     thresholds.add_argument(

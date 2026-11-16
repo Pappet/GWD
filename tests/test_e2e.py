@@ -258,8 +258,12 @@ def test_the_test_set_and_its_manifest_exist(e2e):
     )
     assert (home / "data" / "eval" / f"{TESTSET_STEM}.npz").exists()
     assert manifest["noise_sources"]["test"] == {"gaussian": 1000}
-    thresholds = json.loads((home / "results" / "optimal_thresholds.json").read_text())
+    # One report per model; the single optimal_thresholds.json is no longer written.
+    (model,) = (home / "models_registry").glob("*.keras")
+    report = home / "results" / "thresholds" / f"{model.stem}.json"
+    thresholds = json.loads(report.read_text())
     assert thresholds["testset"]["sha256"] == manifest["sha256"]
+    assert not (home / "results" / "optimal_thresholds.json").exists()
 
 
 def test_thresholds_saves_the_threshold_that_run_uses(e2e):
