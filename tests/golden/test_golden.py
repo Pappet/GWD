@@ -30,12 +30,16 @@ def assert_matches(observed, expected, path=""):
         for i, (obs, exp) in enumerate(zip(observed, expected)):
             assert_matches(obs, exp, f"{path}[{i}]")
     elif isinstance(expected, float):
-        assert np.isclose(observed, expected, rtol=EXACT_RTOL, atol=0.0), f"{path}: {observed} != {expected}"
+        assert np.isclose(observed, expected, rtol=EXACT_RTOL, atol=0.0), (
+            f"{path}: {observed} != {expected}"
+        )
     else:
         assert observed == expected, path
 
 
-@pytest.mark.parametrize("section", ["newton", "noise", "scaling", "dataset", "interferometer"])
+@pytest.mark.parametrize(
+    "section", ["newton", "noise", "scaling", "dataset", "interferometer"]
+)
 def test_numpy_only_values_are_unchanged(measured, section):
     assert_matches(measured[section], GOLDEN[section], section)
 
@@ -54,8 +58,13 @@ def test_pycbc_values_are_within_tolerance(measured):
 
 def run_measure(tmp_path, env):
     output = tmp_path / "measured.json"
-    result = subprocess.run([sys.executable, REGEN, "--measure", str(output)], env=env, cwd=tmp_path,
-                            capture_output=True, text=True)
+    result = subprocess.run(
+        [sys.executable, REGEN, "--measure", str(output)],
+        env=env,
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
     return result, output
 
 

@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  LOCKFILE: requirements-linux-py312.lock
+
+jobs:
+  test:
+    name: lint and fast tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            requirements-linux-py312.lock
+            pyproject.toml
+      - name: Create virtual environment
+        run: |
+          uv venv --python "$PYTHON_VERSION"
+          echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> "$GITHUB_ENV"
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
+      # Versions come from the lockfile. No TensorFlow, but PyCBC, so the production
+      # PyCBC path is tested.
+      - name: Install
+        run: uv pip install -c "$LOCKFILE" -e '.[physics,gwdata,dev]'
+      - name: Ruff
+        run: ruff format --check . && ruff check .
+      - name: Pytest
+        env:
+          GWD_REQUIRE_PYCBC: "1"
+          MPLBACKEND: Agg
+        run: pytest -m 'not slow and not network and not apps'
+
+  slow:
+    name: slow, app and golden tests
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            requirements-linux-py312.lock
+            pyproject.toml
+      - name: Create virtual environment
+        run: |
+          uv venv --python "$PYTHON_VERSION"
+          echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> "$GITHUB_ENV"
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
+      - name: Install
+        run: |
+          uv pip install -r "$LOCKFILE"
+          uv pip install -e . --no-deps
+      - name: Pytest
+        env:
+          GWD_REQUIRE_PYCBC: "1"
+          MPLBACKEND: Agg
+          CUDA_VISIBLE_DEVICES: ""
+        run: pytest -m 'slow or apps or golden'

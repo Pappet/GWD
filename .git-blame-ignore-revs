@@ -1,0 +1,8 @@
+# Commits that only change formatting. Use with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+# GitHub's blame view reads this file automatically.
+
+# P1.6: normalize line endings
+9bde4552ffa551e083dd541b4ea4e622ee9c1172
+# P2.2: apply ruff format
+1db803a1ac70f6277bfd9659c9061b0de730537a

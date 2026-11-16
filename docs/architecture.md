@@ -152,7 +152,8 @@ Training, evaluation, and the Glitch Hunter draw from different distributions. P
 
 - Laptop `.venv`: Python 3.12.14, built from `~/gwd-env-pc.txt` (`pip freeze` of the PC environment without the `nvidia-*` packages) plus pytest 8.3.4.
 - Key versions: tensorflow 2.20.0, keras 3.12.0, numpy 1.26.4, pandas 2.3.3, pycbc 2.10.0, lalsuite 7.26.1, gwpy 3.0.13. All 9 models load.
-- `requirements-linux-py312.lock` (since P2.1) holds these pins. It was compiled with `~/gwd-env-pc.txt` without `nvidia-*` as constraints and matches the laptop `.venv`, plus ruff.
+- `requirements-linux-py312.lock` (since P2.1) holds these pins. It was compiled with `~/gwd-env-pc.txt` without `nvidia-*` as constraints and matches the laptop `.venv`, which has ruff 0.17.5 since P2.2.
+- CI (since P2.2, `.github/workflows/ci.yml`): job `test` on every push and pull request installs `-c requirements-linux-py312.lock -e '.[physics,gwdata,dev]'` (PyCBC, no TensorFlow), runs `ruff format --check . && ruff check .`, then `GWD_REQUIRE_PYCBC=1 pytest -m 'not slow and not network and not apps'`. Job `slow` runs only on `workflow_dispatch` with the full lockfile and `pytest -m 'slow or apps or golden'`.
 - Commits use the noreply address, because GitHub rejects pushes with the private one.
 
 ### Decisions
@@ -178,7 +179,8 @@ Training, evaluation, and the Glitch Hunter draw from different distributions. P
 
 | Commit or tag | Meaning | Used by |
 |---|---|---|
-| `9bde4552ffa551e083dd541b4ea4e622ee9c1172` (`9bde455`) | Line-ending commit from P1.6, no content change | **P2.2 adds it to `.git-blame-ignore-revs`**, together with the `ruff format` commit |
+| `9bde4552ffa551e083dd541b4ea4e622ee9c1172` (`9bde455`) | Line-ending commit from P1.6, no content change | Listed in `.git-blame-ignore-revs` since P2.2 |
+| `1db803a1ac70f6277bfd9659c9061b0de730537a` (`1db803a`) | `ruff format` commit from P2.2, formatting only | Listed in `.git-blame-ignore-revs`. The hash changes if the stack is rebased or squash-merged; then update the file |
 | `pre-cleanup` (`2eec4b5`) | State before the cleanup | Rollback and restoring tool state |
 
 ## Step checklist
@@ -200,7 +202,7 @@ Each step PR ticks its own step, so a tick takes effect when that PR is merged.
 | [x] | P1.5 | Write down the target picture: this document | #16 |
 | [x] | P1.6 | Normalize line endings | #15 |
 | [x] | P2.1 | `pyproject.toml`, lockfile, `gwd_core` → `gwd.core`, update tests | #17 |
-| [ ] | P2.2 | ruff baseline, format commit, lean CI | |
+| [x] | P2.2 | ruff baseline, format commit, lean CI | #18 |
 | [ ] | P2.3 | `config` → `gwd/config.py`, `ensure_dirs()` instead of folders on import | |
 | [ ] | P2.4 | Move data and training scripts, menu independent of working directory | |
 | [ ] | P2.5 | Move evaluation, utils, and apps; start of the registry | |
