@@ -61,6 +61,8 @@ FILE_RULES = {
     "src/gwd/data/preprocessing.py": {"gwpy": LAZY},
     "src/gwd/data/validate.py": {"matplotlib": LAZY},
     "src/gwd/registry.py": {"tensorflow": LAZY},
+    # The aLIGO reference PSD of PyCBC, evaluated at any frequency (P5.4).
+    "src/gwd/core/interferometer.py": {"lalsimulation": LAZY},
 }
 
 # (file, import or 'print'). Each entry names the finding and the step that removes it.
