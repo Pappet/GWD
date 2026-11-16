@@ -59,6 +59,9 @@ def test_without_pycbc_the_explorer_uses_newton_and_says_so(monkeypatch):
     assert "Newton" in state.backend_text.get_text()
     assert "physically inaccurate" in state.backend_text.get_text()
     assert state.backend_text in fig.texts
+    # P5.4: the noise comes from the 1/f stand-in, and the noise plot says so.
+    assert state.sim.noise_psd is waveform_explorer.STAND_IN_PSD
+    assert "stand-in" in state.ax_noise.get_title()
     state.s_mass1.set_val(50)
     assert np.all(np.isfinite(state.line_strain.get_ydata()))
     assert draw_without_warnings(fig) == []
@@ -69,6 +72,23 @@ def test_with_pycbc_the_explorer_uses_pycbc():
     fig, state = waveform_explorer.build_figure()
     assert state.backend == "pycbc"
     assert state.backend_text.get_text().startswith("Waveforms: pycbc ")
+
+
+def test_with_pycbc_the_explorer_draws_noise_from_the_aligo_psd():
+    """P5.4: the noise has the aLIGO design PSD above 10 Hz, times the noise slider."""
+    pytest.importorskip("pycbc")
+    from gwd.core.interferometer import reference_psd
+
+    fig, state = waveform_explorer.build_figure(rng=np.random.default_rng(2))
+    assert "aLIGO design PSD (aLIGOZeroDetHighPower)" in state.ax_noise.get_title()
+    freqs = np.array([5.0, 10.0, 100.0])
+    np.testing.assert_array_equal(
+        state.sim.noise_psd(freqs), reference_psd(freqs, low_freq_cutoff=10.0)
+    )
+    # The default noise is of the order of the aLIGO strain noise, below the chirp.
+    noise = state.line_noise.get_ydata() - state.line_clean_ref.get_ydata()
+    chirp_peak = np.max(np.abs(state.line_clean_ref.get_ydata()))
+    assert 1e-23 < np.std(noise) < chirp_peak
 
 
 def test_the_finesse_follows_the_mirror_slider():

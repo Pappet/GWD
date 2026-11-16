@@ -3,12 +3,15 @@
 import numpy as np
 import pytest
 
+from gwd.core.noise import colored_noise_from_psd, pink_psd
 from gwd.core.simulation import TimeDomainSimulator
 
 
 @pytest.fixture
 def simulator(backend, rng):
-    return TimeDomainSimulator(duration=0.5, sample_rate=4096, backend=backend, rng=rng)
+    return TimeDomainSimulator(
+        duration=0.5, sample_rate=4096, backend=backend, rng=rng, noise_psd=pink_psd
+    )
 
 
 def test_generate_chirp_gives_physical_strain_with_the_merger_at_80_percent(simulator):
@@ -41,6 +44,17 @@ def test_detector_noise_is_added_and_scales_with_the_slider(simulator):
     np.testing.assert_allclose(noisy_doubled - signal, 2 * noise, rtol=1e-6, atol=0)
 
 
+def test_detector_noise_is_drawn_from_the_noise_psd(simulator):
+    """CORE-12: the noise comes from colored_noise_from_psd with the simulator's PSD."""
+    signal = np.zeros_like(simulator.t)
+    simulator.rng = np.random.default_rng(9)
+    noisy = simulator.add_detector_noise(signal)
+    expected = colored_noise_from_psd(
+        signal.size, simulator.sample_rate, pink_psd, rng=np.random.default_rng(9)
+    )
+    np.testing.assert_array_equal(noisy, expected)
+
+
 def test_response_converts_strain_to_arm_length_change_and_intensity(simulator):
     strain, _ = simulator.generate_chirp(30, 30, 400)
     delta_l, intensity = simulator.calculate_response(strain)
@@ -53,4 +67,6 @@ def test_response_converts_strain_to_arm_length_change_and_intensity(simulator):
 
 def test_the_simulator_needs_a_known_backend():
     with pytest.raises(ValueError, match="pycbc"):
-        TimeDomainSimulator(backend="lal", rng=np.random.default_rng())
+        TimeDomainSimulator(
+            backend="lal", rng=np.random.default_rng(), noise_psd=pink_psd
+        )

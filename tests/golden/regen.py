@@ -84,11 +84,11 @@ def _measure_noise(noise):
     import numpy as np
 
     # RandomState(SEED) draws what the seeded global RNG drew before P5.3.
-    gaussian = noise.generate_gaussian_noise(
-        16384, 1.0, rng=np.random.RandomState(SEED)
-    )
-    colored = noise.generate_colored_noise(
-        16384, 4096, 1.0, rng=np.random.RandomState(SEED)
+    gaussian = noise.white_noise(16384, 1.0, rng=np.random.RandomState(SEED))
+    # Since P5.4 the 1/f spectrum of generate_colored_noise is pink_psd, drawn with
+    # the one-sided normalization of colored_noise_from_psd (CORE-9).
+    colored = noise.colored_noise_from_psd(
+        16384, 4096, noise.pink_psd, rng=np.random.RandomState(SEED)
     )
     return {
         "gaussian": _summary(gaussian, NOISE_SAMPLES),
