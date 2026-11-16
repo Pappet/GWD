@@ -34,7 +34,7 @@ except ImportError:
 # GWD Core Test
 print("-"*50)
 try:
-    from gwd_core.waveforms import generate_astrophysical_chirp
+    from gwd.core.waveforms import generate_astrophysical_chirp
     print("✓ GWD Core       OK")
 except ImportError as e:
     print(f"✗ GWD Core       FEHLER: {e}")

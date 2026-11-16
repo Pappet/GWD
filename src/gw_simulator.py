@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Gravitationswellen-Detektor Simulator - GUI Frontend
-Nutzt gwd_core für die Simulation.
+Uses gwd.core for the simulation.
 """
 import sys
 import os
@@ -13,7 +13,7 @@ from matplotlib.widgets import Slider, Button
 
 # --- IMPORT SETUP ---
 sys.path.append(os.path.dirname(__file__))
-from gwd_core.simulation import TimeDomainSimulator
+from gwd.core.simulation import TimeDomainSimulator
 
 def create_interactive_plot():
     # Instanz der Simulation Engine
@@ -39,11 +39,11 @@ def create_interactive_plot():
     
     # Hilfsfunktion für die Berechnung
     def calculate_model():
-        # 1. Chirp berechnen (gwd_core)
+        # 1. Compute the chirp (gwd.core)
         strain, freq = sim.generate_chirp(gui_params['mass1'], gui_params['mass2'], gui_params['distance'])
-        # 2. Rauschen hinzufügen (gwd_core)
+        # 2. Add noise (gwd.core)
         strain_noisy = sim.add_detector_noise(strain, gui_params['noise_level'])
-        # 3. Antwort berechnen (gwd_core)
+        # 3. Compute the response (gwd.core)
         delta_L, intensity = sim.calculate_response(strain_noisy)
         return strain, freq, strain_noisy, delta_L
 

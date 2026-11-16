@@ -1,5 +1,5 @@
 import numpy as np
-from src.gwd_core.interferometer import InterferometerModel
+from gwd.core.interferometer import InterferometerModel
 
 def test_interferometer_default_sensitivity():
     model = InterferometerModel()

@@ -16,15 +16,27 @@ The **Gravitational Wave Detection (GWD)** project is an advanced, machine-learn
 ## 🚀 Quickstart Guide
 
 ### 1. Installation
-**Known issue:** `requirements.txt` pins `pycbc==2.4.0`, which has no usable wheels on Python 3.12, so this install can fail. A lockfile is planned.
+GWD needs Python 3.11 or newer. Use Linux or WSL: PyCBC, the waveform backend, is not available on Windows.
 
 ```bash
 # Provide a fresh virtual environment
-python -m venv venv
-source venv/bin/activate
+python -m venv .venv
+source .venv/bin/activate
 
-# Install dependencies
-pip install -r requirements.txt
+# Install the package with all extras and the development tools
+pip install -e '.[all,dev]'
+
+# Check the environment and the active waveform backend
+python -m gwd.env
+```
+
+The extras are `physics` (pycbc), `gwdata` (gwpy), `ml` (tensorflow), `dev` (pytest, ruff), and `all` (physics, gwdata, ml). For an NVIDIA GPU, TensorFlow also offers `pip install 'tensorflow[and-cuda]'`; this project does not install it for you.
+
+For the exact versions the golden test values were recorded with (Linux, Python 3.12), install from the lockfile instead:
+
+```bash
+pip install -r requirements-linux-py312.lock
+pip install -e . --no-deps
 ```
 
 ### 2. Generate Data & Train
@@ -46,7 +58,7 @@ python src/optimize_threshold.py
 ```
 
 ## 🤝 Contribution
-Contributions are welcome! Please ensure that any structural or behavioral changes are strictly tied to synchronized documentation updates. All new code should be placed in the `src/` folder, and modifications to dependencies must be locked down securely in `requirements.txt`.
+Contributions are welcome! Please ensure that any structural or behavioral changes are strictly tied to synchronized documentation updates. All new code should be placed in the `src/` folder, and dependencies are declared in `pyproject.toml`.
 Remember: **Never push directly to the `main` branch.** All changes must go through a Pull Request.
 
 ## 📄 License

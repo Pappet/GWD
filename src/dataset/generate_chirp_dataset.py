@@ -11,12 +11,12 @@ import numpy as np
 import glob
 import random
 
-from gwd_core.waveforms import (
+from gwd.core.waveforms import (
     generate_astrophysical_chirp, 
     generate_realistic_chirp, 
     generate_random_bbh_parameters
 )
-from gwd_core.noise import generate_gaussian_noise
+from gwd.core.noise import generate_gaussian_noise
 
 REAL_NOISE_DIR = DATA_DIR_NOISE
 
