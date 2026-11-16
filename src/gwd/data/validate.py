@@ -8,7 +8,8 @@ was written before P4.1; its scenario is unknown, so only its integrity is check
 Since P5.5 labels.csv also has peak_snr and optimal_snr; check_snr_columns checks them
 when they are there. Datasets written before have only snr, which is the peak SNR: the
 range check and the statistics read snr, which is in both, and the optimal SNR is
-reported as not recorded.
+reported as not recorded. A V2 scenario (P6.2) is drawn in the optimal SNR, so its
+range check and the SNR histogram read optimal_snr (snr_column).
 run() prints both with the statistics and returns 1 if there is any finding.
 
 Usage:
@@ -318,11 +319,20 @@ def dataset_scenario(folder):
     return name, SCENARIOS.get(name)
 
 
+def snr_column(scenario):
+    """The labels.csv column of the SNR the scenario draws: snr (peak, V1) or optimal_snr.
+
+    snr holds the peak SNR in every dataset, also in those written before P5.5.
+    """
+    return "optimal_snr" if scenario.snr_kind == "optimal" else "snr"
+
+
 def signal_ranges(scenario):
     """{labels.csv column: (low, high)} that every signal sample of scenario lies in.
 
-    The bounds are the scenario's own fields. With random masses, mass2 also lies at
-    or below mass1, which check_distribution checks on its own.
+    The bounds are the scenario's own fields; the SNR range applies to snr_column. With
+    random masses, mass2 also lies at or below mass1, which check_distribution checks
+    on its own.
     """
     if scenario.mass_mode == "random":
         mass1 = mass2 = tuple(scenario.masses)
@@ -330,7 +340,7 @@ def signal_ranges(scenario):
         mass1 = (scenario.masses[0],) * 2
         mass2 = (scenario.masses[1],) * 2
     return {
-        "snr": tuple(scenario.snr_range),
+        snr_column(scenario): tuple(scenario.snr_range),
         "mass1": mass1,
         "mass2": mass2,
         "merger_time": tuple(scenario.t_merger_range),
@@ -358,6 +368,15 @@ def check_distribution(labels, scenario):
     if signal_rows.empty:
         return findings
 
+    if snr_column(scenario) not in signal_rows.columns:
+        findings.append(
+            Finding(
+                "range",
+                f"{scenario.name} is drawn in the {scenario.snr_kind} SNR, but "
+                f"labels.csv has no column {snr_column(scenario)}",
+            )
+        )
+        return findings
     columns = {
         column: pd.to_numeric(signal_rows[column], errors="coerce")
         for column in signal_ranges(scenario)
@@ -475,10 +494,17 @@ def print_statistics(labels, scenario):
     ratios = optimal_per_peak(signal_rows)
     if ratios:
         text = ", ".join(f"{source} {value:.1f}" for source, value in ratios.items())
-        print(
-            "   optimal_snr is the matched filter SNR (white noise: analytic; real "
-            "noise: Welch PSD of the chunk, 20-300 Hz)."
-        )
+        if scenario is not None and scenario.snr_kind == "optimal":
+            print(
+                "   optimal_snr is the matched filter SNR the signal was scaled to "
+                f"({scenario.name}: against the PSD of the simulated noise, 20-300 Hz); "
+                "peak_snr is measured in the conditioned sample."
+            )
+        else:
+            print(
+                "   optimal_snr is the matched filter SNR (white noise: analytic; real "
+                "noise: Welch PSD of the chunk, 20-300 Hz)."
+            )
         print(f"   Median optimal_snr / peak_snr by noise: {text}")
     else:
         print("   optimal_snr: not recorded (dataset written before P5.5).")
@@ -538,23 +564,23 @@ def create_visualizations(
     # ========== PLOT 1: SNR distribution ==========
     fig1, axes1 = plt.subplots(1, 2, figsize=(14, 5))
 
-    # Histogram
-    axes1[0].hist(
-        signal_samples["snr"], bins=50, edgecolor="black", alpha=0.7, color="steelblue"
-    )
+    # Histogram of the SNR the scenario draws: the peak SNR in V1, the optimal in V2.
+    column = snr_column(scenario) if scenario is not None else "snr"
+    values = signal_samples[column]
+    axes1[0].hist(values, bins=50, edgecolor="black", alpha=0.7, color="steelblue")
     axes1[0].axvline(
-        signal_samples["snr"].median(),
+        values.median(),
         color="red",
         linestyle="--",
         linewidth=2,
-        label=f"Median = {signal_samples['snr'].median():.2f}",
+        label=f"Median = {values.median():.2f}",
     )
     axes1[0].axvline(
-        signal_samples["snr"].mean(),
+        values.mean(),
         color="green",
         linestyle="--",
         linewidth=2,
-        label=f"Mean = {signal_samples['snr'].mean():.2f}",
+        label=f"Mean = {values.mean():.2f}",
     )
     if scenario is not None:
         for bound in scenario.snr_range:
@@ -565,9 +591,13 @@ def create_visualizations(
             alpha=0.08,
             label=f"{scenario.name} range",
         )
-    axes1[0].set_xlabel("Peak SNR (peak amplitude / noise std)", fontsize=12)
+    if column == "optimal_snr":
+        axes1[0].set_xlabel("Optimal SNR (matched filter, 20-300 Hz)", fontsize=12)
+        axes1[0].set_title("Optimal SNR distribution", fontsize=14, fontweight="bold")
+    else:
+        axes1[0].set_xlabel("Peak SNR (peak amplitude / noise std)", fontsize=12)
+        axes1[0].set_title("Peak SNR distribution", fontsize=14, fontweight="bold")
     axes1[0].set_ylabel("Number of samples", fontsize=12)
-    axes1[0].set_title("Peak SNR distribution", fontsize=14, fontweight="bold")
     axes1[0].legend()
     axes1[0].grid(True, alpha=0.3)
 

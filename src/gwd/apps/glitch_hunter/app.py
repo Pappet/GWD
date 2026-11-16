@@ -18,6 +18,10 @@ shows real data only; without gwpy it shows simulated data only.
 The alarm threshold starts at the model's own threshold (gwd.registry.get_threshold,
 calibrated by gwd eval thresholds at FPR 1 %, P5.8); a model without one starts at
 THRESHOLD_FALLBACK, with a warning, and so does the app without a model.
+
+The switch 'Scenario' chooses V1 or V2 for the simulation (P6.2): the same two modes,
+drawn from the V1 or the V2 scenarios. V1 is the start value until P6.5; V2 needs gwpy
+for its conditioning and is off without it.
 """
 
 import queue
@@ -33,10 +37,11 @@ from gwd.apps._backend import require_interactive_backend
 from gwd.apps.glitch_hunter.audio import Player
 from gwd.apps.glitch_hunter.sources import (
     DETECTOR,
-    MODES,
     TRAINING,
+    VERSIONS,
     GwoscSource,
     SimSource,
+    counterpart,
     gwpy_available,
 )
 from gwd.config import (
@@ -109,7 +114,7 @@ def truth_text(sample):
     """The truth about a sample, as the GUI shows it after 'Ask AI'."""
     if sample.source == "simulation":
         if sample.has_signal:
-            return f"TRUTH: SIGNAL (peak SNR {sample.snr:.2f})"
+            return f"TRUTH: SIGNAL ({sample.snr_kind} SNR {sample.snr:.2f})"
         return "TRUTH: NOISE"
     if sample.event is None:
         return "TRUTH: real noise (no known event)"
@@ -165,8 +170,11 @@ class GlitchHunterApp:
         real=None,
         player=None,
         threshold=THRESHOLD_FALLBACK,
+        v2_available=None,
     ):
         self.model = model
+        # V2 conditions its samples with gwpy (gwd.data.preprocessing.condition_array).
+        self.v2_available = gwpy_available() if v2_available is None else v2_available
         self.noise_warning = (
             training_noise_warning(metadata) if model is not None else None
         )
@@ -213,7 +221,7 @@ class GlitchHunterApp:
         self.ax_confidence = self.fig.add_subplot(gs[2])
         self.fig.subplots_adjust(bottom=0.2)
 
-        ax_thresh = self.fig.add_axes([0.2, 0.11, 0.45, 0.03])
+        ax_thresh = self.fig.add_axes([0.2, 0.11, 0.41, 0.03])
         self.slider_thresh = Slider(
             ax_thresh,
             "Alarm threshold",
@@ -226,14 +234,24 @@ class GlitchHunterApp:
         )
         self.slider_thresh.on_changed(self.update_threshold)
 
-        ax_mode = self.fig.add_axes([0.72, 0.085, 0.25, 0.08])
+        mode = self.sim.mode if self.sim else TRAINING
+        modes = VERSIONS[mode.version]
+        ax_mode = self.fig.add_axes([0.68, 0.085, 0.23, 0.08])
         ax_mode.set_title("Simulation mode", fontsize=9)
         self.radio_mode = RadioButtons(
-            ax_mode,
-            [mode_label(mode) for mode in MODES],
-            active=MODES.index(self.sim.mode if self.sim else TRAINING),
+            ax_mode, [mode_label(m) for m in modes], active=modes.index(mode)
         )
         self.radio_mode.on_clicked(self.set_mode)
+
+        ax_version = self.fig.add_axes([0.92, 0.085, 0.06, 0.08])
+        ax_version.set_title("Scenario", fontsize=9)
+        versions = sorted(VERSIONS)
+        self.radio_version = RadioButtons(
+            ax_version,
+            [version_label(v) for v in versions],
+            active=versions.index(mode.version),
+        )
+        self.radio_version.on_clicked(self.set_version)
 
         self.btn_sim = self._button(
             [0.05, 0.02, 0.20, 0.05], "Simulation", "lightblue", "skyblue"
@@ -279,6 +297,7 @@ class GlitchHunterApp:
         """
         self._enable(self.btn_sim, self.sim is not None)
         self.radio_mode.active = self.sim is not None
+        self.radio_version.active = self.sim is not None and self.v2_available
         self._enable(self.btn_real, self.real is not None and not self.loading)
         ready = self.sample is not None and not self.loading
         self._enable(self.btn_sound, ready)
@@ -299,8 +318,25 @@ class GlitchHunterApp:
     def set_mode(self, label):
         if self.sim is None:
             return
-        self.sim.mode = next(mode for mode in MODES if mode_label(mode) == label)
+        modes = VERSIONS[self.sim.mode.version]
+        self.sim.mode = next(mode for mode in modes if mode_label(mode) == label)
         self.generate_new_sample(None)
+
+    def set_version(self, label):
+        """Switch the simulation to scenario V1 or V2, keep the mode, draw a new sample."""
+        if self.sim is None:
+            return
+        version = next(v for v in VERSIONS if version_label(v) == label)
+        if version == self.sim.mode.version:
+            return
+        if version != 1 and not self.v2_available:
+            return
+        self.sim.mode = counterpart(self.sim.mode, version)
+        modes = VERSIONS[version]
+        for text, mode in zip(self.radio_mode.labels, modes):
+            text.set_text(mode_label(mode))
+        # Selecting the mode again updates value_selected and draws the new sample.
+        self.radio_mode.set_active(modes.index(self.sim.mode))
 
     def start_background_loading(self, event):
         """Start a download in a worker thread, so the GUI does not freeze."""
@@ -507,10 +543,20 @@ class GlitchHunterApp:
 
 
 def mode_label(mode):
-    """The radio button label of a mode; 'Challenge' says that it is hard on purpose."""
-    if mode is TRAINING:
+    """The radio button label of a mode; 'Challenge' says that it is hard on purpose.
+
+    The V1 challenge lies partly below the training range; the V2 one inside it.
+    """
+    if mode.name == TRAINING.name:
         return f"{mode.name} (training data)"
-    return f"{mode.name} (hard: extrapolation)"
+    if mode.version == 1:
+        return f"{mode.name} (hard: extrapolation)"
+    return f"{mode.name} (hard: low SNR)"
+
+
+def version_label(version):
+    """The radio button label of a scenario version: V1 or V2."""
+    return f"V{version}"
 
 
 def main(model="latest"):

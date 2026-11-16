@@ -7,7 +7,9 @@ columns come after the old seven, so readers that select columns by name are not
 affected. Since P5.5 two more follow: peak_snr, the peak SNR the signal was scaled to
 (the old column snr stays, with the same value, as an alias for old readers), and
 optimal_snr, the optimal SNR measured by gwd.data.injection.measure_optimal_snr; both
-are 0 without signal. manifest.json records how the dataset was made, see gwd.data.provenance.
+are 0 without signal. A V2 dataset (P6.2) has the same columns: there optimal_snr is
+the optimal SNR the signal was scaled to, peak_snr (and snr) the peak SNR measured in
+the conditioned sample, and noise_source is 'aligo' for the simulated aLIGO noise. manifest.json records how the dataset was made, see gwd.data.provenance.
 Since P5.6 the samples are stored as float32 (gwd.config.SAMPLE_DTYPE); they are still
 drawn in float64, so labels.csv is unchanged.
 
@@ -37,8 +39,9 @@ from gwd.data.injection import make_sample, real_noise_provider
 from gwd.data.provenance import announce, build_manifest, write_manifest
 from gwd.data.scenarios import TRAIN_V1
 
-# noise_kind of gwd.data.injection -> noise_source in labels.csv
-NOISE_SOURCES = {"real": "real", "white": "gaussian"}
+# noise_kind of gwd.data.injection -> noise_source in labels.csv. 'aligo' is the
+# simulated Gaussian noise with the aLIGO design PSD of scenario V2 (P6.2).
+NOISE_SOURCES = {"real": "real", "white": "gaussian", "aligo": "aligo"}
 # The only files that overwrite=True removes from the output folder.
 SAMPLE_PATTERN = "sample_*.npy"
 
@@ -86,7 +89,7 @@ def prepare_output_folder(folder, overwrite=False, noise_dir=DATA_DIR_NOISE):
 def describe_noise(scenario, noise_provider, noise_dir=DATA_DIR_NOISE):
     """(text for the noise part of the start line, warnings) for a dataset."""
     if scenario.real_noise_fraction == 0:
-        return f"gaussian ({scenario.name} uses no real noise)", []
+        return f"{scenario.noise_text()} ({scenario.name} uses no real noise)", []
     share = f"{scenario.real_noise_fraction:.0%}"
     if noise_provider is None:
         warning = (

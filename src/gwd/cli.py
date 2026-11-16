@@ -224,8 +224,9 @@ def _add_testset(parser, *aliases):
         "--testset",
         *aliases,
         choices=sorted(TESTSETS),
-        help="The fixed test set: indist_v1 (the training distribution TRAIN_V1) or "
-        "stress_v1 (EVAL_V1, as before P5.7). Default: DEFAULT_TESTSET in gwd.config "
+        help="The fixed test set: indist_v1 (the training distribution TRAIN_V1), "
+        "stress_v1 (EVAL_V1, as before P5.7), indist_v2 (TRAIN_V2), or stress_v2 "
+        "(TRAIN_V2 with an extrapolation bin). Default: DEFAULT_TESTSET in gwd.config "
         "(stress_v1).",
     )
     parser.add_argument(
@@ -309,7 +310,8 @@ def build_parser():
         type=str.lower,
         choices=sorted(name.lower() for name in SCENARIOS),
         default="train_v1",
-        help="Scenario to draw from. Default: train_v1.",
+        help="Scenario to draw from: train_v1, or train_v2 (simulated aLIGO noise, "
+        "conditioned with the signal, optimal SNR; needs gwpy). Default: train_v1.",
     )
     generate.set_defaults(handler=_generate)
 

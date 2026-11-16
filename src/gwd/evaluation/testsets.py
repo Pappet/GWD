@@ -7,15 +7,19 @@ The sets are defined in gwd.data.scenarios.TESTSETS (default of D4):
 
 - indist_v1: the training distribution TRAIN_V1, with its noise mix (80% real noise
   where data/noise_background/ has chunks, else white);
-- stress_v1: EVAL_V1, the distribution every simulated number came from before P5.7.
+- stress_v1: EVAL_V1, the distribution every simulated number came from before P5.7;
+- indist_v2 and stress_v2 (P6.2): TRAIN_V2 (simulated aLIGO noise, conditioned with
+  the signal, optimal SNR 4-20), and the same with an extrapolation bin of optimal
+  SNR 2-4 below it. Their training reference is TRAIN_V2.
 
 A set has two parts, drawn from separate random streams:
 
 - test: n samples, balanced (even indices signal, odd ones noise only), for ROC/AUC,
   the FPR at the operating point, and the efficiency curve of its signal samples. The
-  k-th signal sample draws its peak SNR uniform within bin k mod (number of bins) of
-  EvalSet.peak_snr_edges(), so the peak SNR is still uniform over the scenario's range
-  and every bin is occupied once there are as many signal samples as bins;
+  k-th signal sample draws its SNR (the scenario's snr_kind: peak in V1, optimal in
+  V2) uniform within bin k mod (number of bins) of EvalSet.snr_edges(), so the SNR is
+  still uniform over the scenario's range and every bin is occupied once there are as
+  many signal samples as bins;
 - calib_bg: n noise-only samples, only for calibrating thresholds (P5.8).
 
 Every sample is z-score normalized and stored as float32. The npz also holds the
@@ -78,7 +82,8 @@ TESTSET_FORMAT = 1
 # The first word of every spawn key: 'gwdt' in ASCII.
 SEED_STREAM = 0x67776474
 PARTS = ("test", "calib_bg")
-# Quantile bins of the optimal SNR and of the total mass of the signal samples.
+# Quantile bins of the SNR a set is not drawn in (the optimal SNR in V1, the peak SNR
+# in V2) and of the total mass of the signal samples.
 OPTIMAL_SNR_BINS = 5
 TOTAL_MASS_BINS = 4
 # Relative slack for the training range check of stored floats.
@@ -217,7 +222,7 @@ def _draw(spec, seed, n, noise_dir, backend):
     if spec.scenario.real_noise_fraction > 0:
         provider = real_noise_provider(noise_dir or DATA_DIR_NOISE)
 
-    edges = spec.peak_snr_edges()
+    edges = spec.snr_edges()
     rng = part_rng(spec.name, seed, "test")
     X = np.empty((n, N_SAMPLES), dtype=SAMPLE_DTYPE)
     columns = {key: [] for key in ("y", "peak_snr", "optimal_snr", "mass1", "mass2")}
@@ -457,18 +462,28 @@ def quantile_edges(values, bins):
     return edges if len(edges) > 1 else np.array([edges[0], edges[0]])
 
 
+def snr_values(built, kind):
+    """The SNR of kind ('peak' or 'optimal') of every sample of the part test."""
+    return built.peak_snr if kind == "peak" else built.optimal_snr
+
+
 def bins(built):
     """The bin edges of the signal samples: peak SNR, optimal SNR, total mass (M☉).
 
-    Peak SNR: the equal bins the set was drawn in. Optimal SNR and total mass: quantile
-    bins of the set's signal samples, so every bin is occupied; a fixed mass is one bin.
+    The SNR the set was drawn in (peak in V1, optimal in V2): its equal bins. The other
+    SNR and the total mass: quantile bins of the set's signal samples, so every bin is
+    occupied; a fixed mass is one bin.
     """
     signal = built.y == 1
-    return {
-        "peak_snr": np.array(built.spec.peak_snr_edges()),
-        "optimal_snr": quantile_edges(built.optimal_snr[signal], OPTIMAL_SNR_BINS),
-        "total_mass": quantile_edges(built.total_mass[signal], TOTAL_MASS_BINS),
-    }
+    edges = {}
+    for kind in ("peak", "optimal"):
+        if kind == built.spec.snr_kind:
+            edges[f"{kind}_snr"] = np.array(built.spec.snr_edges())
+        else:
+            values = snr_values(built, kind)[signal]
+            edges[f"{kind}_snr"] = quantile_edges(values, OPTIMAL_SNR_BINS)
+    edges["total_mass"] = quantile_edges(built.total_mass[signal], TOTAL_MASS_BINS)
+    return edges
 
 
 def _within(values, low, high):
@@ -479,13 +494,14 @@ def _within(values, low, high):
 def outside_training(built):
     """True for each signal sample whose parameters lie outside the training ranges.
 
-    The ranges are those of built.spec.training (TRAIN_V1): peak SNR, merger time,
-    and the masses (random: both in the mass range and mass2 <= mass1; fixed: equal to
-    them). Noise-only samples are False.
+    The ranges are those of built.spec.training (TRAIN_V1, or TRAIN_V2 for the V2
+    sets): the SNR of its snr_kind (peak or optimal), merger time, and the masses
+    (random: both in the mass range and mass2 <= mass1; fixed: equal to them).
+    Noise-only samples are False.
     """
     training = built.spec.training
     m1, m2 = built.mass1, built.mass2
-    inside = _within(built.peak_snr, *training.snr_range)
+    inside = _within(snr_values(built, training.snr_kind), *training.snr_range)
     inside &= _within(built.t_merger, *training.t_merger_range)
     if training.mass_mode == "random":
         inside &= _within(m1, *training.masses) & _within(m2, *training.masses)

@@ -10,7 +10,7 @@ from gwd.config import BANDPASS, N_SAMPLES, SAMPLE_RATE
 from gwd.core.population import random_bbh_params
 from gwd.core.snr import optimal_snr_welch
 from gwd.data import injection
-from gwd.data.scenarios import APP_V1, EVAL_V1, SCENARIOS, TRAIN_V1, Scenario
+from gwd.data.scenarios import APP_V1, EVAL_V1, TRAIN_V1, Scenario
 
 V1 = [TRAIN_V1, EVAL_V1, APP_V1]
 
@@ -184,8 +184,12 @@ def test_real_chunks_keep_the_v1_scale_skew(noise_folder):
 
 
 def test_the_v1_scenarios_are_frozen():
-    """A changed V1 field would change what old datasets mean; add a V2 instead."""
-    assert {name: s.hash() for name, s in SCENARIOS.items()} == {
+    """A changed V1 field would change what old datasets mean; add a V2 instead.
+
+    The fields V2 added (P6.2) are left out of the hash at their V1 value, so the V1
+    hashes in existing manifests stay valid.
+    """
+    assert {s.name: s.hash() for s in V1} == {
         "TRAIN_V1": "479afb1a7e1c",
         "EVAL_V1": "f251721c360b",
         "APP_V1": "6cc438d4cd62",
@@ -206,13 +210,18 @@ def test_invalid_scenarios_are_rejected():
 
 
 def test_conditioning_the_signal_is_not_part_of_v1():
-    scenario = dataclasses.replace(EVAL_V1, name="X", condition_signal=True)
-    with pytest.raises(NotImplementedError):
-        injection.make_sample(scenario, np.random.RandomState(0))
+    """Conditioning the signal (V2) needs the optimal SNR and a pad, so a V1 scenario
+    with condition_signal is rejected; V2 is tested in tests/data/test_scenario_v2.py."""
+    with pytest.raises(ValueError, match="optimal"):
+        dataclasses.replace(EVAL_V1, name="X", condition_signal=True)
+    with pytest.raises(ValueError, match="V1"):
+        injection.make_conditioned_sample(EVAL_V1, np.random.RandomState(0))
 
 
 @pytest.mark.xfail(
-    strict=True, reason="V1 skew (DATA-1, EVAL-1, EVAL-2, EVAL-3), fixed as V2 in P6.2"
+    strict=True,
+    reason="V1 skew (DATA-1, EVAL-1, EVAL-2, EVAL-3), kept as documentation of the old "
+    "data; V2 is consistent since P6.2 (tests/data/test_scenario_v2.py)",
 )
 def test_known_skew():
     """Training and evaluation should draw from the same distribution; in V1 they do not."""

@@ -1,26 +1,44 @@
-"""Named injection scenarios (P3.5).
+"""Named injection scenarios (P3.5) and the fixed test sets drawn from them (P5.7).
 
 A Scenario says from which distribution a sample is drawn. The three V1 scenarios
 copy what the code did before P3.5, including the differences between training,
 evaluation, and the Glitch Hunter. They are kept as they are, so the skew is visible
-here and not fixed; P6.2 adds V2 next to them.
+here and not fixed.
+
+P6.2 adds V2 next to them (TRAIN_V2, INDIST_V2, STRESS_V2, APP_V2): the signal is
+injected into simulated noise with the aLIGO design PSD first, and signal and noise are
+then conditioned and normalized together, as real data is (see gwd.data.injection).
+The SNR of V2 is the optimal (matched filter) SNR against that PSD in BANDPASS (D2 = B),
+so the same value means the same detectability for every mass and noise type. V2 uses
+no real noise yet (D3 = B; real noise for V2 is P6.3). V1 stays the default of
+gwd data generate and of the evaluation until P6.5.
 """
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
+from typing import Optional
 
 MASS_MODES = ("random", "fixed")
 PEAK_REFERENCES = ("noise_std", "unit")
+SNR_KINDS = ("peak", "optimal")
+# The simulated noise of a sample without a real chunk: white (std 1), or Gaussian
+# noise with the aLIGO design PSD (gwd.core.interferometer.reference_psd).
+SIMULATED_NOISES = ("white", "aligo")
+# Fields that came with V2 (P6.2), with the value every V1 scenario has. hash() leaves a
+# field out while it has this value, so the V1 hashes in existing manifests stay valid.
+V2_FIELD_DEFAULTS = {"simulated_noise": "white", "pad_s": 0.0}
 
 
 @dataclass(frozen=True)
 class Scenario:
     """The parameter distribution of one kind of sample.
 
-    snr_kind: what the SNR means. V1 only knows "peak": the peak of the injected
-        signal divided by the noise level, not a matched filter SNR.
-    snr_range: uniform range of the peak SNR.
+    snr_kind: what the SNR means. "peak" (V1): the peak of the injected signal divided
+        by the noise level, not a matched filter SNR. "optimal" (V2): the optimal SNR
+        of the signal in the sample window against the PSD of the simulated noise, in
+        BANDPASS (gwd.core.snr.optimal_snr_psd).
+    snr_range: uniform range of the SNR of kind snr_kind.
     mass_mode: "random" draws m1 log-uniform in masses, then m2 log-uniform between
         masses[0] and m1. "fixed" uses masses as (m1, m2).
     t_merger_range: uniform range of the merger time in seconds.
@@ -28,9 +46,14 @@ class Scenario:
         Without chunks, every sample gets white noise.
     peak_reference: the noise level the peak SNR refers to. "noise_std" measures the
         std of the noise of each sample; "unit" multiplies the chirp (peak 1) by the
-        SNR, so the noise std is taken as 1.
+        SNR, so the noise std is taken as 1. None for snr_kind "optimal".
     condition_signal: whether the signal is conditioned like the noise. V1 adds the
-        unfiltered signal to the (conditioned) real noise.
+        unfiltered signal to the (conditioned) real noise. V2 (True) adds it to the raw
+        simulated noise and conditions the sum (gwd.data.preprocessing.condition_array).
+    simulated_noise: "white" or "aligo", the noise of a sample without a real chunk.
+        V1 knows only "white".
+    pad_s: seconds of extra noise and signal on each side of the window, conditioned
+        with it and cut off afterwards (V2); 0 in V1.
     """
 
     name: str
@@ -40,17 +63,63 @@ class Scenario:
     masses: tuple
     t_merger_range: tuple
     real_noise_fraction: float
-    peak_reference: str
+    peak_reference: Optional[str]
     snr_kind: str = "peak"
     condition_signal: bool = False
+    simulated_noise: str = "white"
+    pad_s: float = 0.0
 
     def __post_init__(self):
         if self.mass_mode not in MASS_MODES:
             raise ValueError(f"mass_mode must be one of {MASS_MODES}")
-        if self.peak_reference not in PEAK_REFERENCES:
-            raise ValueError(f"peak_reference must be one of {PEAK_REFERENCES}")
         if not 0.0 <= self.real_noise_fraction <= 1.0:
             raise ValueError("real_noise_fraction must be between 0 and 1")
+        if self.snr_kind not in SNR_KINDS:
+            raise ValueError(f"snr_kind must be one of {SNR_KINDS}")
+        if self.simulated_noise not in SIMULATED_NOISES:
+            raise ValueError(f"simulated_noise must be one of {SIMULATED_NOISES}")
+        if self.pad_s < 0:
+            raise ValueError("pad_s must not be negative")
+        if self.condition_signal:
+            self._check_v2()
+        else:
+            self._check_v1()
+
+    def _check_v1(self):
+        """V1: a peak SNR, white simulated noise, no pad (gwd.data.injection, V1)."""
+        if self.peak_reference not in PEAK_REFERENCES:
+            raise ValueError(f"peak_reference must be one of {PEAK_REFERENCES}")
+        if self.snr_kind != "peak" or self.simulated_noise != "white" or self.pad_s:
+            raise ValueError(
+                "Without condition_signal (V1) a scenario has snr_kind 'peak', "
+                "simulated_noise 'white', and pad_s 0"
+            )
+
+    def _check_v2(self):
+        """V2: an optimal SNR, no peak reference, a pad, no real noise until P6.3."""
+        if self.snr_kind != "optimal" or self.peak_reference is not None:
+            raise ValueError(
+                "With condition_signal (V2) a scenario has snr_kind 'optimal' and "
+                "peak_reference None (D2 = B)"
+            )
+        if self.pad_s <= 0:
+            raise ValueError("With condition_signal (V2) pad_s must be positive")
+        if self.real_noise_fraction:
+            raise ValueError(
+                "Real noise for V2 comes with P6.3; a V2 scenario has "
+                "real_noise_fraction 0"
+            )
+
+    def noise_text(self):
+        """What noise the scenario draws, for the start lines (without real chunks)."""
+        if self.simulated_noise == "aligo":
+            return (
+                "simulated aLIGO design noise (aLIGOZeroDetHighPower), conditioned "
+                "with the signal"
+            )
+        if self.condition_signal:
+            return "white gaussian, conditioned with the signal"
+        return "gaussian"
 
     def distribution(self):
         """All fields except the name, to compare what two scenarios draw."""
@@ -64,7 +133,11 @@ class Scenario:
         The built-in hash() of a dataclass changes between processes, so it cannot be
         stored with a dataset.
         """
-        text = json.dumps(asdict(self), sort_keys=True)
+        fields = asdict(self)
+        for key, default in V2_FIELD_DEFAULTS.items():
+            if fields[key] == default:
+                del fields[key]
+        text = json.dumps(fields, sort_keys=True)
         return hashlib.sha256(text.encode()).hexdigest()[:12]
 
 
@@ -104,7 +177,47 @@ APP_V1 = Scenario(
     peak_reference="unit",
 )
 
-SCENARIOS = {s.name: s for s in (TRAIN_V1, EVAL_V1, APP_V1)}
+# --- V2 (P6.2): inject first, then condition together; optimal SNR (D2 = B) ---
+
+# Training data of V2. The optimal SNR range 4-20 lies around the usual detection
+# threshold of 8; for comparison, TRAIN_V1 gave optimal SNRs of 19 to 916 (P5.5).
+TRAIN_V2 = Scenario(
+    name="TRAIN_V2",
+    version=2,
+    snr_range=(4.0, 20.0),
+    mass_mode="random",
+    masses=(5.0, 100.0),
+    t_merger_range=(2.0, 3.6),
+    real_noise_fraction=0.0,
+    peak_reference=None,
+    snr_kind="optimal",
+    condition_signal=True,
+    simulated_noise="aligo",
+    pad_s=2.0,
+)
+
+# The in-distribution test set: TRAIN_V2 under its own name, so the two can only
+# differ by seed and n (tests/data/test_scenario_v2.py, test_v2_consistent).
+INDIST_V2 = replace(TRAIN_V2, name="INDIST_V2")
+
+# The stress test set: the training range in bins, plus one explicit extrapolation bin
+# below it (optimal SNR 2-4).
+STRESS_V2 = replace(TRAIN_V2, name="STRESS_V2", snr_range=(2.0, 20.0))
+
+# The Glitch Hunter's 'Challenge' mode in V2: 30/30 M☉ at the low end of the training
+# range, so it is hard but inside TRAIN_V2 (APP-2).
+APP_V2 = replace(
+    TRAIN_V2,
+    name="APP_V2",
+    snr_range=(4.0, 8.0),
+    mass_mode="fixed",
+    masses=(30.0, 30.0),
+)
+
+SCENARIOS = {
+    s.name: s
+    for s in (TRAIN_V1, EVAL_V1, APP_V1, TRAIN_V2, INDIST_V2, STRESS_V2, APP_V2)
+}
 
 
 @dataclass(frozen=True)
@@ -112,28 +225,34 @@ class EvalSet:
     """A named, fixed test set drawn from a scenario (P5.7, gwd.evaluation.testsets).
 
     The name carries the version (indist_v1), and it names the cached files; a set
-    whose drawing changes gets a new name. peak_snr_bin_width splits the scenario's
-    peak SNR range into equal bins, which the signal samples fill in turn, so every
-    bin is occupied. training is the scenario the models were trained on: signal
-    samples outside its parameter ranges count as extrapolation.
+    whose drawing changes gets a new name. snr_bin_width splits the scenario's SNR
+    range (of its snr_kind: peak in V1, optimal in V2) into equal bins, which the
+    signal samples fill in turn, so every bin is occupied. training is the scenario
+    the models were trained on: signal samples outside its parameter ranges count as
+    extrapolation.
     """
 
     name: str
     scenario: Scenario
-    peak_snr_bin_width: float
+    snr_bin_width: float
     description: str
     training: Scenario = TRAIN_V1
 
-    def peak_snr_edges(self):
-        """The edges of the peak SNR bins, from the low to the high end of the range."""
+    @property
+    def snr_kind(self):
+        """The SNR the set is drawn and binned in: 'peak' (V1) or 'optimal' (V2)."""
+        return self.scenario.snr_kind
+
+    def snr_edges(self):
+        """The edges of the SNR bins, from the low to the high end of the range."""
         low, high = self.scenario.snr_range
-        bins = round((high - low) / self.peak_snr_bin_width)
-        if bins < 1 or abs(low + bins * self.peak_snr_bin_width - high) > 1e-9:
+        bins = round((high - low) / self.snr_bin_width)
+        if bins < 1 or abs(low + bins * self.snr_bin_width - high) > 1e-9:
             raise ValueError(
-                f"{self.name}: the bin width {self.peak_snr_bin_width} does not split "
-                f"the peak SNR range {self.scenario.snr_range} evenly"
+                f"{self.name}: the bin width {self.snr_bin_width} does not split "
+                f"the {self.snr_kind} SNR range {self.scenario.snr_range} evenly"
             )
-        return tuple(low + i * self.peak_snr_bin_width for i in range(bins + 1))
+        return tuple(low + i * self.snr_bin_width for i in range(bins + 1))
 
 
 # The standard test sets (D4 = A): the training distribution, and the old evaluation
@@ -141,14 +260,32 @@ class EvalSet:
 INDIST_V1 = EvalSet(
     name="indist_v1",
     scenario=TRAIN_V1,
-    peak_snr_bin_width=1.0,
+    snr_bin_width=1.0,
     description="the training distribution TRAIN_V1, with its noise mix",
 )
 STRESS_V1 = EvalSet(
     name="stress_v1",
     scenario=EVAL_V1,
-    peak_snr_bin_width=0.25,
+    snr_bin_width=0.25,
     description="EVAL_V1 as before P5.7: white noise, 30/30 M☉, peak SNR 0.5–2.5",
 )
+# The V2 sets (P6.2): the training distribution TRAIN_V2, and the same with the
+# extrapolation bin of optimal SNR 2-4 below it. Models trained on TRAIN_V2 (P6.5).
+INDIST_V2_SET = EvalSet(
+    name="indist_v2",
+    scenario=INDIST_V2,
+    snr_bin_width=2.0,
+    description="the training distribution TRAIN_V2: simulated aLIGO noise, "
+    "optimal SNR 4–20",
+    training=TRAIN_V2,
+)
+STRESS_V2_SET = EvalSet(
+    name="stress_v2",
+    scenario=STRESS_V2,
+    snr_bin_width=2.0,
+    description="TRAIN_V2 with an extrapolation bin: optimal SNR 2–20, 2–4 below the "
+    "training range",
+    training=TRAIN_V2,
+)
 
-TESTSETS = {s.name: s for s in (INDIST_V1, STRESS_V1)}
+TESTSETS = {s.name: s for s in (INDIST_V1, STRESS_V1, INDIST_V2_SET, STRESS_V2_SET)}

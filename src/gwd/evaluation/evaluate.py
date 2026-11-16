@@ -14,11 +14,12 @@ that threshold, always with the FPR it reached on the part test and n.
 Since P5.7 the simulated data is a fixed, hashed test set of gwd.evaluation.testsets
 (--testset, --seed, --n; default stress_v1, which is EVAL_V1), drawn once and then
 loaded. Its part 'test' gives the ROC curve, the operating point, and the efficiency
-curve: the detection rate of its signal samples in each peak SNR bin, with the mean
-optimal (matched filter) SNR of the bin's samples (P5.5); SNR50 and SNR90 are reported
-both ways, interpolated between the bins (P5.8). The metrics are also reported per
-peak SNR bin, optimal SNR bin, total mass bin, and noise source; a bin whose signal
-samples all lie outside the training ranges is marked 'Extrapolation'.
+curve: the detection rate of its signal samples in each bin of the SNR the set was
+drawn in (peak in V1; optimal in the V2 sets of P6.2), with the mean of the other SNR
+of the bin's samples (P5.5); SNR50 and SNR90 are reported both ways, interpolated
+between the bins (P5.8). The metrics are also reported per peak SNR bin, optimal SNR
+bin, total mass bin, and noise source; a bin whose signal samples all lie outside the
+training ranges is marked 'Extrapolation'.
 """
 
 import datetime
@@ -88,19 +89,26 @@ def metrics_box(rows, width=27):
     return "\n".join(lines)
 
 
-def efficiency_curve(built, y_scores, threshold):
-    """(bin centers, detection rates, mean optimal SNRs) per peak SNR bin of a test set.
+def other_kind(kind):
+    """The SNR kind a set is not drawn in: 'optimal' for 'peak' and the reverse."""
+    return "optimal" if kind == "peak" else "peak"
 
-    The signal samples of the set's part 'test' fill its peak SNR bins
-    (EvalSet.peak_snr_edges()); each bin gives the share of them that reach threshold
-    and the mean of their optimal SNR (Sample.optimal_snr, measured in
-    gwd.data.injection). An empty bin gives NaN for both.
+
+def efficiency_curve(built, y_scores, threshold):
+    """(bin centers, detection rates, mean other SNRs) per SNR bin of a test set.
+
+    The signal samples of the set's part 'test' fill the bins of the SNR the set is
+    drawn in (EvalSet.snr_edges(): peak SNR in V1, optimal SNR in V2); each bin gives
+    the share of them that reach threshold and the mean of their other SNR (in V1 the
+    optimal SNR, Sample.optimal_snr, measured in gwd.data.injection; in V2 the peak
+    SNR). An empty bin gives NaN for both.
     """
-    edges = np.asarray(built.spec.peak_snr_edges())
+    kind = built.spec.snr_kind
+    edges = np.asarray(built.spec.snr_edges())
     signal = built.y == 1
     scores = np.asarray(y_scores)[signal]
-    optimal = built.optimal_snr[signal]
-    index = bin_index(built.peak_snr[signal], edges)
+    optimal = testsets.snr_values(built, other_kind(kind))[signal]
+    index = bin_index(testsets.snr_values(built, kind)[signal], edges)
     rates, means = [], []
     for b in range(len(edges) - 1):
         mask = index == b
@@ -181,7 +189,7 @@ def bin_table(title, rows, value_format=".2f"):
     return "\n".join(lines)
 
 
-def print_binned_metrics(report, threshold):
+def print_binned_metrics(report, threshold, training="TRAIN_V1"):
     print(
         f"\n   📋 Per bin (TPR at threshold {threshold:.4g}; the AUC of an SNR or mass "
         "bin is its signal samples against all noise samples):"
@@ -192,7 +200,7 @@ def print_binned_metrics(report, threshold):
     print(bin_table("Noise source", report["noise_source"]))
     print(
         "   'Extrapolation': all signal samples of the bin lie outside the training "
-        "ranges (TRAIN_V1)."
+        f"ranges ({training})."
     )
 
 
@@ -241,18 +249,26 @@ def evaluate_simulation_with_roc(model, built, threshold):
         f"(n {n_signal}) at FPR {op_fpr:.2%} (n {n_noise})"
     )
 
-    # --- B. Efficiency curve: detection rate per peak SNR bin of the signal samples ---
-    snr_levels, detection_rates, optimal_snrs = efficiency_curve(
+    # --- B. Efficiency curve: detection rate per SNR bin of the signal samples ---
+    kind = built.spec.snr_kind
+    snr_levels, detection_rates, other_snrs = efficiency_curve(
         built, y_scores, threshold
     )
+    if kind == "peak":
+        peak_levels, optimal_levels = snr_levels, np.array(other_snrs)
+    else:
+        peak_levels, optimal_levels = np.array(other_snrs), snr_levels
 
-    # SNR50 / SNR90: where the detection rate over the peak SNR bin centers reaches
-    # 50% / 90%, interpolated between the bins (P5.8), and the same over the mean
-    # optimal SNR of the bins' samples (P5.5).
-    snr_50 = snr_at_rate(snr_levels, detection_rates, 0.5)
-    snr_90 = snr_at_rate(snr_levels, detection_rates, 0.9)
-    optimal_50 = snr_at_rate(np.array(optimal_snrs), detection_rates, 0.5)
-    optimal_90 = snr_at_rate(np.array(optimal_snrs), detection_rates, 0.9)
+    # SNR50 / SNR90: where the detection rate over the bin centers reaches 50% / 90%,
+    # interpolated between the bins (P5.8), and the same over the mean other SNR of
+    # the bins' samples (P5.5): peak from the centers in V1, optimal in V2.
+    snr_50 = snr_at_rate(peak_levels, detection_rates, 0.5)
+    snr_90 = snr_at_rate(peak_levels, detection_rates, 0.9)
+    optimal_50 = snr_at_rate(optimal_levels, detection_rates, 0.5)
+    optimal_90 = snr_at_rate(optimal_levels, detection_rates, 0.9)
+    drawn_50, drawn_90 = (
+        (snr_50, snr_90) if kind == "peak" else (optimal_50, optimal_90)
+    )
     signal = y_true_roc == 1
     ratio = optimal_per_peak(built.peak_snr[signal], built.optimal_snr[signal])
     if ratio is not None:
@@ -267,7 +283,7 @@ def evaluate_simulation_with_roc(model, built, threshold):
     )
 
     report = binned_metrics(built, y_scores, threshold)
-    print_binned_metrics(report, threshold)
+    print_binned_metrics(report, threshold, built.spec.training.name)
 
     # --- C. Confusion matrix at the threshold ---
     y_pred = predict_labels(y_scores, threshold)
@@ -320,10 +336,12 @@ def evaluate_simulation_with_roc(model, built, threshold):
     ax4.plot(snr_levels, detection_rates, "o-", color="purple", lw=2)
     ax4.axhline(0.5, color="gray", linestyle="--", alpha=0.5, label="50%")
     ax4.axhline(0.9, color="blue", linestyle="--", alpha=0.5, label="90%")
-    if snr_50 is not None:
-        ax4.axvline(snr_50, color="orange", linestyle=":", label=f"SNR50={snr_50:.2f}")
-    if snr_90 is not None:
-        ax4.axvline(snr_90, color="red", linestyle=":", label=f"SNR90={snr_90:.2f}")
+    if drawn_50 is not None:
+        ax4.axvline(
+            drawn_50, color="orange", linestyle=":", label=f"SNR50={drawn_50:.2f}"
+        )
+    if drawn_90 is not None:
+        ax4.axvline(drawn_90, color="red", linestyle=":", label=f"SNR90={drawn_90:.2f}")
     ax4.text(
         0.98,
         0.04,
@@ -332,13 +350,18 @@ def evaluate_simulation_with_roc(model, built, threshold):
         ha="right",
         fontsize=9,
     )
-    ax4.set_xlabel("Injected peak SNR (bin center)", fontweight="bold")
-    if ratio:
+    ax4.set_xlabel(f"Injected {kind} SNR (bin center)", fontweight="bold")
+    if ratio and kind == "peak":
         # The optimal SNR is about proportional to the peak SNR for fixed masses.
         top = ax4.secondary_xaxis(
             "top", functions=(lambda x: x * ratio, lambda x: x / ratio)
         )
         top.set_xlabel(f"Optimal SNR (≈ {ratio:.1f} × peak)")
+    elif ratio:
+        top = ax4.secondary_xaxis(
+            "top", functions=(lambda x: x / ratio, lambda x: x * ratio)
+        )
+        top.set_xlabel(f"Peak SNR (≈ optimal / {ratio:.1f})")
     ax4.set_ylabel("Detection Probability", fontweight="bold")
     ax4.set_title("Efficiency curve (signal samples per bin)", fontweight="bold")
     ax4.legend()
@@ -440,7 +463,7 @@ def noise_description(spec, real):
     field_test = "field test on real H1 data" if real else "no field test (--no-real)"
     scenario = spec.scenario
     if scenario.real_noise_fraction == 0:
-        noise = "gaussian"
+        noise = scenario.noise_text()
     else:
         noise = (
             f"real for {scenario.real_noise_fraction:.0%} of samples if the test set "
