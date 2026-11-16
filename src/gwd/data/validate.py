@@ -5,11 +5,11 @@ Dieses Script überprüft die Qualität des generierten Datensatzes und erstellt
 umfassende Visualisierungen zur Analyse.
 
 Usage:
-    python -m gwd.data.validate [--data-folder gw_training_data]
+    gwd data validate [--data FOLDER] [--plots FOLDER] [--no-plots]
 """
 
-import argparse
 import os
+import sys
 
 import numpy as np
 import pandas as pd
@@ -529,47 +529,29 @@ def create_visualizations(df, data_folder, output_folder=VALIDATION_DATASET_PLOT
     print(f"\n   ✅ Alle Visualisierungen erstellt in '{output_folder}/'")
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Validiere Gravitationswellen Trainingsdatensatz"
-    )
-    parser.add_argument(
-        "--data-folder",
-        type=str,
-        default=DATA_DIR_TRAIN,
-        help="Pfad zum Datensatz-Ordner",
-    )
-    parser.add_argument(
-        "--output-folder",
-        type=str,
-        default=VALIDATION_DATASET_PLOTS_DIR,
-        help="Pfad für die Ausgabe-Plots",
-    )
-    parser.add_argument(
-        "--no-plots", action="store_true", help="Nur Statistiken, keine Plots erstellen"
-    )
-
-    args = parser.parse_args()
-
+def run(
+    data_folder=DATA_DIR_TRAIN, output_folder=VALIDATION_DATASET_PLOTS_DIR, plots=True
+):
+    """Check the dataset in data_folder, with plots in output_folder. Returns the exit code."""
     print("\n" + "=" * 80)
     print("🔍 DATENSATZ VALIDIERUNG - GRAVITATIONSWELLEN TRAINING")
     print("=" * 80)
-    print(f"\nDatensatz-Ordner: {args.data_folder}")
-    print(f"Output-Ordner: {args.output_folder}")
+    print(f"\nDataset folder: {data_folder}")
+    print(f"Plot folder: {output_folder}")
 
     try:
         # Labels laden
-        df = load_dataset_info(args.data_folder)
+        df = load_dataset_info(data_folder)
 
         # Statistiken ausgeben
         print_statistics(df)
 
         # Samples validieren
-        validate_samples(df, args.data_folder)
+        validate_samples(df, data_folder)
 
         # Visualisierungen erstellen
-        if not args.no_plots:
-            create_visualizations(df, args.data_folder, args.output_folder)
+        if plots:
+            create_visualizations(df, data_folder, output_folder)
 
         # Finale Bewertung
         signal_samples = df[df["has_signal"] == 1]
@@ -635,4 +617,6 @@ def main():
 
 
 if __name__ == "__main__":
-    exit(main())
+    if len(sys.argv) > 1:
+        sys.exit("The options are on the gwd command: gwd data validate --help")
+    sys.exit(run())

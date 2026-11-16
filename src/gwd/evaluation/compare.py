@@ -4,9 +4,9 @@ ROC Comparison Tool - Vergleicht mehrere Modelle in einer ROC-Kurve
 Nützlich um zu sehen, welches Modell threshold-unabhängig besser ist.
 """
 
-import argparse
 import datetime
 import os
+import sys
 
 import matplotlib
 import numpy as np
@@ -22,7 +22,7 @@ from sklearn.metrics import auc, roc_curve
 
 from gwd.data.injection import make_test_set
 from gwd.data.scenarios import EVAL_V1
-from gwd.registry import MODEL_HELP, list_models, load_model, model_name, resolve
+from gwd.registry import list_models, load_model, model_name, resolve
 
 TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -171,36 +171,27 @@ def zoom_to_relevant_region(models, X_test, y_true):
     plt.close()
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(
-        description="Compare models in one ROC plot (default: all models in models_registry/)."
-    )
-    parser.add_argument(
-        "--model",
-        action="append",
-        help=f"One model to compare, repeatable: {MODEL_HELP}. Default: all models.",
-    )
-    args = parser.parse_args(argv)
-
+def run(models=None):
+    """Compare the given models (default: all in models_registry/). Returns the exit code."""
     print("=" * 70)
     print("🏆 ROC CURVE COMPARISON TOOL")
     print("=" * 70)
 
     # 1. Modelle laden
     try:
-        paths = [resolve(spec) for spec in args.model] if args.model else list_models()
+        paths = [resolve(spec) for spec in models] if models else list_models()
     except FileNotFoundError as error:
         print(f"❌ {error}")
-        return
+        return 1
     models = load_models(paths)
 
     if len(models) == 0:
-        print("\n❌ Keine Modelle zum Vergleichen gefunden.")
-        return
+        print("\n❌ No models to compare.")
+        return 1
 
     if len(models) == 1:
         print("\n⚠️ Nur ein Modell gefunden. Trainiere mehr Modelle für Vergleiche!")
-        return
+        return 0
 
     print(f"\n✅ {len(models)} Modelle geladen.")
 
@@ -224,7 +215,10 @@ def main(argv=None):
     if len(models) > 1:
         print("\n💡 Erstelle zusätzlichen Zoom-Plot für niedrige FPR...")
         zoom_to_relevant_region(models, X_test, y_true)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 1:
+        sys.exit("The options are on the gwd command: gwd eval compare --help")
+    sys.exit(run())

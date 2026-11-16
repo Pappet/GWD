@@ -27,7 +27,7 @@ def fake_fetch(monkeypatch, tmp_path):
 
 
 def test_downloads_the_segment_and_writes_chunks(fake_fetch, tmp_path):
-    fetch_noise.fetch_and_slice()
+    assert fetch_noise.fetch_and_slice() == 0
     start = fetch_noise.START_GPS
     assert fake_fetch == [("H1", start, start + NOISE_FETCH_SECONDS, {"verbose": True})]
     files = sorted((tmp_path / "noise").iterdir())
@@ -37,6 +37,11 @@ def test_downloads_the_segment_and_writes_chunks(fake_fetch, tmp_path):
 
 def test_a_rejected_download_writes_nothing(fake_fetch, tmp_path, capsys):
     fake_fetch.error = StrainError("H1: 3 NaN samples")
-    fetch_noise.fetch_and_slice()
+    assert fetch_noise.fetch_and_slice() == 1
     assert "3 NaN samples" in capsys.readouterr().out
     assert not (tmp_path / "noise").exists()
+
+
+def test_detector_start_and_duration_are_parameters(fake_fetch, tmp_path):
+    assert fetch_noise.fetch_and_slice("L1", 1000, 40) == 0
+    assert fake_fetch == [("L1", 1000, 1040, {"verbose": True})]

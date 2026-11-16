@@ -1,5 +1,9 @@
-# File: GWD/main.py
-"""Menu for the GWD scripts. Uses only the standard library and works from any folder."""
+"""Menu for the gwd command. Uses only the standard library and works from any folder.
+
+Each entry is an argument list for gwd and runs as ``python -m gwd.cli ...`` in a
+subprocess. tests/test_menu.py parses every list with gwd.cli.build_parser(), so the
+menu and the CLI cannot drift apart. Exits with 0 on '0' or end of input.
+"""
 
 import os
 import subprocess
@@ -7,75 +11,92 @@ import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
-# (choice, label, kind, target). 'module' runs `python -m target`; since P2.5 every entry
-# is a module in the gwd package.
+# (text, gwd arguments). The choice is the position, starting at 1.
 MENU = [
-    ("1", "[DATA]   Fetch real noise", "module", "gwd.data.fetch_noise"),
-    ("2", "[DATA]   Generate training data", "module", "gwd.data.generate"),
-    ("3", "[DATA]   Validate dataset", "module", "gwd.data.validate"),
-    ("4", "[TRAIN]  Train CNN model", "module", "gwd.training.train"),
-    ("5", "[EVAL]   Evaluate model (ROC & plots)", "module", "gwd.evaluation.evaluate"),
-    ("6", "[EVAL]   Optimize threshold", "module", "gwd.evaluation.thresholds"),
-    ("7", "[EVAL]   Compare models", "module", "gwd.evaluation.compare"),
-    ("8", "[EVAL]   Show leaderboard", "module", "gwd.evaluation.leaderboard"),
-    (
-        "9",
-        "[APP]    Glitch Hunter (interactive)",
-        "module",
-        "gwd.apps.glitch_hunter.app",
-    ),
-    ("10", "[APP]    Waveform explorer", "module", "gwd.apps.waveform_explorer"),
-    (
-        "11",
-        "[APP]    Interferometer designer",
-        "module",
-        "gwd.apps.interferometer_designer",
-    ),
+    ("[DATA]   Fetch real noise (network)", ["data", "fetch-noise"]),
+    ("[DATA]   Generate training data", ["data", "generate"]),
+    ("[DATA]   Validate dataset", ["data", "validate"]),
+    ("[TRAIN]  Train CNN model", ["train"]),
+    ("[EVAL]   Evaluate model (ROC, plots, field test)", ["eval", "run"]),
+    ("[EVAL]   Optimize threshold", ["eval", "thresholds"]),
+    ("[EVAL]   Compare models", ["eval", "compare"]),
+    ("[EVAL]   Show leaderboard", ["eval", "leaderboard"]),
+    ("[APP]    Glitch Hunter (interactive)", ["app", "glitch-hunter"]),
+    ("[APP]    Waveform explorer", ["app", "waveform"]),
+    ("[APP]    Interferometer designer", ["app", "interferometer"]),
+    ("[INFO]   Show environment", ["env"]),
 ]
 
 
-def command(kind, target):
-    """The argument list for one menu entry, independent of the working directory."""
-    if kind == "module":
-        return [sys.executable, "-m", target]
-    raise ValueError(f"Unknown menu entry kind: {kind!r}")
+def command(args):
+    """The command line for one menu entry, independent of the working directory."""
+    return [sys.executable, "-m", "gwd.cli", *args]
 
 
-def run_script(kind, target):
+def ask(prompt):
+    """input() that returns None at the end of input instead of raising EOFError."""
+    try:
+        return input(prompt)
+    except EOFError:
+        print()
+        return None
+
+
+def clear_screen():
+    """Clear the terminal with cls or clear, without a shell; only on a terminal."""
+    if not sys.stdout.isatty():
+        return
+    clear = ["cmd", "/c", "cls"] if os.name == "nt" else ["clear"]
+    try:
+        subprocess.run(clear, check=False)
+    except OSError:
+        pass
+
+
+def run_entry(args):
     """Run one menu entry in the project folder and return its exit code."""
-    print(f"\n🚀 Starting: {target}...\n" + "-" * 50)
-    returncode = subprocess.run(command(kind, target), cwd=ROOT).returncode
+    print(f"\nStarting: gwd {' '.join(args)}\n" + "-" * 50, flush=True)
+    returncode = subprocess.run(command(args), cwd=ROOT).returncode
     if returncode == 0:
-        print("\n✅ Finished successfully.")
+        print("\nFinished successfully.")
     else:
-        print(f"\n❌ Failed with exit code {returncode}.")
-    input("\n[Enter] to return to the menu...")
+        print(f"\nFailed with exit code {returncode}.")
     return returncode
 
 
 def main_menu():
-    entries = {choice: (kind, target) for choice, _, kind, target in MENU}
+    """Show the menu until '0' or the end of input. Returns the exit code.
+
+    That is 0, or after an entry ran, that entry's exit code if the input ends at the
+    '[Enter]' prompt that follows it.
+    """
     while True:
-        # Screen clear (optional)
-        os.system("cls" if os.name == "nt" else "clear")
-
+        clear_screen()
         print("==========================================")
-        print("🌊 GRAVITATIONAL WAVE DETECTOR - HUB 🌊")
+        print("GRAVITATIONAL WAVE DETECTOR - HUB")
         print("==========================================")
-        for choice, label, _, _ in MENU:
-            print(f"{choice}. {label}")
-        print("0. Exit")
+        for number, (text, _) in enumerate(MENU, 1):
+            print(f"{number:>2}. {text}")
+        print(" 0. Exit")
         print("==========================================")
 
-        choice = input("Choose an option: ")
+        choice = ask("Choose an option: ")
+        if choice is None or choice.strip() == "0":
+            return 0
+        choice = choice.strip()
 
-        if choice in entries:
-            run_script(*entries[choice])
-        elif choice == "0":
-            sys.exit()
+        if choice.isdigit() and 1 <= int(choice) <= len(MENU):
+            returncode = run_entry(MENU[int(choice) - 1][1])
         else:
-            print("Invalid choice!")
+            print(f"Invalid choice: {choice!r}")
+            returncode = 0
+        if ask("\n[Enter] to return to the menu...") is None:
+            return returncode
 
 
 if __name__ == "__main__":
-    main_menu()
+    try:
+        sys.exit(main_menu())
+    except KeyboardInterrupt:
+        print()
+        sys.exit(130)

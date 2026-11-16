@@ -83,7 +83,7 @@ def show():
     migrate_legacy_leaderboard()
     if not os.path.exists(LEADERBOARD_FILE):
         print(
-            f"No leaderboard yet: {LEADERBOARD_FILE} does not exist. Run 'python -m gwd.evaluation.evaluate' first."
+            f"No leaderboard yet: {LEADERBOARD_FILE} does not exist. Run 'gwd eval run' first."
         )
         return 0
 

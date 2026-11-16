@@ -22,11 +22,6 @@ from gwd.config import MODELS_DIR
 MODEL_EXTENSION = ".keras"
 TIMESTAMP_FORMAT = "%Y%m%d-%H%M%S"
 _NAME_PATTERN = re.compile(r"^gwd_model_(\d{8}-\d{6})$")
-# Help text for the --model option of the scripts that load one model.
-MODEL_HELP = (
-    "'latest' (newest timestamp in the name), a model name in models_registry/, "
-    "or a path to a .keras file"
-)
 
 
 def model_name(path: str) -> str:
@@ -72,7 +67,7 @@ def resolve(model: str = "latest", models_dir: str = MODELS_DIR) -> str:
         if path is None:
             raise FileNotFoundError(
                 f"No models ({MODEL_EXTENSION}) in '{models_dir}'. "
-                "Run 'python -m gwd.training.train' first to train a model."
+                "Run 'gwd train' first to train a model."
             )
         return path
     if os.path.isfile(model):

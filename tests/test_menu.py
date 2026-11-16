@@ -1,4 +1,4 @@
-"""The menu in main.py lists only runnable entries and works from any folder (P2.4, P2.5)."""
+"""The menu in main.py runs gwd commands, works from any folder, and exits cleanly (P3.6)."""
 
 import importlib.util
 import os
@@ -6,6 +6,8 @@ import subprocess
 import sys
 
 import pytest
+
+from gwd.cli import build_parser
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MAIN = os.path.join(ROOT, "main.py")
@@ -21,54 +23,88 @@ def load_main():
 MENU = load_main().MENU
 
 
-def test_menu_choices_are_unique_and_do_not_use_exit():
-    choices = [choice for choice, _, _, _ in MENU]
-    assert len(choices) == len(set(choices))
-    assert "0" not in choices
+def run_menu(stdin, cwd):
+    return subprocess.run(
+        [sys.executable, MAIN],
+        input=stdin,
+        cwd=cwd,
+        env={**os.environ, "TERM": "dumb"},
+        capture_output=True,
+        text=True,
+    )
 
 
-def test_menu_lists_every_entry_point_as_a_module():
-    assert len(MENU) == 11
-    assert all(kind == "module" for _, _, kind, _ in MENU)
+@pytest.mark.parametrize("entry", MENU, ids=lambda entry: " ".join(entry[1]))
+def test_every_menu_entry_parses_as_a_gwd_command(entry):
+    _, args = entry
+    # parse_args raises SystemExit on an unknown command or option.
+    parsed = build_parser().parse_args(args)
+    assert callable(parsed.handler)
 
 
-@pytest.mark.parametrize("entry", MENU, ids=lambda entry: entry[3])
-def test_menu_entry_is_runnable(entry):
-    _, _, kind, target = entry
-    assert kind == "module"
-    assert target.startswith("gwd.")
-    assert importlib.util.find_spec(target) is not None
+def test_menu_covers_every_command_once():
+    commands = [tuple(args) for _, args in MENU]
+    assert len(commands) == len(set(commands)) == 12
 
 
 def test_commands_do_not_depend_on_the_working_directory(tmp_path, monkeypatch):
     menu = load_main()
     monkeypatch.chdir(tmp_path)
-    for _, _, kind, target in menu.MENU:
-        assert menu.command(kind, target) == [sys.executable, "-m", target]
+    for _, args in menu.MENU:
+        assert menu.command(args) == [sys.executable, "-m", "gwd.cli", *args]
 
 
-def test_unknown_entry_kind_is_rejected():
-    with pytest.raises(ValueError):
-        load_main().command("path", "src/script.py")
-
-
-def test_run_script_returns_the_real_exit_code(tmp_path, monkeypatch, capsys):
+def test_run_entry_returns_the_real_exit_code(capfd):
     menu = load_main()
-    (tmp_path / "gwd_menu_fails.py").write_text("raise SystemExit(3)\n")
-    monkeypatch.setenv("PYTHONPATH", str(tmp_path))
-    monkeypatch.setattr("builtins.input", lambda prompt="": "")
-    assert menu.run_script("module", "gwd_menu_fails") == 3
-    assert "exit code 3" in capsys.readouterr().out
+    # An unknown option: argparse exits with 2 before any module is imported.
+    assert menu.run_entry(["eval", "run", "--no-such-option"]) == 2
+    assert "exit code 2" in capfd.readouterr().out
 
 
 def test_menu_exits_with_zero_from_another_folder(tmp_path):
+    result = run_menu("0\n", tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_end_of_input_exits_with_zero(tmp_path):
     result = subprocess.run(
         [sys.executable, MAIN],
-        input="0\n",
+        stdin=subprocess.DEVNULL,
         cwd=tmp_path,
-        env={**os.environ, "TERM": "dumb"},
         capture_output=True,
         text=True,
     )
     assert result.returncode == 0, result.stderr
     assert "Traceback" not in result.stderr
+    assert "EOFError" not in result.stderr
+
+
+def test_invalid_choice_then_end_of_input(tmp_path):
+    result = run_menu("99\n", tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert "Invalid choice: '99'" in result.stdout
+    assert "Traceback" not in result.stderr
+
+
+def test_menu_reports_the_exit_code_of_a_failed_entry(tmp_path):
+    # The validate entry checks data/training/ of an empty project: no labels.csv, rc 1.
+    choice = next(
+        i for i, (_, args) in enumerate(MENU, 1) if args == ["data", "validate"]
+    )
+    env = {**os.environ, "TERM": "dumb", "GWD_HOME": str(tmp_path), "MPLBACKEND": "Agg"}
+    result = subprocess.run(
+        [sys.executable, MAIN],
+        input=f"{choice}\n",
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert "Failed with exit code 1." in result.stdout
+    # The input ends at the [Enter] prompt, so the menu exits with that entry's code.
+    assert result.returncode == 1
+    # The Starting line is flushed before the child writes.
+    assert result.stdout.index("Starting: gwd data validate") < result.stdout.index(
+        "Dataset folder:"
+    )

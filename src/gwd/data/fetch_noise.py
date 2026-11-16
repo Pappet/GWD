@@ -1,4 +1,5 @@
 import os
+import sys
 
 import numpy as np
 
@@ -20,18 +21,17 @@ OUTPUT_DIR = DATA_DIR_NOISE
 START_GPS = 1262304018
 
 
-def fetch_and_slice():
+def fetch_and_slice(detector="H1", start_gps=START_GPS, duration=NOISE_FETCH_SECONDS):
+    """Download duration seconds of detector data from start_gps and cut them into chunks.
+
+    The chunks of N_SAMPLES samples go to OUTPUT_DIR. Returns the exit code, 1 on any
+    error; a rejected download writes nothing.
     """
-    Lädt echte LIGO-Daten aus einem ruhigen Zeitraum und schneidet sie
-    in 4-Sekunden-Schnipsel für das Training.
-    """
-    print(f"🌊 Loading {NOISE_FETCH_SECONDS} seconds of real LIGO noise (H1)...")
+    print(f"🌊 Loading {duration} seconds of real LIGO noise ({detector})...")
 
     try:
         # 1. One download, checked for length and NaN
-        strain = fetch_strain(
-            "H1", START_GPS, START_GPS + NOISE_FETCH_SECONDS, verbose=True
-        )
+        strain = fetch_strain(detector, start_gps, start_gps + duration, verbose=True)
 
         # 2. Conditioning, the same chain as the field test and the Glitch Hunter
         data = condition_strain(strain, SAMPLE_RATE)
@@ -50,11 +50,15 @@ def fetch_and_slice():
             filename = os.path.join(OUTPUT_DIR, f"real_noise_{i:04d}.npy")
             np.save(filename, chunk)
 
-        print(f"✅ Fertig! {num_chunks} Dateien in '{OUTPUT_DIR}' gespeichert.")
+        print(f"✅ Done: {num_chunks} files saved in '{OUTPUT_DIR}'.")
 
     except Exception as e:
-        print(f"❌ Fehler: {e}")
+        print(f"❌ Error: {e}")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    fetch_and_slice()
+    if len(sys.argv) > 1:
+        sys.exit("The options are on the gwd command: gwd data fetch-noise --help")
+    sys.exit(fetch_and_slice())

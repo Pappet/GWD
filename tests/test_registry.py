@@ -110,8 +110,10 @@ def test_evaluation_scripts_take_model_and_import_no_tensorflow(script, tmp_path
         [
             "import sys",
             f"from gwd.evaluation import {script} as module",
-            "module.main(['--model', 'gwd_model_19990101-000000'])",
-            "print('tensorflow' in sys.modules)",
+            "rc = module.run(models=['gwd_model_19990101-000000'])"
+            if script == "compare"
+            else "rc = module.run(model='gwd_model_19990101-000000')",
+            "print(rc, 'tensorflow' in sys.modules)",
         ]
     )
     env = {**os.environ, "GWD_HOME": str(tmp_path), "MPLBACKEND": "Agg"}
@@ -124,7 +126,7 @@ def test_evaluation_scripts_take_model_and_import_no_tensorflow(script, tmp_path
         check=True,
     )
     assert "Model 'gwd_model_19990101-000000' is neither" in result.stdout
-    assert result.stdout.splitlines()[-1] == "False"
+    assert result.stdout.splitlines()[-1] == "1 False"
 
 
 @pytest.mark.slow

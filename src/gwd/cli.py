@@ -1,0 +1,337 @@
+"""The gwd command: one entry point for the whole pipeline and the apps (P3.6).
+
+Only dispatch lives here. Every handler imports its module when it runs, so
+``gwd --help`` and ``gwd data generate`` never load TensorFlow, and a broken optional
+package only breaks the commands that need it. build_parser() is its own function, so
+tests and the menu in main.py can check argument lists without running anything.
+
+Exit codes: 0 on success, 1 when a command fails (for example an unknown model),
+2 for invalid arguments (argparse), 130 on Ctrl+C.
+"""
+
+import argparse
+import sys
+
+# What --model accepts; gwd.registry.resolve() turns it into a file.
+MODEL_HELP = (
+    "'latest' (newest timestamp in the name), a model name in models_registry/, "
+    "or a path to a .keras file"
+)
+
+
+def seed_everything(seed, tensorflow=False):
+    """Seed Python's random and the global numpy RNG, and TensorFlow if asked.
+
+    A minimal stand-in until P5.3 and P5.6 pass an rng explicitly. seed=None changes
+    nothing, so runs stay unseeded as before.
+    """
+    if seed is None:
+        return
+    import random
+
+    import numpy as np
+
+    random.seed(seed)
+    np.random.seed(seed)
+    if tensorflow:
+        import tensorflow as tf
+
+        tf.keras.utils.set_random_seed(seed)
+
+
+# --- handlers: each returns an exit code ---
+
+
+def _fetch_noise(args):
+    from gwd.data import fetch_noise
+
+    options = {"detector": args.detector}
+    if args.gps is not None:
+        options["start_gps"] = args.gps
+    if args.duration is not None:
+        options["duration"] = args.duration
+    return fetch_noise.fetch_and_slice(**options)
+
+
+def _generate(args):
+    from gwd.config import DATA_DIR_TRAIN, SAMPLES_FOR_TRAINING
+    from gwd.data.generate import generate_dataset
+    from gwd.data.scenarios import SCENARIOS
+
+    seed_everything(args.seed)
+    generate_dataset(
+        num_samples=SAMPLES_FOR_TRAINING if args.n is None else args.n,
+        output_folder=args.out or DATA_DIR_TRAIN,
+        scenario=SCENARIOS[args.scenario.upper()],
+    )
+    return 0
+
+
+def _validate(args):
+    from gwd.config import DATA_DIR_TRAIN, VALIDATION_DATASET_PLOTS_DIR
+    from gwd.data import validate
+
+    return validate.run(
+        data_folder=args.data or DATA_DIR_TRAIN,
+        output_folder=args.plots or VALIDATION_DATASET_PLOTS_DIR,
+        plots=not args.no_plots,
+    )
+
+
+def _train(args):
+    # Until P3.7 the training settings are module globals; set them before main().
+    from gwd.training import train
+
+    if args.data:
+        train.DATA_FOLDER = args.data
+    if args.epochs is not None:
+        train.EPOCHS = args.epochs
+    if args.batch_size is not None:
+        train.BATCH_SIZE = args.batch_size
+    seed_everything(args.seed, tensorflow=True)
+    train.main()
+    return 0
+
+
+def _eval_run(args):
+    from gwd.evaluation import evaluate
+
+    seed_everything(args.seed)
+    return evaluate.run(model=args.model, real=args.real)
+
+
+def _eval_thresholds(args):
+    from gwd.evaluation import thresholds
+
+    seed_everything(args.seed)
+    return thresholds.run(model=args.model, save=args.save)
+
+
+def _eval_compare(args):
+    from gwd.evaluation import compare
+
+    seed_everything(args.seed)
+    return compare.run(models=args.model)
+
+
+def _eval_leaderboard(args):
+    from gwd.evaluation import leaderboard
+
+    return leaderboard.show()
+
+
+APPS = {
+    "waveform": "gwd.apps.waveform_explorer",
+    "interferometer": "gwd.apps.interferometer_designer",
+    "glitch-hunter": "gwd.apps.glitch_hunter.app",
+}
+
+
+def _app(args):
+    # The apps start in their __main__ block; run it as python -m would.
+    import runpy
+
+    runpy.run_module(APPS[args.app], run_name="__main__", alter_sys=True)
+    return 0
+
+
+def _env(args):
+    from gwd import env
+
+    return env.main()
+
+
+# --- parser ---
+
+
+def _add_seed(parser, what):
+    parser.add_argument(
+        "--seed",
+        type=int,
+        help=f"Seed for {what}. Default: unseeded.",
+    )
+
+
+def _add_model(parser):
+    parser.add_argument(
+        "--model", default="latest", help=f"{MODEL_HELP}. Default: latest."
+    )
+
+
+def build_parser():
+    """The full gwd parser. Importing nothing but the scenario names keeps it cheap."""
+    from gwd.data.scenarios import SCENARIOS
+
+    parser = argparse.ArgumentParser(
+        prog="gwd",
+        description="Gravitational wave detection: data, training, evaluation, and apps.",
+    )
+    commands = parser.add_subparsers(dest="command", metavar="COMMAND", required=True)
+
+    # gwd data ...
+    data = commands.add_parser("data", help="Fetch noise, generate and validate data.")
+    data_commands = data.add_subparsers(
+        dest="data_command", metavar="COMMAND", required=True
+    )
+
+    fetch = data_commands.add_parser(
+        "fetch-noise",
+        help="Download real detector noise from GWOSC into data/noise_background/.",
+        description="Download real detector noise from GWOSC, condition it, and cut it "
+        "into chunks in data/noise_background/. Existing chunks with the same names are "
+        "overwritten. Needs network access.",
+    )
+    fetch.add_argument("--detector", default="H1", help="Detector. Default: H1.")
+    fetch.add_argument(
+        "--gps",
+        type=int,
+        help="Start GPS time. Default: START_GPS in gwd.data.fetch_noise (a quiet O3b stretch).",
+    )
+    fetch.add_argument(
+        "--duration",
+        type=int,
+        help="Seconds to download. Default: NOISE_FETCH_SECONDS in gwd.config.",
+    )
+    fetch.set_defaults(handler=_fetch_noise)
+
+    generate = data_commands.add_parser(
+        "generate",
+        help="Generate a training dataset.",
+        description="Write samples and labels.csv. Real noise chunks are used where the "
+        "scenario and data/noise_background/ allow it.",
+    )
+    generate.add_argument(
+        "--n",
+        type=int,
+        help="Number of samples. Default: SAMPLES_FOR_TRAINING in gwd.config.",
+    )
+    _add_seed(generate, "the drawn samples")
+    generate.add_argument("--out", help="Output folder. Default: data/training/.")
+    generate.add_argument(
+        "--scenario",
+        type=str.lower,
+        choices=sorted(name.lower() for name in SCENARIOS),
+        default="train_v1",
+        help="Scenario to draw from. Default: train_v1.",
+    )
+    generate.set_defaults(handler=_generate)
+
+    validate = data_commands.add_parser(
+        "validate",
+        help="Check a dataset and plot its distributions.",
+        description="Check a dataset; exit code 1 if it is not fit for training.",
+    )
+    validate.add_argument("--data", help="Dataset folder. Default: data/training/.")
+    validate.add_argument(
+        "--plots", help="Plot folder. Default: plots/validation_dataset/."
+    )
+    validate.add_argument(
+        "--no-plots", action="store_true", help="Statistics only, no plots."
+    )
+    validate.set_defaults(handler=_validate)
+
+    # gwd train
+    train = commands.add_parser(
+        "train",
+        help="Train the CNN and save it in models_registry/.",
+        description="Train the CNN on a dataset and save the model and its .json "
+        "in models_registry/.",
+    )
+    train.add_argument("--data", help="Dataset folder. Default: data/training/.")
+    train.add_argument(
+        "--epochs", type=int, help="Maximum number of epochs. Default: 40."
+    )
+    train.add_argument("--batch-size", type=int, help="Batch size. Default: 128.")
+    _add_seed(train, "Python, numpy, and TensorFlow")
+    train.set_defaults(handler=_train)
+
+    # gwd eval ...
+    evaluation = commands.add_parser("eval", help="Evaluate, tune, and compare models.")
+    eval_commands = evaluation.add_subparsers(
+        dest="eval_command", metavar="COMMAND", required=True
+    )
+
+    run = eval_commands.add_parser(
+        "run",
+        help="ROC evaluation of one model; adds a leaderboard row.",
+        description="ROC evaluation on simulated data (EVAL_V1) and, with --real, the "
+        "field test on real events. Adds a row to results/model_leaderboard.csv.",
+    )
+    _add_model(run)
+    run.add_argument(
+        "--real",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Run the real data field test (needs network access). Default: --real.",
+    )
+    _add_seed(run, "the simulated test set")
+    run.set_defaults(handler=_eval_run)
+
+    thresholds = eval_commands.add_parser(
+        "thresholds",
+        help="Find detection thresholds for one model.",
+        description="Find detection thresholds for one model from its ROC curve and "
+        "save them in results/optimal_thresholds.json.",
+    )
+    _add_model(thresholds)
+    thresholds.add_argument(
+        "--save",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Save the thresholds. Default: --save.",
+    )
+    _add_seed(thresholds, "the simulated test set")
+    thresholds.set_defaults(handler=_eval_thresholds)
+
+    compare = eval_commands.add_parser(
+        "compare",
+        help="Compare models in one ROC plot.",
+        description="Compare models in one ROC plot on the same simulated test set.",
+    )
+    compare.add_argument(
+        "--model",
+        action="append",
+        help=f"One model to compare, repeatable: {MODEL_HELP}. Default: all models.",
+    )
+    _add_seed(compare, "the simulated test set")
+    compare.set_defaults(handler=_eval_compare)
+
+    leaderboard = eval_commands.add_parser(
+        "leaderboard", help="Show the leaderboard, best ROC AUC first."
+    )
+    leaderboard.set_defaults(handler=_eval_leaderboard)
+
+    # gwd app ...
+    app = commands.add_parser(
+        "app", help="Start an interactive app (matplotlib window)."
+    )
+    app.add_argument(
+        "app",
+        choices=list(APPS),
+        help="waveform: waveform explorer; interferometer: interferometer designer; "
+        "glitch-hunter: the CNN rates simulated or real data.",
+    )
+    app.set_defaults(handler=_app)
+
+    # gwd env
+    env = commands.add_parser(
+        "env", help="Show versions, extras, waveform backend, paths, and GUI backend."
+    )
+    env.set_defaults(handler=_env)
+
+    return parser
+
+
+def main(argv=None):
+    """Run gwd with argv (default: sys.argv[1:]) and return the exit code."""
+    args = build_parser().parse_args(argv)
+    try:
+        returncode = args.handler(args)
+    except KeyboardInterrupt:
+        print("\nInterrupted.", file=sys.stderr)
+        return 130
+    return 0 if returncode is None else int(returncode)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
