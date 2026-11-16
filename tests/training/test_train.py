@@ -111,6 +111,9 @@ def test_train_restores_the_policy_and_records_it(tmp_path, monkeypatch):
     assert metadata["early_stopping_patience"] == 2
     # P4.1: what was trained on, and how long.
     assert (metadata["epochs_trained"], metadata["best_epoch"]) == (1, 1)
+    # The BatchNorm statistics come from a subset of the training part.
+    assert metadata["bn_recalibration_samples"] == metadata["split"]["train"]
+    assert metadata["training_data"] == "files"
     assert metadata["seed"] == 3
     # P5.6: the seed, the split, the data, and val and test kept apart.
     assert (metadata["seed_drawn"], metadata["deterministic"]) == (False, False)
@@ -303,3 +306,99 @@ def test_gwd_train_reports_a_broken_dataset_without_traceback(small_dataset, tmp
     assert "sample_00003.npy: listed in labels.csv, but missing" in result.stderr
     assert "Traceback" not in result.stderr
     assert not (tmp_path / "models_registry").exists()
+
+
+def online_config(tmp_path, **options):
+    defaults = dict(
+        models_dir=str(tmp_path / "models"),
+        plots_dir=str(tmp_path / "plots"),
+        scenario="train_v3",
+        samples_per_epoch=6,
+        val_samples=4,
+        test_samples=2,
+        batch_size=4,
+        workers=0,
+        bn_samples=4,
+    )
+    return train.TrainConfig(**{**defaults, **options})
+
+
+def test_online_data_records_the_scenario_and_no_dataset(tmp_path):
+    """Online: no dataset_hash, a clear marker, and the preprocessing of the
+    scenario, which the evaluation and the Glitch Hunter read back."""
+    import contextlib
+
+    from gwd.apps.glitch_hunter.sources import start_version
+    from gwd.data.scenarios import TRAIN_V3, preprocessing_of
+
+    with contextlib.ExitStack() as stack:
+        data = train.prepare_online(online_config(tmp_path), 11, stack)
+        X, y = next(data.fit["x"])
+    # 6 samples per epoch round up to 2 batches of 4.
+    assert (data.steps_per_epoch, data.fit["steps_per_epoch"]) == (2, 2)
+    assert X.shape == (4, 16384, 1) and list(y) == [1, 0, 1, 0]
+    assert [len(part[1]) for part in (data.validation, data.test)] == [4, 2]
+    assert data.recalibration.shape == (4, 16384, 1)
+    record = data.record
+    assert record["training_data"] == "online"
+    assert record["dataset_hash"] is None and "online" in record["dataset_hash_note"]
+    assert record["dataset_folder"] is None
+    assert record["dataset_scenario"] == "TRAIN_V3"
+    assert record["preprocessing"] == "whiten_bandpass"
+    assert preprocessing_of(record) == "whiten_bandpass"
+    assert start_version(record) == 3
+    online = record["online"]
+    assert online["scenario_hash"] == TRAIN_V3.hash()
+    assert (online["seed"], online["samples_per_epoch"]) == (11, 8)
+    assert (online["val_samples"], online["test_samples"], online["workers"]) == (
+        4,
+        2,
+        0,
+    )
+    assert "0x6777646f" in online["stream"]
+
+
+def test_online_training_refuses_real_noise(tmp_path):
+    import contextlib
+
+    with contextlib.ExitStack() as stack, pytest.raises(ValueError, match="real noise"):
+        train.prepare_online(online_config(tmp_path, scenario="TRAIN_V1"), 1, stack)
+
+
+def test_default_workers_leave_two_cpus_and_stay_at_most_the_config():
+    from gwd.config import ONLINE_WORKERS
+
+    assert train.default_workers(24) == ONLINE_WORKERS
+    assert train.default_workers(6) == 4
+    assert train.default_workers(1) == 1
+
+
+@pytest.mark.slow
+def test_gwd_train_online_runs_and_records_the_run(tmp_path):
+    """A short CLI run in a tmp GWD_HOME: 3 epochs of 8 fresh samples, 2 workers."""
+    env = {**os.environ, "GWD_HOME": str(tmp_path), "CUDA_VISIBLE_DEVICES": ""}
+    args = "train --online --scenario train_v2 --samples-per-epoch 8 --batch-size 4"
+    args += " --val-samples 8 --test-samples 4 --workers 2 --epochs 3 --seed 4"
+    result = subprocess.run(
+        [sys.executable, "-m", "gwd.cli", *args.split()],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr[-2000:]
+    (path,) = (tmp_path / "models_registry").glob("*.json")
+    metadata = json.loads(path.read_text())
+    assert metadata["training_data"] == "online"
+    assert metadata["dataset_hash"] is None
+    assert metadata["preprocessing"] == "bandpass"
+    assert (metadata["epochs_trained"], metadata["steps_per_epoch"]) == (3, 2)
+    assert 1 <= metadata["best_epoch"] <= 3
+    assert metadata["bn_recalibration_samples"] == 1024
+    assert len(metadata["epoch_seconds"]) == 3
+    online = metadata["online"]
+    assert online["train_samples_seen"] == 24
+    assert online["workers"] == 2 and 1 <= online["worker_processes_seen"] <= 2
+    assert len(online["wait_seconds"]) == 3
+    assert registry.read_metadata(str(path.with_suffix(".keras"))) == metadata
+    assert (tmp_path / "models_registry" / (path.stem + ".keras")).exists()

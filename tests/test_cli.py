@@ -381,6 +381,53 @@ def test_train_passes_the_overrides(fake_training, monkeypatch, tmp_path):
     assert os.environ["TF_CPP_MIN_LOG_LEVEL"] == "0"
 
 
+def test_train_online_passes_the_scenario_and_needs_no_dataset(
+    fake_training, monkeypatch, tmp_path
+):
+    # No labels.csv anywhere: online training reads no dataset.
+    monkeypatch.setattr("gwd.config.DATA_DIR_TRAIN", str(tmp_path / "missing"))
+    args = "train --online --scenario train_v3 --samples-per-epoch 256"
+    args += " --val-samples 64 --test-samples 32 --workers 3 --seed 2"
+    assert cli.main(args.split()) == 0
+    assert fake_training.calls == [
+        {
+            "seed": 2,
+            "scenario": "TRAIN_V3",
+            "samples_per_epoch": 256,
+            "val_samples": 64,
+            "test_samples": 32,
+            "workers": 3,
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    "args, message",
+    [
+        ("--scenario train_v3", "--scenario needs --online"),
+        ("--online", "--online needs --scenario"),
+        ("--online --scenario train_v1", "TRAIN_V1 uses real noise"),
+        ("--online --scenario train_v2 --data x", "reads no --data"),
+        ("--workers 2 --val-samples 9", "--val-samples, --workers only work with"),
+    ],
+)
+def test_train_refuses_online_options_that_do_not_fit(
+    fake_training, capsys, args, message
+):
+    assert cli.main(["train", *args.split()]) == 2
+    assert message in capsys.readouterr().err
+    assert fake_training.calls == []
+
+
+@pytest.mark.parametrize(
+    "args", ["--workers -1", "--samples-per-epoch 0", "--scenario nope"]
+)
+def test_train_rejects_invalid_online_values(args):
+    with pytest.raises(SystemExit) as exit_:
+        cli.main(["train", "--online", *args.split()])
+    assert exit_.value.code == 2
+
+
 def test_train_without_a_dataset_fails_cleanly_and_loads_no_tensorflow(tmp_path):
     """P3.7 left a traceback here; now it is one message on stderr and rc 1."""
     code = "\n".join(
