@@ -53,16 +53,21 @@ def _fetch_noise(args):
 
 def _generate(args):
     from gwd.config import DATA_DIR_TRAIN, SAMPLES_FOR_TRAINING
-    from gwd.data.generate import generate_dataset
+    from gwd.data.generate import OutputFolderError, generate_dataset
     from gwd.data.scenarios import SCENARIOS
 
     # generate_dataset seeds its own RNG and records the seed in manifest.json.
-    generate_dataset(
-        num_samples=SAMPLES_FOR_TRAINING if args.n is None else args.n,
-        output_folder=args.out or DATA_DIR_TRAIN,
-        scenario=SCENARIOS[args.scenario.upper()],
-        seed=args.seed,
-    )
+    try:
+        generate_dataset(
+            num_samples=SAMPLES_FOR_TRAINING if args.n is None else args.n,
+            output_folder=args.out or DATA_DIR_TRAIN,
+            scenario=SCENARIOS[args.scenario.upper()],
+            seed=args.seed,
+            overwrite=args.overwrite,
+        )
+    except OutputFolderError as error:
+        print(f"❌ {error}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -222,8 +227,9 @@ def build_parser():
     generate = data_commands.add_parser(
         "generate",
         help="Generate a training dataset.",
-        description="Write samples, labels.csv, and manifest.json. Real noise chunks "
-        "are used where the scenario and data/noise_background/ allow it.",
+        description="Write samples, labels.csv, and manifest.json into an empty or "
+        "new folder. Real noise chunks are used where the scenario and "
+        "data/noise_background/ allow it.",
     )
     generate.add_argument(
         "--n",
@@ -232,6 +238,12 @@ def build_parser():
     )
     _add_seed(generate, "the drawn samples")
     generate.add_argument("--out", help="Output folder. Default: data/training/.")
+    generate.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Write into a folder that is not empty: first remove its sample_*.npy "
+        "and labels.csv (nothing else). Default: stop with exit code 1.",
+    )
     generate.add_argument(
         "--scenario",
         type=str.lower,

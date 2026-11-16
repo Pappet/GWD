@@ -7,6 +7,7 @@ columns come after the old seven, so readers that select columns by name are not
 affected. manifest.json records how the dataset was made, see gwd.data.provenance.
 """
 
+import glob
 import os
 from collections import Counter
 
@@ -26,6 +27,47 @@ from gwd.data.scenarios import TRAIN_V1
 
 # noise_kind of gwd.data.injection -> noise_source in labels.csv
 NOISE_SOURCES = {"real": "real", "white": "gaussian"}
+# The only files that overwrite=True removes from the output folder.
+SAMPLE_PATTERN = "sample_*.npy"
+
+
+class OutputFolderError(ValueError):
+    """The output folder cannot take a new dataset; nothing was written or removed."""
+
+
+def prepare_output_folder(folder, overwrite=False, noise_dir=DATA_DIR_NOISE):
+    """Make sure folder can take a new dataset, and return the files removed.
+
+    A missing or empty folder is fine. A folder with any entry raises
+    OutputFolderError, unless overwrite is true: then its sample_*.npy files and its
+    labels.csv are removed, and nothing else. Other files and subfolders stay, and
+    manifest.json is replaced when the new dataset is written. The noise folder is
+    refused even with overwrite, because its chunks would be mixed with samples.
+    """
+    if os.path.realpath(folder) == os.path.realpath(noise_dir):
+        raise OutputFolderError(
+            f"'{folder}' is the noise folder; choose another output folder."
+        )
+    if not os.path.isdir(folder):
+        if os.path.exists(folder):
+            raise OutputFolderError(f"'{folder}' exists and is not a folder.")
+        return []
+    entries = os.listdir(folder)
+    if not entries:
+        return []
+    if not overwrite:
+        raise OutputFolderError(
+            f"'{folder}' is not empty ({len(entries)} entries). Pass --overwrite to "
+            f"replace its {SAMPLE_PATTERN} and {LABELS_FILE}, or choose another --out."
+        )
+    doomed = sorted(glob.glob(os.path.join(folder, SAMPLE_PATTERN)))
+    labels = os.path.join(folder, LABELS_FILE)
+    if os.path.isfile(labels):
+        doomed.append(labels)
+    for path in doomed:
+        if os.path.isfile(path):
+            os.remove(path)
+    return doomed
 
 
 def describe_noise(scenario, noise_provider, noise_dir=DATA_DIR_NOISE):
@@ -51,8 +93,12 @@ def generate_dataset(
     rng=None,
     seed=None,
     noise_dir=DATA_DIR_NOISE,
+    overwrite=False,
 ):
     """Write num_samples samples of scenario, labels.csv, and manifest.json to output_folder.
+
+    output_folder must be missing or empty, see prepare_output_folder(); with
+    overwrite, its old samples and labels.csv are removed first.
 
     Even indices are signal samples, odd ones noise only (strictly 50/50). The noise
     is real where scenario and the chunks in noise_dir allow it. seed draws the samples
@@ -65,6 +111,9 @@ def generate_dataset(
         raise ValueError("Pass rng or seed, not both")
     if seed is not None:
         rng = np.random.RandomState(seed)
+    removed = prepare_output_folder(output_folder, overwrite, noise_dir)
+    if removed:
+        print(f"Removed {len(removed)} old files from '{output_folder}' (--overwrite).")
 
     noise_provider = real_noise_provider(noise_dir)
     noise_text, notes = describe_noise(scenario, noise_provider, noise_dir)
