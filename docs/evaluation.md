@@ -178,7 +178,7 @@ The 12-column leaderboard from before P5.8, `results/model_leaderboard.csv`, is 
 
 ## Matched Filter baseline (D5)
 
-There is no valid Matched Filter baseline. The script that computed it was deleted, and its results were invalid (`EVAL-6`). Decision D5 in [architecture.md](architecture.md#decisions) (default B) dropped it in P5.8: leaderboard v2 has no baseline column, and nothing reads the files `models_registry/physics_baseline*.json`, which stay where they are. P6.4 can add a rewritten baseline.
+There is no valid Matched Filter baseline. The script that computed it was deleted, and its results were invalid (`EVAL-6`). Decision D5 in [architecture.md](architecture.md#decisions) (default B) dropped it in P5.8: leaderboard v2 has no baseline column, and nothing reads the files `models_registry/physics_baseline*.json`, which stay where they are. The deleted script, `evaluate_classic.py` in the project root, is in the Git history at `45b9202^` (`git show 45b9202^:evaluate_classic.py`). It has a known template bug: it cuts the PyCBC template to its first 4 s, so the template ends before the merger and holds almost none of the signal energy (`EVAL-6`). It also reads and writes paths relative to the working directory, waits for `input()`, and uses another noise model, so checking it out would give a wrong baseline at once. Step P6.4, a rewritten baseline, is dropped (D5 = B); it would be a new project, for which the old script is only a reference.
 
 ## Known limitations
 
