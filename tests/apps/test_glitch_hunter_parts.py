@@ -14,7 +14,7 @@ from gwd.apps.glitch_hunter import app as app_module
 from gwd.apps.glitch_hunter import audio, sources
 from gwd.config import N_SAMPLES, SAMPLE_RATE, THRESHOLD_FALLBACK
 from gwd.data.gwosc import EVENTS, StrainError, event
-from gwd.data.scenarios import APP_V1, APP_V2, TRAIN_V1, TRAIN_V2
+from gwd.data.scenarios import APP_V1, APP_V2, APP_V3, TRAIN_V1, TRAIN_V2, TRAIN_V3
 
 
 class Picks:
@@ -92,9 +92,13 @@ def test_training_draws_real_noise_chunks_when_there_are_any(tmp_path):
 
 
 def test_each_mode_exists_in_v1_and_v2_and_v1_is_the_default():
-    """P6.2: the switch V1/V2 keeps the mode; V1 stays the default until P6.5."""
+    """P6.2: the switch V1/V2 keeps the mode; V1 is the default without a model."""
     assert sources.DEFAULT_VERSION == 1
-    assert sources.VERSIONS == {1: sources.MODES, 2: sources.MODES_V2}
+    assert sources.VERSIONS == {
+        1: sources.MODES,
+        2: sources.MODES_V2,
+        3: sources.MODES_V3,
+    }
     assert sources.TRAINING_V2.scenario is TRAIN_V2
     assert sources.CHALLENGE_V2.scenario is APP_V2
     for v1, v2 in zip(sources.MODES, sources.MODES_V2):
@@ -108,6 +112,7 @@ def test_each_mode_exists_in_v1_and_v2_and_v1_is_the_default():
     assert [app_module.version_label(v) for v in sorted(sources.VERSIONS)] == [
         "V1",
         "V2",
+        "V3",
     ]
 
 
@@ -371,3 +376,71 @@ def test_a_missing_player_is_reported_not_raised():
     player = audio.Player(system="Darwin", popen=broken)
     assert player.play(np.ones(8), SAMPLE_RATE).startswith("Cannot start afplay")
     player.close()
+
+
+# --- V3 and the model's preprocessing ---
+
+
+def test_each_mode_exists_in_v3():
+    assert sources.TRAINING_V3.scenario is TRAIN_V3
+    assert sources.CHALLENGE_V3.scenario is APP_V3
+    for v1, v3 in zip(sources.MODES, sources.MODES_V3):
+        assert sources.counterpart(v1, 3) is v3
+        assert sources.counterpart(v3, 1) is v1
+    assert sources.version_preprocessing(3) == "whiten_bandpass"
+    assert sources.version_preprocessing(2) == "bandpass"
+
+
+@pytest.mark.parametrize(
+    "metadata, version",
+    [
+        (None, 1),
+        ({"dataset_scenario": "unknown (v1)"}, 1),
+        ({"dataset_scenario": "TRAIN_V1"}, 1),
+        ({"dataset_scenario": "TRAIN_V2"}, 2),
+        ({"dataset_scenario": "TRAIN_V3"}, 3),
+    ],
+)
+def test_the_simulation_starts_in_the_version_of_the_models_training(metadata, version):
+    assert sources.start_version(metadata) == version
+
+
+def test_a_v3_sample_is_whitened_and_says_so():
+    pytest.importorskip("gwpy")
+    source = sources.SimSource(
+        sources.TRAINING_V3, noise_provider=None, rng=np.random.RandomState(5)
+    )
+    sample = source.draw()
+    assert sample.preprocessing == "whiten_bandpass"
+    assert sample.name == "Simulation (V3 Training)"
+    assert np.isclose(np.std(sample.data), 1.0)
+
+
+@pytest.mark.parametrize("preprocessing", ["bandpass", "whiten_bandpass"])
+def test_real_data_get_the_preprocessing_of_the_source(preprocessing, monkeypatch):
+    used = []
+    original = sources.conditioned_crop
+
+    def spy(strain, fs, pad_s, **kwargs):
+        used.append(kwargs["preprocessing"])
+        return original(strain, fs, pad_s, **kwargs)
+
+    monkeypatch.setattr(sources, "conditioned_crop", spy)
+    source = sources.GwoscSource(
+        rng=Picks(event=EVENTS[0]), fetch=fake_fetch([]), preprocessing=preprocessing
+    )
+    sample = source.draw()
+    assert used == [preprocessing]
+    assert sample.preprocessing == preprocessing
+    assert sample.data.shape == (N_SAMPLES,) and np.isclose(np.std(sample.data), 1.0)
+
+
+def test_a_sample_with_another_preprocessing_than_the_model_is_marked():
+    whitened = sources.LoadedSample(
+        np.zeros(N_SAMPLES), False, "x", "simulation", preprocessing="whiten_bandpass"
+    )
+    plain = sources.LoadedSample(np.zeros(N_SAMPLES), False, "x", "simulation")
+    assert app_module.preprocessing_mismatch(None, whitened) is None
+    assert app_module.preprocessing_mismatch("whiten_bandpass", whitened) is None
+    note = app_module.preprocessing_mismatch("whiten_bandpass", plain)
+    assert "trained with 'whiten_bandpass'" in note and "'bandpass'" in note

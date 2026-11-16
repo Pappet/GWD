@@ -381,3 +381,57 @@ def test_the_glitch_hunter_uses_the_registry_threshold(monkeypatch):
     texts = [t.get_text() for t in app.ax_confidence.texts]
     assert "12.3%" in texts
     assert app_module.decision(0.123, app.threshold)[1] == "red"
+
+
+def test_a_v3_model_starts_in_v3_and_gets_whitened_real_data(monkeypatch):
+    """V3: the simulation starts in the model's scenario version, real data get its
+    preprocessing, and a sample of another version says it does not match."""
+    pytest.importorskip("gwpy")
+    metadata = {"dataset_scenario": "TRAIN_V3", "preprocessing": "whiten_bandpass"}
+    monkeypatch.setattr(registry, "get_threshold", lambda path: 0.5)
+    monkeypatch.setattr(
+        app_module,
+        "load_optional_model",
+        lambda model: (DummyModel(score=0.2), "gwd_model_x.keras", None),
+    )
+    monkeypatch.setattr(app_module, "read_metadata", lambda path: metadata)
+    monkeypatch.setattr(app_module, "require_interactive_backend", lambda name: None)
+    monkeypatch.setattr(
+        app_module, "GwoscSource", lambda: sources.GwoscSource(rng=Picks())
+    )
+    monkeypatch.setattr(
+        app_module,
+        "SimSource",
+        lambda: sources.SimSource(noise_provider=None, rng=np.random.RandomState(1)),
+    )
+    started = []
+    real_app = app_module.GlitchHunterApp
+
+    def record(**kwargs):
+        app = real_app(**kwargs)
+        started.append(app)
+        return app
+
+    monkeypatch.setattr(app_module, "GlitchHunterApp", record)
+    monkeypatch.setattr(app_module.plt, "show", lambda: None)
+    assert app_module.main("latest") == 0
+    (app,) = started
+    assert app.sim.mode is sources.TRAINING_V3
+    assert app.radio_version.value_selected == "V3"
+    assert app.real.preprocessing == "whiten_bandpass"
+    assert "trained with" not in app.ax_signal.get_title()
+    app.set_version("V1")
+    assert app.sim.mode is sources.TRAINING
+    assert app.real.preprocessing == "whiten_bandpass"
+    assert "the model was trained with 'whiten_bandpass'" in app.ax_signal.get_title()
+
+
+def test_without_a_model_real_data_follow_the_scenario_switch():
+    pytest.importorskip("gwpy")
+    app = make_app(model=None)
+    assert app.real.preprocessing == "bandpass"
+    app.set_version("V3")
+    assert app.real.preprocessing == "whiten_bandpass"
+    assert "whitened" in app.ax_spec.get_title()
+    app.set_version("V2")
+    assert app.real.preprocessing == "bandpass"
