@@ -3,7 +3,8 @@
 Every set here is built with an empty noise folder, so only with Gaussian noise; the
 in-process tests pass tmp folders and the Newton backend (numpy only, fast), and the
 CLI test builds with PyCBC in a tmp GWD_HOME. Nothing reads or writes the real data/
-or results/.
+or results/. The V1 sets are tested here; the V2 sets of P6.2 (conditioned, with the
+aLIGO PSD, so with gwpy and PyCBC) in tests/data/test_scenario_v2.py.
 """
 
 import json
@@ -15,12 +16,13 @@ import numpy as np
 import pytest
 
 from gwd.core import waveforms
-from gwd.data.scenarios import EVAL_V1, TESTSETS, TRAIN_V1
+from gwd.data.scenarios import EVAL_V1, TESTSETS, TRAIN_V1, TRAIN_V2
 from gwd.evaluation import testsets
 from gwd.evaluation.metrics import bin_index
 
 N = 64
 SEED = 7
+V1_SETS = ("indist_v1", "stress_v1")
 
 
 def folders(root):
@@ -39,16 +41,19 @@ def build(root, name="indist_v1", n=N, seed=SEED, **options):
 
 @pytest.fixture(scope="module")
 def built(tmp_path_factory):
-    """Both standard sets, built once in a tmp folder."""
+    """Both standard V1 sets, built once in a tmp folder."""
     root = tmp_path_factory.mktemp("sets")
-    return {name: build(root, name) for name in TESTSETS}
+    return {name: build(root, name) for name in V1_SETS}
 
 
 def test_the_standard_sets_are_indist_and_stress():
     assert TESTSETS["indist_v1"].scenario == TRAIN_V1
     assert TESTSETS["stress_v1"].scenario == EVAL_V1
-    for spec in TESTSETS.values():
-        assert spec.training == TRAIN_V1
+    for name in V1_SETS:
+        assert TESTSETS[name].training == TRAIN_V1
+    assert sorted(TESTSETS) == ["indist_v1", "indist_v2", "stress_v1", "stress_v2"]
+    for name in ("indist_v2", "stress_v2"):
+        assert TESTSETS[name].training == TRAIN_V2
 
 
 def test_a_second_build_is_a_cache_hit_with_the_same_hash(tmp_path):
@@ -120,7 +125,7 @@ def test_test_is_balanced_and_normalized(built):
         assert np.abs(data.X.std(axis=1) - 1).max() < 1e-3
 
 
-@pytest.mark.parametrize("name", sorted(TESTSETS))
+@pytest.mark.parametrize("name", V1_SETS)
 def test_every_snr_bin_is_occupied(built, name):
     data = built[name]
     signal = data.y == 1
@@ -142,7 +147,7 @@ def test_the_peak_snr_is_stratified_over_the_scenario_range(built):
     low, high = TRAIN_V1.snr_range
     assert data.peak_snr[signal].min() >= low
     assert data.peak_snr[signal].max() <= high
-    counts = np.bincount(bin_index(data.peak_snr[signal], data.spec.peak_snr_edges()))
+    counts = np.bincount(bin_index(data.peak_snr[signal], data.spec.snr_edges()))
     # 32 signal samples in 11 bins: 3 or 2 each.
     assert set(counts) <= {2, 3}
 

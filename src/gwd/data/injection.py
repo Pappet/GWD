@@ -27,12 +27,30 @@ tests can draw numpy-only Newton chirps on purpose.
 Every signal sample also gets its optimal (matched filter) SNR, measured after the
 scaling and without drawing from rng (P5.5, measure_optimal_snr). The peak SNR still
 drives V1; the optimal SNR is recorded so the difference can be seen.
+
+Scenario V2 (condition_signal, P6.2) injects first and conditions afterwards
+(make_conditioned_sample):
+
+1. the label, unless the caller passes has_signal;
+2. the noise, pad_s longer on each side: Gaussian noise with the aLIGO design PSD
+   (colored_noise_from_psd with reference_psd, 0 below SIMULATED_PSD_F_LOW) or white
+   noise, raw, not yet filtered;
+3. the parameters (draw_params), as in V1;
+4. the chirp on the padded time axis, scaled so that its part inside the window has
+   the drawn optimal SNR against the same PSD in BANDPASS (scale_factor_v2);
+5. noise + signal conditioned together (condition_array: notches and band-pass, then
+   the pads cut off), and normalized with eps 0 by the std of the sum.
+
+Signal and noise thus pass the same filters, so no unfiltered chirp above 300 Hz is
+left as a shortcut (DATA-12, APPX-1), and the normalization no longer depends on the
+noise type (the V1 scale skew of real chunks, P3.2). V2 draws no real noise (D3 = B).
 """
 
 import glob
 import os
 import warnings
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Optional
 
 import numpy as np
@@ -46,11 +64,18 @@ from gwd.config import (
     WAVEFORM_BACKEND,
 )
 from gwd.core import noise as core_noise
+from gwd.core.interferometer import reference_psd
 from gwd.core.population import random_bbh_params
-from gwd.core.snr import optimal_snr_welch, optimal_snr_white, scale_signal_to_snr
+from gwd.core.snr import (
+    optimal_snr_psd,
+    optimal_snr_welch,
+    optimal_snr_white,
+    peak_snr,
+    scale_signal_to_snr,
+)
 from gwd.core.timebase import time_axis
 from gwd.core.waveforms import generate_chirp
-from gwd.data.preprocessing import normalize
+from gwd.data.preprocessing import condition_array, normalize
 
 # Distance of the fixed-mass scenarios: the default of generate_chirp. Random masses
 # draw it uniform in volume (gwd.core.population). Either way it does not change the
@@ -58,6 +83,10 @@ from gwd.data.preprocessing import normalize
 FIXED_DISTANCE_MPC = 400.0
 # Standard deviation of the white noise of every scenario.
 WHITE_NOISE_SIGMA = 1.0
+# The simulated aLIGO noise of V2 has no power below this frequency (Hz). Below it the
+# design PSD rises steeply (at 1 Hz it is 1e7 times its value at 100 Hz); the band-pass
+# from 20 Hz removes that part anyway, and without it the filters need not suppress it.
+SIMULATED_PSD_F_LOW = 10.0
 
 
 @dataclass(frozen=True)
@@ -73,8 +102,11 @@ class InjectionParams:
 class Sample:
     """data = noise + signal. signal and params are None for a noise-only sample.
 
-    snr is the peak SNR the signal was scaled to (also as peak_snr), optimal_snr the
-    optimal SNR measured by measure_optimal_snr; both are 0.0 without signal.
+    V1: snr is the peak SNR the signal was scaled to (also as peak_snr), optimal_snr
+    the optimal SNR measured by measure_optimal_snr. V2: optimal_snr is the optimal
+    SNR the signal was scaled to (params.snr), snr the peak SNR of the conditioned
+    signal over the std of the conditioned noise, measured. Both are 0.0 without
+    signal. In V2, data, noise, and signal are conditioned and normalized.
     """
 
     data: np.ndarray
@@ -82,8 +114,8 @@ class Sample:
     signal: Optional[np.ndarray]
     has_signal: bool
     params: Optional[InjectionParams]
-    snr: float  # the peak SNR the signal was scaled to; 0.0 without signal
-    noise_kind: str  # "real" or "white"
+    snr: float  # the peak SNR (V1: scaled to, V2: measured); 0.0 without signal
+    noise_kind: str  # "real", "white", or "aligo" (V2)
     noise_file: Optional[str] = None  # file name of the real chunk, None for white
     waveform_backend: Optional[str] = None  # "pycbc" or "newton"; None without signal
     optimal_snr: float = 0.0  # measured, see measure_optimal_snr; 0.0 without signal
@@ -220,12 +252,14 @@ def make_sample(
     snr: fixes the SNR of a signal sample instead of drawing it.
     noise_provider: callable (length, rng) -> (real noise, file name), see
         real_noise_provider. A file name of None means the provider fell back to white
-        noise. None means no real noise, so every sample gets white noise.
+        noise. None means no real noise, so every sample gets white noise. V2 scenarios
+        draw no real noise and ignore it.
     backend: the waveform backend of the chirp; the pipeline keeps the default.
+    A V2 scenario (condition_signal) goes to make_conditioned_sample.
     """
-    if scenario.condition_signal:
-        raise NotImplementedError("Conditioning the signal comes with V2 (P6.2)")
     rng = _rng(rng)
+    if scenario.condition_signal:
+        return make_conditioned_sample(scenario, rng, has_signal, snr, backend)
     time = time_axis(SAMPLE_RATE, DURATION)
 
     if has_signal is None:
@@ -272,6 +306,117 @@ def make_sample(
         noise_file,
         backend,
         measure_optimal_snr(signal, noise, noise_kind),
+    )
+
+
+@lru_cache(maxsize=8)
+def _psd_on_grid(kind, n, fs):
+    """The one-sided PSD of the simulated noise on np.fft.rfftfreq(n, 1 / fs), read-only.
+
+    'aligo': reference_psd, 0 below SIMULATED_PSD_F_LOW and at DC. 'white': the flat
+    PSD 2 sigma^2 / fs of white noise of std WHITE_NOISE_SIGMA (0 at DC).
+    """
+    freqs = np.fft.rfftfreq(n, 1 / fs)
+    if kind == "aligo":
+        values = np.asarray(reference_psd(freqs, SIMULATED_PSD_F_LOW), dtype=float)
+    elif kind == "white":
+        values = np.full_like(freqs, 2 * WHITE_NOISE_SIGMA**2 / fs)
+    else:
+        raise ValueError(f"Unknown simulated noise {kind!r}")
+    values[0] = 0.0
+    values.flags.writeable = False
+    return values
+
+
+def simulated_psd(kind, n, fs=SAMPLE_RATE):
+    """The PSD of simulated noise kind ('aligo' or 'white') of n samples at fs Hz.
+
+    An array on np.fft.rfftfreq(n, 1 / fs), cached and read-only.
+    """
+    return _psd_on_grid(kind, n, fs)
+
+
+def draw_simulated_noise(kind, n, rng, fs=SAMPLE_RATE):
+    """n samples of raw simulated noise: 'aligo' (colored) or 'white' (std 1)."""
+    if kind == "white":
+        return white_noise(n, rng)
+    return core_noise.colored_noise_from_psd(n, fs, simulated_psd(kind, n, fs), rng=rng)
+
+
+def scale_factor_v2(window_signal, target_snr, kind, fs=SAMPLE_RATE):
+    """The factor that gives window_signal the optimal SNR target_snr (V2, D2 = B).
+
+    The optimal SNR is that of the signal inside the sample window, against the PSD of
+    the simulated noise, in BANDPASS: the band that conditioning keeps. Raises
+    ValueError for a signal without power in the band.
+    """
+    psd = simulated_psd(kind, len(window_signal), fs)
+    current = optimal_snr_psd(window_signal, psd, fs, *BANDPASS)
+    if current == 0:
+        raise ValueError("cannot scale a signal without power in BANDPASS")
+    return target_snr / current
+
+
+def make_conditioned_sample(
+    scenario, rng=None, has_signal=None, snr=None, backend=WAVEFORM_BACKEND
+):
+    """Draw one V2 sample: inject first, then condition and normalize together (P6.2).
+
+    The draw order and the steps are in the module doc. The returned data, noise, and
+    signal are the conditioned window of N_SAMPLES points, divided by the std of the
+    conditioned sum (eps 0; noise and data also minus its mean), so data has mean 0
+    and std 1 and data = noise + signal up to rounding. Raises ImportError without
+    gwpy and WaveformBackendError or ReferencePSDError without PyCBC.
+    """
+    if not scenario.condition_signal:
+        raise ValueError(f"{scenario.name} is a V1 scenario; use make_sample")
+    rng = _rng(rng)
+    pad = round(scenario.pad_s * SAMPLE_RATE)
+    pad_s = pad / SAMPLE_RATE
+    total = N_SAMPLES + 2 * pad
+
+    if has_signal is None:
+        has_signal = bool(rng.rand() > 0.5)
+    noise_kind = scenario.simulated_noise
+    raw_noise = draw_simulated_noise(noise_kind, total, rng)
+
+    if not has_signal:
+        conditioned = condition_array(raw_noise, SAMPLE_RATE, pad_s)
+        data = normalize(conditioned, eps=0.0)
+        return Sample(data, data, None, False, None, 0.0, noise_kind)
+
+    params = draw_params(scenario, rng, snr)
+    time = time_axis(SAMPLE_RATE, total / SAMPLE_RATE, t0=-pad_s)
+    chirp, _ = generate_chirp(
+        time,
+        backend=backend,
+        t_merger=params.t_merger,
+        mass1=params.mass1,
+        mass2=params.mass2,
+        distance_mpc=params.distance,
+        normalize=True,
+    )
+    chirp = chirp * scale_factor_v2(
+        chirp[pad : pad + N_SAMPLES], params.snr, noise_kind
+    )
+
+    conditioned = condition_array(raw_noise + chirp, SAMPLE_RATE, pad_s)
+    conditioned_signal = condition_array(chirp, SAMPLE_RATE, pad_s)
+    mean, std = np.mean(conditioned), np.std(conditioned)
+    data = (conditioned - mean) / std
+    signal = conditioned_signal / std
+    noise = (conditioned - conditioned_signal - mean) / std
+    return Sample(
+        data,
+        noise,
+        signal,
+        True,
+        params,
+        peak_snr(signal, float(np.std(noise))),
+        noise_kind,
+        None,
+        backend,
+        float(params.snr),
     )
 
 

@@ -2,6 +2,8 @@
 
 condition_strain works on a gwpy TimeSeries but never imports gwpy itself; it only
 calls the methods of the series it gets, so this module imports without gwpy.
+condition_array (P6.2) runs the same padded chain on a numpy array, for the simulated
+samples of scenario V2; it imports gwpy when it is called.
 """
 
 import numpy as np
@@ -42,6 +44,25 @@ def conditioned_crop(ts, fs, pad_s, notches=NOTCH_FREQS, band=BANDPASS):
             f"{len(conditioned)} samples are too short for a pad of {pad} samples per side"
         )
     return conditioned[pad : len(conditioned) - pad]
+
+
+GWPY_HINT = "Install gwpy for scenario V2 and real data: pip install -e '.[gwdata]'"
+
+
+def condition_array(x, fs, pad_s, notches=NOTCH_FREQS, band=BANDPASS):
+    """conditioned_crop of a numpy array x sampled at fs Hz (P6.2).
+
+    The array is wrapped in a gwpy TimeSeries, so a simulated V2 sample goes through
+    exactly the chain the field test and the Glitch Hunter apply to real data. The
+    chain is linear: conditioning noise + signal equals conditioning each and adding.
+    Raises ImportError with the install command if gwpy is missing.
+    """
+    try:
+        from gwpy.timeseries import TimeSeries
+    except ImportError as error:
+        raise ImportError(GWPY_HINT) from error
+    series = TimeSeries(np.asarray(x, dtype=float), sample_rate=fs)
+    return conditioned_crop(series, fs, pad_s, notches=notches, band=band)
 
 
 def normalize(x, eps=1e-10):
