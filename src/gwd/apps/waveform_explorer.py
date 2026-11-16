@@ -7,12 +7,13 @@ Uses gwd.core for the simulation.
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button, Slider
 
+from gwd.config import SAMPLE_RATE
 from gwd.core.simulation import TimeDomainSimulator
 
 
 def create_interactive_plot():
     # Instanz der Simulation Engine
-    sim = TimeDomainSimulator(duration=0.5, sample_rate=4096)
+    sim = TimeDomainSimulator(duration=0.5, sample_rate=SAMPLE_RATE)
 
     # Startwerte für die GUI
     gui_params = {"mass1": 30, "mass2": 30, "distance": 400, "noise_level": 1.0}

@@ -5,7 +5,15 @@ import random
 import numpy as np
 import pandas as pd
 
-from gwd.config import DATA_DIR_NOISE, DATA_DIR_TRAIN, SAMPLES_FOR_TRAINING, ensure_dirs
+from gwd.config import (
+    DATA_DIR_NOISE,
+    DATA_DIR_TRAIN,
+    DURATION,
+    LABELS_FILE,
+    N_SAMPLES,
+    SAMPLES_FOR_TRAINING,
+    ensure_dirs,
+)
 from gwd.core.noise import generate_gaussian_noise
 from gwd.core.waveforms import (
     generate_astrophysical_chirp,
@@ -68,9 +76,7 @@ def generate_dataset(num_samples=SAMPLES_FOR_TRAINING, output_folder=DATA_DIR_TR
 
     ensure_dirs(output_folder)
 
-    fs = 4096
-    duration = 4.0
-    time = np.linspace(0, duration, int(fs * duration))
+    time = np.linspace(0, DURATION, N_SAMPLES)
     labels = []
 
     has_real_noise = len(glob.glob(os.path.join(REAL_NOISE_DIR, "*.npy"))) > 0
@@ -105,7 +111,7 @@ def generate_dataset(num_samples=SAMPLES_FOR_TRAINING, output_folder=DATA_DIR_TR
             m2 = params["mass2"]
             dist = params["distance"]
             t_merger = np.random.uniform(
-                duration * 0.5, duration * 0.9
+                DURATION * 0.5, DURATION * 0.9
             )  # Merger eher hinten
 
             # Signal generieren
@@ -160,7 +166,7 @@ def generate_dataset(num_samples=SAMPLES_FOR_TRAINING, output_folder=DATA_DIR_TR
             print(f"   ... {i}/{num_samples}")
 
     df = pd.DataFrame(labels)
-    df.to_csv(os.path.join(output_folder, "labels.csv"), index=False)
+    df.to_csv(os.path.join(output_folder, LABELS_FILE), index=False)
     print("✅ Fertig.")
 
 

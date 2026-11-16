@@ -4,6 +4,7 @@ from gwd.config import (
     DATA_DIR_TRAIN,
     LABELS_FILE,
     MODELS_DIR,
+    N_SAMPLES,
     TRAINING_PLOTS_DIR,
     ensure_dirs,
 )
@@ -79,7 +80,7 @@ def load_data():
             data = (data - np.mean(data)) / (np.std(data) + 1e-10)
 
             # Sicherstellen, dass die Länge stimmt (Clip/Pad)
-            TARGET_LEN = 16384  # 4s * 4096Hz
+            TARGET_LEN = N_SAMPLES
             if len(data) > TARGET_LEN:
                 data = data[:TARGET_LEN]
             elif len(data) < TARGET_LEN:

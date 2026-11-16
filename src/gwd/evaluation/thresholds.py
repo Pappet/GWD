@@ -16,8 +16,10 @@ import matplotlib
 import numpy as np
 
 from gwd.config import (
+    DURATION,
     EVALUATION_MODELS_PLOTS_DIR,
     MODELS_DIR,
+    N_SAMPLES,
     OPTIMAL_THRESHOLDS_FILE,
     ensure_dirs,
 )
@@ -30,8 +32,6 @@ from sklearn.metrics import f1_score, precision_recall_curve, roc_curve
 from gwd.core.noise import generate_gaussian_noise
 from gwd.core.waveforms import generate_astrophysical_chirp
 
-FS = 4096
-DURATION = 4.0
 TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
@@ -52,7 +52,7 @@ def get_latest_model():
 
 def generate_test_data(n_samples=500):
     """Generiert Test-Daten."""
-    time = np.linspace(0, DURATION, int(FS * DURATION))
+    time = np.linspace(0, DURATION, N_SAMPLES)
     X, y = [], []
 
     for _ in range(n_samples):

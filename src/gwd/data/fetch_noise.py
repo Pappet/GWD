@@ -3,7 +3,15 @@ import os
 import numpy as np
 from gwpy.timeseries import TimeSeries
 
-from gwd.config import DATA_DIR_NOISE, ensure_dirs
+from gwd.config import (
+    BANDPASS,
+    DATA_DIR_NOISE,
+    N_SAMPLES,
+    NOISE_FETCH_SECONDS,
+    NOTCH_FREQS,
+    SAMPLE_RATE,
+    ensure_dirs,
+)
 
 # Output Ordner für das echte Rauschen
 OUTPUT_DIR = DATA_DIR_NOISE
@@ -11,7 +19,6 @@ OUTPUT_DIR = DATA_DIR_NOISE
 # Ein Zeitraum im O3b Run, wo definitiv keine Events waren
 # GPS 1262304018 = Jan 2020
 START_GPS = 1262304018
-DURATION = 4096  # Wir laden ca. 68 Minuten Daten
 
 
 def fetch_and_slice():
@@ -19,31 +26,31 @@ def fetch_and_slice():
     Lädt echte LIGO-Daten aus einem ruhigen Zeitraum und schneidet sie
     in 4-Sekunden-Schnipsel für das Training.
     """
-    print(f"🌊 Lade {DURATION} Sekunden echtes LIGO-Rauschen (H1)...")
+    print(f"🌊 Loading {NOISE_FETCH_SECONDS} seconds of real LIGO noise (H1)...")
 
     try:
         # 1. Download am Stück
         strain = TimeSeries.fetch_open_data(
-            "H1", START_GPS, START_GPS + DURATION, verbose=True
+            "H1", START_GPS, START_GPS + NOISE_FETCH_SECONDS, verbose=True
         )
 
         # 2. Preprocessing (EXAKT wie im Training/App!)
-        # Resample auf 4096 Hz
-        if strain.sample_rate.value != 4096:
-            strain = strain.resample(4096)
+        # Resample to SAMPLE_RATE
+        if strain.sample_rate.value != SAMPLE_RATE:
+            strain = strain.resample(SAMPLE_RATE)
 
-        # Notch Filter (Stromnetz entfernen)
-        strain = strain.notch(60).notch(120).notch(180).notch(240)
+        # Notch filters (remove the power line and its harmonics)
+        for freq in NOTCH_FREQS:
+            strain = strain.notch(freq)
 
-        # Bandpass
-        strain = strain.bandpass(20, 300)
+        # Band-pass
+        strain = strain.bandpass(*BANDPASS)
 
         # Als Numpy Array holen
         data = strain.value
 
         # 3. Zerschneiden in 4s Stücke
-        fs = 4096
-        chunk_len = 4 * fs
+        chunk_len = N_SAMPLES
         num_chunks = len(data) // chunk_len
 
         print(f"✂️ Schneide in {num_chunks} Trainings-Schnipsel...")

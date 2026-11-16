@@ -60,7 +60,15 @@ LABELS_FILE = "labels.csv"  # Relativ zu DATA_DIR_TRAIN
 OPTIMAL_THRESHOLDS_FILE = os.path.join(RESULTS_DIR, "optimal_thresholds.json")
 
 # --- KONSTANTEN ---
-SAMPLE_RATE = 4096
-DURATION = 4.0
-INPUT_SHAPE = (16384, 1)  # (SampleRate * Duration, Channels)
+SAMPLE_RATE = 4096  # Hz
+DURATION = 4.0  # seconds per sample
+N_SAMPLES = int(SAMPLE_RATE * DURATION)  # 16384 values per sample
+INPUT_SHAPE = (N_SAMPLES, 1)  # (time steps, channels)
 SAMPLES_FOR_TRAINING = 10000
+
+# Real-data conditioning: notch the power line and its harmonics, then band-pass.
+NOTCH_FREQS = (60, 120, 180, 240)  # Hz
+BANDPASS = (20, 300)  # Hz, (low, high)
+
+# Length of the real-noise segment that fetch_noise downloads (about 68 minutes).
+NOISE_FETCH_SECONDS = 4096

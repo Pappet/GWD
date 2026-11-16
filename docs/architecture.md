@@ -225,7 +225,7 @@ Each step PR ticks its own step, so a tick takes effect when that PR is merged.
 | [x] | P2.4 | Move data and training scripts, menu independent of working directory | #21 |
 | [x] | P2.5 | Move evaluation, utils, and apps; start of the registry | #22 |
 | [x] | P2.6 | Remove the shim and last `sys.path` edits; architecture test | #23 |
-| [ ] | P3.1 | Central constants instead of hard-coded values | |
+| [x] | P3.1 | Central constants instead of hard-coded values | #24 |
 | [ ] | P3.2 | One conditioning and one normalization function | |
 | [ ] | P3.3 | Model registry: one model search, selection by timestamp, `--model` | |
 | [ ] | P3.4 | GWOSC access and shared event list | |

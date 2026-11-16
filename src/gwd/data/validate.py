@@ -15,12 +15,20 @@ import numpy as np
 import pandas as pd
 from scipy import signal
 
-from gwd.config import DATA_DIR_TRAIN, VALIDATION_DATASET_PLOTS_DIR, ensure_dirs
+from gwd.config import (
+    DATA_DIR_TRAIN,
+    DURATION,
+    LABELS_FILE,
+    N_SAMPLES,
+    SAMPLE_RATE,
+    VALIDATION_DATASET_PLOTS_DIR,
+    ensure_dirs,
+)
 
 
 def load_dataset_info(data_folder):
     """Lädt die Labels-CSV und gibt Statistiken zurück."""
-    csv_path = os.path.join(data_folder, "labels.csv")
+    csv_path = os.path.join(data_folder, LABELS_FILE)
 
     if not os.path.exists(csv_path):
         raise FileNotFoundError(f"Konnte {csv_path} nicht finden!")
@@ -149,7 +157,7 @@ def validate_samples(df, data_folder, num_check=10):
             data = np.load(filepath)
 
             # Check 1: Korrekte Länge?
-            expected_length = 16384  # 4s bei 4096 Hz
+            expected_length = N_SAMPLES
             if len(data) != expected_length:
                 issues.append(
                     f"   ⚠️  {row['filename']}: Falsche Länge ({len(data)} statt {expected_length})"
@@ -375,7 +383,7 @@ def create_visualizations(df, data_folder, output_folder=VALIDATION_DATASET_PLOT
     for ax, (label, row) in zip(axes3, samples_to_plot):
         filepath = os.path.join(data_folder, row["filename"])
         data = np.load(filepath)
-        time = np.linspace(0, 4, len(data))
+        time = np.linspace(0, DURATION, len(data))
 
         ax.plot(time, data, linewidth=0.5, color="steelblue")
 
@@ -437,10 +445,10 @@ def create_visualizations(df, data_folder, output_folder=VALIDATION_DATASET_PLOT
     for i, (label, row) in enumerate(spec_samples):
         filepath = os.path.join(data_folder, row["filename"])
         data = np.load(filepath)
-        fs = 4096
+        fs = SAMPLE_RATE
 
         # Zeitreihe
-        time = np.linspace(0, 4, len(data))
+        time = np.linspace(0, DURATION, len(data))
         axes4[i, 0].plot(time, data, linewidth=0.5, color="steelblue")
         axes4[i, 0].set_xlabel("Zeit [s]", fontsize=10)
         axes4[i, 0].set_ylabel("Strain", fontsize=10)
