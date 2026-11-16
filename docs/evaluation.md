@@ -14,13 +14,15 @@ This document describes how GWD evaluates a trained CNN today: the commands, the
 | `gwd eval compare` | ROC curves of several models on the same fixed test set, each with its operating point at its own threshold | two plots |
 | `gwd eval leaderboard` | Prints leaderboard v2, one table per test set, best ROC AUC first | nothing |
 
-`run`, `thresholds`, and `compare` take `--model` with `latest` (the newest timestamp in the name), a model name in `models_registry/`, or a path to a `.keras` file; `compare` takes it more than once and compares all models without it. All three and `build-testset` take `--testset` (`stress_v1`, the default, `indist_v1`, and since P6.2 `indist_v2` or `stress_v2`), `--seed` (default 0), and `--n` (default 1000), which name the test set; the same three values always give the same samples, and the first command that needs a set builds it. `build-testset` also accepts `--scenario` for `--testset` and takes `--rebuild` to draw a set again. `gwd eval run` runs offline; `--real` adds the field test, which downloads from GWOSC (decision D10: the field test is optional). `gwd eval thresholds --no-save` writes neither the threshold nor the JSON file. An unknown model, and a cached test set that does not match its hash or is stale, end the command with exit code 1; a negative `--seed` or an `--n` below 2 with exit code 2.
+`run`, `thresholds`, and `compare` take `--model` with `latest` (the newest timestamp in the name), a model name in `models_registry/`, or a path to a `.keras` file; `compare` takes it more than once and compares all models without it. All three and `build-testset` take `--testset` (`stress_v1`, the default, `indist_v1`, since P6.2 `indist_v2` or `stress_v2`, and since P6.6 `indist_v3` or `stress_v3`), `--seed` (default 0), and `--n` (default 1000), which name the test set; the same three values always give the same samples, and the first command that needs a set builds it. `build-testset` also accepts `--scenario` for `--testset` and takes `--rebuild` to draw a set again. `gwd eval run` runs offline; `--real` adds the field test, which downloads from GWOSC (decision D10: the field test is optional). `gwd eval thresholds --no-save` writes neither the threshold nor the JSON file. Since P6.6 the data follow the model's preprocessing (see "Preprocessing follows the model" below): `run`, `thresholds`, and `compare` score a model trained with whitening on the V3 counterpart of a V2 set, and a model without whitening on the V2 counterpart of a V3 set. An unknown model, and a cached test set that does not match its hash or is stale, end the command with exit code 1; a negative `--seed` or an `--n` below 2 with exit code 2.
 
 ```bash
 gwd eval build-testset --testset indist_v1 --seed 7 --n 64
 gwd eval thresholds --model latest
 gwd eval run --model latest --seed 1
 gwd eval run --testset indist_v1
+gwd eval run --testset indist_v3
+gwd eval thresholds --testset stress_v3
 gwd eval run --real
 gwd eval compare --model gwd_model_20251203-220536 --model latest --seed 1
 gwd eval leaderboard
@@ -30,7 +32,7 @@ The plots go to `plots/evaluation_models/`, with the start time of the command i
 
 ## Test sets
 
-Since P5.7 every simulated number comes from a fixed test set of `gwd.evaluation.testsets` (decision D4, default A). There are two V1 sets, and since P6.2 two V2 sets for models trained on `TRAIN_V2` (P6.5); a V1 set is drawn and binned in the peak SNR, a V2 set in the optimal SNR:
+Since P5.7 every simulated number comes from a fixed test set of `gwd.evaluation.testsets` (decision D4, default A). There are two V1 sets, since P6.2 two V2 sets for models trained on `TRAIN_V2` (P6.5), and since P6.6 two V3 sets for models trained on `TRAIN_V3`; a V1 set is drawn and binned in the peak SNR, a V2 or V3 set in the optimal SNR:
 
 | Set | Drawn from | Noise | Masses | SNR | SNR bins |
 |---|---|---|---|---|---|
@@ -38,8 +40,12 @@ Since P5.7 every simulated number comes from a fixed test set of `gwd.evaluation
 | `stress_v1` | `EVAL_V1`, the distribution of every simulated number before P5.7 | white | 30/30 M☉ | peak 0.5–2.5 | 8, of width 0.25 |
 | `indist_v2` | `INDIST_V2`, the same distribution as `TRAIN_V2` | simulated aLIGO design noise, conditioned with the signal | random, 5–100 M☉ | optimal 4–20 | 8, of width 2 |
 | `stress_v2` | `STRESS_V2`: `TRAIN_V2` with one extrapolation bin | as `indist_v2` | random, 5–100 M☉ | optimal 2–20 | 9, of width 2; 2–4 lies below the training range |
+| `indist_v3` | `INDIST_V3`: the samples of `indist_v2`, whitened | as `indist_v2`, whitened with the aLIGO PSD before the band-pass | random, 5–100 M☉ | optimal 4–20 | 8, of width 2 |
+| `stress_v3` | `STRESS_V3`: the samples of `stress_v2`, whitened | as `indist_v3` | random, 5–100 M☉ | optimal 2–20 | 9, of width 2; 2–4 lies below the training range |
 
-The V2 sets need gwpy and PyCBC; the scenarios are described in [architecture.md](architecture.md#scenarios-and-snr-definition-current-state-v1). The default stays `stress_v1` until P6.5.
+The V2 and V3 sets need gwpy and PyCBC; the scenarios are described in [architecture.md](architecture.md#scenarios-and-snr-definition-current-state-v1). The default stays `stress_v1` until P6.5.
+
+A V3 set draws from the random streams of its V2 counterpart (`EvalSet.stream`): with the same seed and n, `indist_v3` holds the same labels, signal parameters, and noise realizations as `indist_v2`, and `stress_v3` as `stress_v2`; only the preprocessing differs (`tests/data/test_scenario_v3.py`). So a V2 and a V3 model can be compared per optimal SNR bin on the same physical events, each with its own preprocessing. The SHA-256 of a V3 set differs from that of its V2 counterpart, because the arrays differ; its manifest names the stream and the preprocessing.
 
 `gwd eval build-testset` with `--testset`, `--seed`, and `--n`, or the first `run`, `thresholds`, or `compare` that needs the set, draws it once and writes:
 
@@ -55,7 +61,7 @@ Each set has two parts, each drawn from its own random stream:
 
 The SHA-256 covers the format, set, scenario and its hash, seed, and n, and every array with its name, dtype, and shape, not the bytes of the npz file. Loading a set computes it again: if it differs from the manifest, an array was changed after the build, and the command stops with exit code 1 (`ValueError` in Python). A set is stale if its manifest has another format, or if the scenario's fields or, for `indist_v1`, the noise chunks changed since the build; the command stops too. Neither case replaces the set on its own; `gwd eval build-testset --rebuild` (with the same `--testset`, `--seed`, and `--n`) draws it again. A missing manifest or npz means the set is drawn again.
 
-The random streams come from `numpy.random.SeedSequence(seed, spawn_key=(0x67776474, crc32(set), part))` with an MT19937 generator. Training seeds the generator with the plain integer (`gwd data generate`, `gwd train`) or uses `SeedSequence(seed)` without a spawn key (the split), so no training seed gives a test set stream, and no eval command seeds the global numpy RNG any more.
+The random streams come from `numpy.random.SeedSequence(seed, spawn_key=(0x67776474, crc32(stream), part))` with an MT19937 generator, where the stream is the set's own name, or for a V3 set the name of its V2 counterpart. Training seeds the generator with the plain integer (`gwd data generate`, `gwd train`) or uses `SeedSequence(seed)` without a spawn key (the split), so no training seed gives a test set stream, and no eval command seeds the global numpy RNG any more.
 
 Limits:
 
@@ -88,6 +94,17 @@ With `--real`, `gwd eval run` downloads data from GWOSC (network), in `gwd.evalu
 - **False alarms:** 200 s of H1 noise from GPS 1253326755, conditioned the same way and cut into 50 windows of 4 s. The result is the number of windows with a score ≥ the model's threshold and the analysed time, for example `3 false alarms in 0.0556 h`. It is not scaled to a rate per year: 50 windows are too few for that. If the noise download fails, it reads `n/a (noise not loaded)`.
 
 Because of the padding, the `>=` rule, and the new texts, field test results since P4.3 cannot be compared with older leaderboard rows; since P5.8 they also use the model's threshold instead of 0.15.
+
+Since P6.6 the real data get the model's preprocessing. For a model trained with whitening (`TRAIN_V3`) each padded stretch, 36 s for an event and 232 s for the noise, is first whitened with its own PSD: a Welch estimate over the whole padded stretch (Hann segments of 4 s, half overlap, the median of the segments, so a loud event in one or two segments does not raise it), after a Tukey taper of 1 s at each end that lies inside the pads. The notches, the band-pass, and the crop follow as before. On simulated aLIGO noise with a strong part below 10 Hz added, this gives windows that correlate with the windows whitened with the known PSD at about 0.99 (`tests/data/test_scenario_v3.py` asks for more than 0.97).
+
+### Preprocessing follows the model
+
+Since P6.6 a model records in its `.json` what its input went through: `preprocessing` is `bandpass` (notches and band-pass: `TRAIN_V1`, `TRAIN_V2`, and datasets without a manifest) or `whiten_bandpass` (`TRAIN_V3`). `gwd.data.scenarios.preprocessing_of` reads it back through the registry; a model without the key, such as every model trained before P6.6, gets the preprocessing of its `dataset_scenario` if that is a known scenario, else `bandpass`, which is what it always got. Every command that gives a model data picks it from there:
+
+- `gwd eval run` and `gwd eval thresholds` print `Preprocessing of the model: ...`. If the named set has another preprocessing and a counterpart with the same draws exists, they use the counterpart and say so: `--testset indist_v2` scores a whitening model on `indist_v3`, and `--testset indist_v3` scores a model without whitening on `indist_v2`. The leaderboard row and the threshold record name the set that was used. A V1 set has no whitened counterpart; a whitening model scored on it gets a warning.
+- `gwd eval compare` builds the named set and, if a model needs it, its counterpart, checks that both have the same labels, and scores each model on the one with its preprocessing; the plot title names both sets.
+- The field test (`--real`) whitens the real data for a whitening model, as described above.
+- The Glitch Hunter whitens its real data for a whitening model, and its simulation starts in the scenario version the model was trained on.
 
 ## Plots
 
@@ -187,4 +204,5 @@ There is no valid Matched Filter baseline. The script that computed it was delet
 - With 1000 `calib_bg` samples, the reached FPR has a statistical uncertainty of about ±0.3 percentage points; the false alarm rate at very low FPR (below 1 in 1000) cannot be calibrated with this set.
 - Rows of the old leaderboard written before P4.3 have field test values from unpadded windows, counted with score > 0.15, with failed downloads counted as missed (`0/5`), and a false alarm rate per year (`< 157788.0/y`). They cannot be compared with newer rows.
 - The field test uses five events and 200 s of noise; its numbers are a rough check, not a measured detector performance.
+- gwpy's band-pass (20–300 Hz) is not flat inside its pass band: white noise through the notches and the band-pass has a Welch PSD that varies between about 0.65 and 1.75 times its median across 20–300 Hz (measured in 10 Hz bands on simulated samples). V2 and V3 both keep it, as the real data path does; whitening in V3 makes the input flat up to that ripple.
 - Real noise chunks reach the CNN at a much smaller scale than white noise (see "Known skews"), so the noise source table of `indist_v1` mixes two very different inputs.
