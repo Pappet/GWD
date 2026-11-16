@@ -388,18 +388,34 @@ TESTSETS = {
 }
 
 
+def training_scenario(metadata):
+    """The scenario a model was trained on, from its metadata, or None if unknown.
+
+    gwd train writes its name to "dataset_scenario", for file training (from the
+    dataset's manifest.json; "unknown (v1)" for a dataset without one) and for online
+    training (since P6.7) alike; online training also writes it to "online" ->
+    "scenario", which is read if the top-level key is missing. None for no metadata, a
+    model from before P4.1, "unknown (v1)", or a name that is not in SCENARIOS.
+    """
+    metadata = metadata or {}
+    name = metadata.get("dataset_scenario")
+    if name is None and isinstance(metadata.get("online"), dict):
+        name = metadata["online"].get("scenario")
+    return SCENARIOS.get(name) if isinstance(name, str) else None
+
+
 def preprocessing_of(metadata):
     """The preprocessing a model expects, from its metadata (gwd.registry.read_metadata).
 
-    The key "preprocessing" (written by gwd train since V3); else that of the scenario
-    in "dataset_scenario", if it is a known one; else DEFAULT_PREPROCESSING, which is
-    what every model got before V3 (no metadata, or a model from before P4.1).
+    The key "preprocessing" (written by gwd train since V3); else that of its training
+    scenario (training_scenario), if it is a known one; else DEFAULT_PREPROCESSING,
+    which is what every model got before V3 (no metadata, or a model from before P4.1).
     """
     metadata = metadata or {}
     value = metadata.get("preprocessing")
     if value in PREPROCESSINGS:
         return value
-    scenario = SCENARIOS.get(metadata.get("dataset_scenario"))
+    scenario = training_scenario(metadata)
     return scenario.preprocessing if scenario else DEFAULT_PREPROCESSING
 
 

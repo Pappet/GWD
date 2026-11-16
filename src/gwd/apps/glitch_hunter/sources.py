@@ -33,10 +33,10 @@ from gwd.data.scenarios import (
     APP_V2,
     APP_V3,
     DEFAULT_PREPROCESSING,
-    SCENARIOS,
     TRAIN_V1,
     TRAIN_V2,
     TRAIN_V3,
+    training_scenario,
 )
 
 DETECTOR = "H1"
@@ -124,11 +124,11 @@ DEFAULT_VERSION = 1
 def start_version(metadata):
     """The scenario version the simulation starts in: that of the model's training.
 
-    The version of the scenario named in the metadata's dataset_scenario if it is a
-    known one with Glitch Hunter modes, else DEFAULT_VERSION (no model, or a model
-    from before P4.1).
+    The version of the model's training scenario (gwd.data.scenarios.
+    training_scenario) if it is a known one with Glitch Hunter modes, else
+    DEFAULT_VERSION (no model, or a model from before P4.1).
     """
-    scenario = SCENARIOS.get((metadata or {}).get("dataset_scenario"))
+    scenario = training_scenario(metadata)
     if scenario is None or scenario.version not in VERSIONS:
         return DEFAULT_VERSION
     return scenario.version

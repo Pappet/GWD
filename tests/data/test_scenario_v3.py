@@ -43,6 +43,7 @@ from gwd.data.scenarios import (
     Scenario,
     counterpart_set,
     preprocessing_of,
+    training_scenario,
 )
 
 pytest.importorskip("gwpy")
@@ -429,10 +430,33 @@ def test_bandpass_is_still_the_default_of_the_real_data_path():
             "whiten_bandpass",
         ),
         ({"preprocessing": "bandpass", "dataset_scenario": "TRAIN_V3"}, "bandpass"),
+        ({"online": {"scenario": "TRAIN_V3"}}, "whiten_bandpass"),
     ],
 )
 def test_preprocessing_of_the_metadata(metadata, expected):
     assert preprocessing_of(metadata) == expected
+
+
+@pytest.mark.parametrize(
+    "metadata, expected",
+    [
+        (None, None),
+        ({}, None),
+        ({"dataset_scenario": "unknown (v1)"}, None),
+        ({"dataset_scenario": "NO_SUCH_SCENARIO"}, None),
+        ({"dataset_scenario": None, "online": None}, None),
+        ({"dataset_scenario": "TRAIN_V2"}, "TRAIN_V2"),
+        ({"online": {"scenario": "TRAIN_V3"}}, "TRAIN_V3"),
+        # The top-level key wins over the online block.
+        (
+            {"dataset_scenario": "TRAIN_V2", "online": {"scenario": "TRAIN_V3"}},
+            "TRAIN_V2",
+        ),
+    ],
+)
+def test_training_scenario_of_the_metadata(metadata, expected):
+    scenario = training_scenario(metadata)
+    assert (scenario.name if scenario else None) == expected
 
 
 # --- dataset ---

@@ -16,6 +16,7 @@ tf = pytest.importorskip("tensorflow")
 
 from gwd import registry  # noqa: E402
 from gwd.data import provenance  # noqa: E402
+from gwd.data.scenarios import training_scenario  # noqa: E402
 from gwd.training import train  # noqa: E402
 
 
@@ -130,6 +131,8 @@ def test_train_restores_the_policy_and_records_it(tmp_path, monkeypatch):
     assert metadata["val_loss"] == metadata["metrics"]["final_val_loss"]
     assert "test_set_accuracy" not in metadata["metrics"]
     assert metadata["dataset_scenario"] == "EVAL_V1"
+    # The evaluation reads it back to choose the default test set.
+    assert training_scenario(metadata).name == "EVAL_V1"
     assert metadata["waveform_backend"] == manifest["waveform_backend"]
     assert metadata["real_noise_fraction"] == 0.0
     digest = provenance.sha256_file(data / "manifest.json")
@@ -346,6 +349,8 @@ def test_online_data_records_the_scenario_and_no_dataset(tmp_path):
     assert record["dataset_scenario"] == "TRAIN_V3"
     assert record["preprocessing"] == "whiten_bandpass"
     assert preprocessing_of(record) == "whiten_bandpass"
+    assert training_scenario(record) is TRAIN_V3
+    assert record["online"]["scenario"] == "TRAIN_V3"
     assert start_version(record) == 3
     online = record["online"]
     assert online["scenario_hash"] == TRAIN_V3.hash()
