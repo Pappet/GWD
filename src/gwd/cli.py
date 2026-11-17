@@ -115,11 +115,55 @@ def _online_usage_error(args):
     return None
 
 
+# Options of gwd train that only the chirp telescope takes (--arch telescope).
+TELESCOPE_OPTIONS = ("lens_start", "telescope_train", "mass_ratios")
+
+
+def _telescope_usage_error(args):
+    """The message for telescope options of gwd train that do not fit, or None."""
+    from gwd.data.scenarios import SCENARIOS, telescope_problem
+
+    if args.arch != "telescope":
+        given = [name for name in TELESCOPE_OPTIONS if getattr(args, name) is not None]
+        if given:
+            options = ", ".join("--" + name.replace("_", "-") for name in given)
+            return f"{options} only work with --arch telescope."
+        return None
+    if args.mixed_precision:
+        return "--mixed-precision does not fit --arch telescope, which computes in float32."
+    if not args.online:
+        return None  # the scenario of a dataset is checked with its manifest
+    scenario = SCENARIOS[args.scenario.upper()]
+    problem = telescope_problem(scenario)
+    if problem:
+        return problem
+    highest = scenario.masses[1] / scenario.masses[0]
+    too_high = [ratio for ratio in args.mass_ratios or () if ratio > highest]
+    if too_high:
+        return (
+            f"{scenario.name} draws masses from {scenario.masses[0]:g} to "
+            f"{scenario.masses[1]:g}, so --mass-ratios must be at most {highest:g}; "
+            f"got {', '.join(f'{ratio:g}' for ratio in too_high)}."
+        )
+    return None
+
+
+def _telescope_dataset_error(args, data_folder):
+    """The message for --arch telescope on a dataset it cannot be built for, or None."""
+    from gwd.data.provenance import read_manifest
+    from gwd.data.scenarios import SCENARIOS, telescope_problem
+
+    if args.arch != "telescope" or args.online:
+        return None
+    manifest, _ = read_manifest(data_folder)
+    return telescope_problem(SCENARIOS.get(manifest["scenario"]) if manifest else None)
+
+
 def _train(args):
-    from gwd.config import DATA_DIR_TRAIN, LABELS_FILE
+    from gwd.config import DATA_DIR_TRAIN, LABELS_FILE, TELESCOPE_BATCH_SIZE
 
     # Checked before TensorFlow is imported, so wrong options fail at once.
-    problem = _online_usage_error(args)
+    problem = _online_usage_error(args) or _telescope_usage_error(args)
     if problem:
         print(f"❌ {problem}", file=sys.stderr)
         return 2
@@ -132,15 +176,23 @@ def _train(args):
             file=sys.stderr,
         )
         return 1
+    problem = _telescope_dataset_error(args, data_folder)
+    if problem:
+        print(f"❌ {problem}", file=sys.stderr)
+        return 1
 
     quiet_tensorflow()
     from gwd.data.validate import InvalidDatasetError
     from gwd.training.train import TrainConfig, train
 
+    telescope = args.arch == "telescope"
     overrides = {
         "data_folder": args.data,
         "epochs": args.epochs,
-        "batch_size": args.batch_size,
+        # The telescope's focal plane needs a smaller batch than the CNN.
+        "batch_size": args.batch_size or (TELESCOPE_BATCH_SIZE if telescope else None),
+        "architecture": "telescope" if telescope else None,
+        **{name: getattr(args, name) for name in TELESCOPE_OPTIONS},
         "learning_rate": args.lr,
         "patience": args.patience,
         "mixed_precision": args.mixed_precision or None,
@@ -268,6 +320,20 @@ def _positive(text):
     if value < 1:
         raise argparse.ArgumentTypeError(f"must be at least 1: {value}")
     return value
+
+
+def _mass_ratios(text):
+    try:
+        ratios = tuple(float(part) for part in text.split(","))
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"must be numbers separated by commas, such as 1,2,4,8: {text!r}"
+        ) from None
+    if any(not ratio >= 1 for ratio in ratios):
+        raise argparse.ArgumentTypeError(f"mass ratios m1/m2 are at least 1: {text!r}")
+    if len(set(ratios)) != len(ratios):
+        raise argparse.ArgumentTypeError(f"each mass ratio only once: {text!r}")
+    return ratios
 
 
 def _at_least_two(text):
@@ -415,9 +481,9 @@ def build_parser():
     # gwd train
     train = commands.add_parser(
         "train",
-        help="Train the CNN and save it in models_registry/.",
-        description="Train the CNN on a dataset and save the model and its .json "
-        "in models_registry/.",
+        help="Train a model and save it in models_registry/.",
+        description="Train a model on a dataset and save it and its .json in "
+        "models_registry/: the CNN, or with --arch telescope the chirp telescope.",
     )
     train.add_argument("--data", help="Dataset folder. Default: data/training/.")
     train.add_argument(
@@ -500,6 +566,39 @@ def build_parser():
         help="Worker processes that draw the samples; 0 draws in the training "
         "process. Default: ONLINE_WORKERS in gwd.config (12), at most the CPU count "
         "minus 2.",
+    )
+    telescope = train.add_argument_group(
+        "chirp telescope",
+        "An experimental second model (gwd.training.telescope): a bank of chirp "
+        "curves focuses a signal into one bright pixel over mass and merger time, "
+        "and a pooling layer turns that image into the score. It needs a V2 or V3 "
+        "scenario, online or as the scenario of the dataset in --data.",
+    )
+    telescope.add_argument(
+        "--arch",
+        choices=("cnn", "telescope"),
+        help="The model to train. Default: cnn.",
+    )
+    telescope.add_argument(
+        "--lens-start",
+        choices=("imr", "newton"),
+        help="Where the chirp curves start: imr (PyCBC's IMRPhenomD waveforms, a "
+        "matched filter) or newton (the leading-order inspiral formula, which "
+        "training can then correct). Default: imr.",
+    )
+    telescope.add_argument(
+        "--telescope-train",
+        choices=("all", "pooling", "lens"),
+        help="Which weights are trained: all, pooling (the evidence curve, the "
+        "channel biases, and the band gain; the chirp curves stay as they start), or "
+        "lens (the chirp curves only). Default: all.",
+    )
+    telescope.add_argument(
+        "--mass-ratios",
+        type=_mass_ratios,
+        help="The mass ratios m1/m2 of the chirp curves, separated by commas; fewer "
+        "curves mean fewer channels and a faster model. Default: "
+        "TELESCOPE_MASS_RATIOS in gwd.config (1,2,4,8).",
     )
     train.set_defaults(handler=_train)
 

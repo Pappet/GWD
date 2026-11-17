@@ -149,3 +149,19 @@ ONLINE_TEST_SAMPLES = 2048
 # Worker processes that draw the samples; at most the CPU count minus 2 at run time.
 ONLINE_WORKERS = 12
 ONLINE_CHUNK = 16  # samples per task of a worker
+
+# --- CHIRP TELESCOPE (gwd train --arch telescope, gwd.training.telescope) ---
+# The band the lens reads (Hz): BANDPASS above the 25 Hz at which the chirps of the
+# pipeline start (f_lower of gwd.core.waveforms.generate_chirp).
+TELESCOPE_BAND = (24.0, 300.0)
+# One mother curve per mass ratio m1 / m2; gwd train overrides it with --mass-ratios.
+TELESCOPE_MASS_RATIOS = (1.0, 2.0, 4.0, 8.0)
+# Neighbouring channels of one mother curve overlap by this much (0 to 1).
+TELESCOPE_OVERLAP = 0.9
+# Noise-only samples drawn once per model to measure the noise power in the band.
+TELESCOPE_NOISE_SAMPLES = 256
+# The focal plane takes about 17 MB per sample and 500 channels, and a training step
+# holds several copies of it: with the 518 channels of TRAIN_V3 and this batch, gwd
+# train peaked at about 3 GB of memory on a CPU. So the telescope's default batch is
+# smaller than BATCH_SIZE; --batch-size overrides it.
+TELESCOPE_BATCH_SIZE = 32

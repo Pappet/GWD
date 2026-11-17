@@ -60,7 +60,8 @@ FILE_RULES = {
     "src/gwd/data/gwosc.py": {"gwpy": LAZY},
     "src/gwd/data/preprocessing.py": {"gwpy": LAZY},
     "src/gwd/data/validate.py": {"matplotlib": LAZY},
-    "src/gwd/registry.py": {"tensorflow": LAZY},
+    # load_model imports the module that registers the telescope's layers with Keras.
+    "src/gwd/registry.py": {"tensorflow": LAZY, "gwd.training.telescope": LAZY},
     # The aLIGO reference PSD of PyCBC, evaluated at any frequency (P5.4).
     "src/gwd/core/interferometer.py": {"lalsimulation": LAZY},
 }

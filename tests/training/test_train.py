@@ -71,6 +71,11 @@ def test_config_defaults_come_from_gwd_config():
     )
     assert cfg.data_folder == config.DATA_DIR_TRAIN
     assert cfg.mixed_precision is False
+    assert cfg.architecture == "cnn"
+    assert cfg.mass_ratios == config.TELESCOPE_MASS_RATIOS
+    assert cfg.recalibration_samples == config.BN_RECALIBRATION_SAMPLES
+    # The telescope has no BatchNorm layers.
+    assert train.TrainConfig(architecture="telescope").recalibration_samples == 0
 
 
 @pytest.mark.slow
@@ -407,3 +412,57 @@ def test_gwd_train_online_runs_and_records_the_run(tmp_path):
     assert len(online["wait_seconds"]) == 3
     assert registry.read_metadata(str(path.with_suffix(".keras"))) == metadata
     assert (tmp_path / "models_registry" / (path.stem + ".keras")).exists()
+
+
+def test_an_unknown_architecture_is_refused():
+    with pytest.raises(ValueError, match="architecture must be one of"):
+        train.train(train.TrainConfig(architecture="transformer", seed=1))
+
+
+def test_the_telescope_takes_the_scenario_of_the_run(tmp_path):
+    from gwd.data.scenarios import TRAIN_V3
+
+    cfg = online_config(tmp_path, architecture="telescope")
+    assert train.training_scenario_of(cfg) is TRAIN_V3
+    # A dataset without a manifest names no scenario.
+    assert (
+        train.training_scenario_of(train.TrainConfig(data_folder=str(tmp_path))) is None
+    )
+
+
+@pytest.mark.slow
+def test_gwd_train_trains_and_records_a_telescope(tmp_path):
+    """A short CLI run: one epoch of 8 fresh samples, one chirp curve (217 channels)."""
+    env = {**os.environ, "GWD_HOME": str(tmp_path), "CUDA_VISIBLE_DEVICES": ""}
+    args = "train --online --scenario train_v3 --arch telescope --mass-ratios 1"
+    args += " --samples-per-epoch 8 --batch-size 4 --val-samples 8 --test-samples 4"
+    args += " --workers 0 --epochs 1 --seed 4"
+    result = subprocess.run(
+        [sys.executable, "-m", "gwd.cli", *args.split()],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert (
+        "Precision: float32 (the chirp telescope computes in float32)" in result.stdout
+    )
+    assert "BatchNorm" not in result.stdout
+    (path,) = (tmp_path / "models_registry").glob("*.json")
+    metadata = json.loads(path.read_text())
+    assert metadata["architecture"] == "ChirpTelescope_V1"
+    assert metadata["precision_policy"] == "float32"
+    assert metadata["bn_recalibration_samples"] == 0
+    assert metadata["online"]["bn_samples"] == 0
+    assert metadata["preprocessing"] == "whiten_bandpass"
+    setup = metadata["telescope"]
+    assert (setup["lens_start"], setup["trained"]) == ("imr", "all")
+    assert setup["mass_ratios"] == [1.0]
+    assert setup["channels"] == sum(setup["channels_per_mass_ratio"]) > 100
+    # One chirp curve: 64 knots each for its amplitude and phase, 64 of the band gain,
+    # 33 of the evidence curve, and one bias per channel.
+    assert setup["curve_knots"] == 64
+    assert setup["trainable_parameters"] == 2 * 64 + 64 + 33 + setup["channels"]
+    model = registry.load_model(str(path.with_suffix(".keras")))
+    assert model.get_layer("lens").channels == setup["channels"]

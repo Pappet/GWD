@@ -404,6 +404,26 @@ def training_scenario(metadata):
     return SCENARIOS.get(name) if isinstance(name, str) else None
 
 
+def telescope_problem(scenario):
+    """Why the chirp telescope cannot be built for scenario, or None if it can.
+
+    The telescope (gwd.training.telescope) needs a V2 or V3 scenario, whose signal is
+    conditioned together with noise of a known PSD, and a mass range to lay its
+    channels over. scenario None stands for a dataset that names no known scenario.
+    """
+    if scenario is None:
+        return (
+            "The chirp telescope needs the scenario of its training data, and this "
+            "dataset names none; train it on train_v2 or train_v3."
+        )
+    if not scenario.condition_signal or scenario.mass_mode != "random":
+        return (
+            "The chirp telescope needs a V2 or V3 scenario with a mass range, such as "
+            f"train_v2 or train_v3; {scenario.name} is not one."
+        )
+    return None
+
+
 def preprocessing_of(metadata):
     """The preprocessing a model expects, from its metadata (gwd.registry.read_metadata).
 

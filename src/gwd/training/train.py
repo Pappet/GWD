@@ -1,4 +1,7 @@
-"""Training of the CNN: train(cfg) loads a dataset, trains, and saves the model (P3.7).
+"""Training: train(cfg) loads a dataset, trains a model, and saves it (P3.7).
+
+The model is the CNN of gwd.training.model, or with cfg.architecture "telescope" the
+experimental chirp telescope of gwd.training.telescope.
 
 Importing this module changes nothing: the timestamp, the model name, the paths, and
 the precision policy come into being when train() runs. The plot uses a matplotlib
@@ -53,6 +56,10 @@ from gwd.config import (
     ONLINE_VAL_SAMPLES,
     ONLINE_WORKERS,
     REDUCE_LR_PATIENCE,
+    TELESCOPE_BAND,
+    TELESCOPE_MASS_RATIOS,
+    TELESCOPE_NOISE_SAMPLES,
+    TELESCOPE_OVERLAP,
     TEST_SPLIT,
     TRAINING_PLOTS_DIR,
     VAL_SPLIT,
@@ -75,9 +82,17 @@ from gwd.registry import (
     metadata_path,
     write_metadata,
 )
-from gwd.training.callbacks import BatchNormRecalibration, EpochTimer
+from gwd.training import telescope
+from gwd.training.callbacks import (
+    BatchNormRecalibration,
+    EpochTimer,
+    batchnorm_layers,
+)
 from gwd.training.model import ARCHITECTURE, build_model
 from gwd.training.split import split_dataset
+
+# The models gwd train can build: the CNN, and the experimental chirp telescope.
+ARCHITECTURES = ("cnn", "telescope")
 
 # dataset_hash_note of an online model, whose dataset_hash is null.
 ONLINE_HASH_NOTE = (
@@ -117,10 +132,22 @@ class TrainConfig:
     # validation (gwd.training.callbacks); a subset of the training part, or online a
     # fixed set of its own.
     bn_samples: int = BN_RECALIBRATION_SAMPLES
+    # The model: one of ARCHITECTURES. The three fields below are for "telescope"
+    # only (gwd.training.telescope): where its mother curves start, which of its
+    # weights are trained, and the mass ratios of its mother curves.
+    architecture: str = "cnn"
+    lens_start: str = "imr"
+    telescope_train: str = "all"
+    mass_ratios: tuple = TELESCOPE_MASS_RATIOS
 
     @property
     def online(self):
         return self.scenario is not None
+
+    @property
+    def recalibration_samples(self):
+        """bn_samples, or 0 for the telescope, which has no BatchNorm layers."""
+        return 0 if self.architecture == "telescope" else self.bn_samples
 
 
 class LoadedData(NamedTuple):
@@ -303,7 +330,45 @@ def load_data(data_folder=DATA_DIR_TRAIN):
     return LoadedData(X, y, labels, digest.hexdigest())
 
 
-def save_experiment_config(history_obj, timer, test, cfg, run, policy, seed, data):
+def training_scenario_of(cfg):
+    """The scenario of the run's training data, or None if the dataset names none.
+
+    Online it is cfg.scenario; for a dataset it comes from manifest.json.
+    """
+    if cfg.online:
+        return SCENARIOS[cfg.scenario.upper()]
+    return SCENARIOS.get(dataset_provenance(cfg.data_folder)["dataset_scenario"])
+
+
+def model_record(cfg, model):
+    """What the metadata says about the model: its architecture and, for the chirp
+    telescope, how it was set up."""
+    if cfg.architecture != "telescope":
+        return {"architecture": ARCHITECTURE}
+    lens = model.get_layer("lens")
+    return {
+        "architecture": telescope.ARCHITECTURE,
+        "telescope": {
+            "lens_start": cfg.lens_start,
+            "trained": cfg.telescope_train,
+            "mass_ratios": list(lens.mass_ratios),
+            "channels": lens.channels,
+            "channels_per_mass_ratio": [len(masses) for masses in lens.ladders],
+            "curve_knots": lens.curve_knots,
+            "overlap": TELESCOPE_OVERLAP,
+            "band_hz": list(TELESCOPE_BAND),
+            "noise_samples": TELESCOPE_NOISE_SAMPLES,
+            "parameters": int(model.count_params()),
+            "trainable_parameters": int(
+                sum(np.prod(weight.shape) for weight in model.trainable_weights)
+            ),
+        },
+    }
+
+
+def save_experiment_config(
+    history_obj, timer, test, cfg, run, policy, seed, data, model=None
+):
     """
     Save the metadata of a run as .json next to the model, so it can be traced later.
 
@@ -316,6 +381,8 @@ def save_experiment_config(history_obj, timer, test, cfg, run, policy, seed, dat
         policy: Name of the Keras precision policy the model was trained with
         seed: The seed the run used, cfg.seed or a drawn one
         data: Prepared of the run
+        model: A dict of metadata fields about the model (model_record); None means
+            the CNN.
     """
     history = history_obj.history
     epochs_trained = len(history["loss"])
@@ -348,7 +415,7 @@ def save_experiment_config(history_obj, timer, test, cfg, run, policy, seed, dat
         "learning_rate": cfg.learning_rate,
         "early_stopping_patience": cfg.patience,
         "precision_policy": policy,
-        "architecture": ARCHITECTURE,
+        **(model or {"architecture": ARCHITECTURE}),
         # val: the best epoch, which steered the training; test: evaluated once.
         "val_accuracy": float(history["val_accuracy"][best]),
         "val_loss": float(history["val_loss"][best]),
@@ -413,7 +480,8 @@ def train(cfg=None):
     """
     Train one model with the precision from choose_precision() and save it.
 
-    The precision policy is set only for the run and restored afterwards.
+    The precision policy is set only for the run and restored afterwards. The chirp
+    telescope (cfg.architecture "telescope") always runs in float32.
 
     Args:
         cfg: TrainConfig; None means all defaults.
@@ -422,6 +490,10 @@ def train(cfg=None):
         The Run with the name and the paths of the saved model and its .json.
     """
     cfg = cfg or TrainConfig()
+    if cfg.architecture not in ARCHITECTURES:
+        raise ValueError(
+            f"architecture must be one of {ARCHITECTURES}, got {cfg.architecture!r}"
+        )
     run_seed = draw_seed() if cfg.seed is None else cfg.seed
     # Seeds Python's random, numpy, and TensorFlow; the split takes it too.
     tf.keras.utils.set_random_seed(run_seed)
@@ -430,7 +502,11 @@ def train(cfg=None):
     if cfg.deterministic:
         tf.config.experimental.enable_op_determinism()
         print("Deterministic ops: on (repeatable on the CPU)")
-    policy, reason = choose_precision(cfg.mixed_precision)
+    if cfg.architecture == "telescope":
+        # Its layers compute in float32 and complex64 (the FFTs) under every policy.
+        policy, reason = "float32", "the chirp telescope computes in float32"
+    else:
+        policy, reason = choose_precision(cfg.mixed_precision)
     print(f"Precision: {policy} ({reason})")
     previous = tf.keras.mixed_precision.global_policy()
     tf.keras.mixed_precision.set_global_policy(policy)
@@ -484,7 +560,7 @@ def prepare_files(cfg, run_seed):
     }
     # A fixed, seeded subset of the training part for the BatchNorm statistics.
     rng = np.random.default_rng(run_seed)
-    keep = min(cfg.bn_samples, len(X_train))
+    keep = min(cfg.recalibration_samples, len(X_train))
     recalibration = X_train[np.sort(rng.choice(len(X_train), keep, replace=False))]
     # The parts are copies; the full array is dropped with data, so only they stay.
     return Prepared(
@@ -519,16 +595,20 @@ def prepare_online(cfg, run_seed, stack):
     began = time.perf_counter()
     X_val, y_val, _ = source.draw("val", cfg.val_samples)
     X_test, y_test, _ = source.draw("test", cfg.test_samples)
-    X_bn, _, _ = source.draw("bn", cfg.bn_samples)
+    if cfg.recalibration_samples:
+        X_bn, _, _ = source.draw("bn", cfg.recalibration_samples)
+    else:
+        X_bn = X_val[:0]
     seconds = time.perf_counter() - began
     print(
         f"   - Validation: {len(y_val)} samples, fixed (early stopping, checkpoint, LR)"
     )
     print(f"   - Test: {len(y_test)} samples, fixed (evaluated once at the end)")
-    print(
-        f"   - BatchNorm statistics: {len(X_bn)} samples, fixed (recomputed before "
-        "every validation)"
-    )
+    if len(X_bn):
+        print(
+            f"   - BatchNorm statistics: {len(X_bn)} samples, fixed (recomputed "
+            "before every validation)"
+        )
     fixed = len(y_val) + len(y_test) + len(X_bn)
     print(
         f"   Drew the fixed sets in {seconds:.1f} s ({fixed / seconds:.0f} samples/s, "
@@ -607,6 +687,10 @@ def prepare_online(cfg, run_seed, stack):
 def _train_and_save(cfg, policy, run_seed, stack):
     """Prepare the data, train, test the best epoch once, and save everything."""
     run = new_run(cfg.models_dir)
+    if cfg.architecture == "telescope":
+        # Checked before the data is loaded or drawn.
+        scenario = training_scenario_of(cfg)
+        telescope.require_scenario(scenario)
     if cfg.online:
         data = prepare_online(cfg, run_seed, stack)
     else:
@@ -614,15 +698,32 @@ def _train_and_save(cfg, policy, run_seed, stack):
     X_test, y_test = data.test
 
     # Build the model
-    model = build_model((N_SAMPLES, 1), cfg.learning_rate)
+    if cfg.architecture == "telescope":
+        print(
+            f"\nBuilding the chirp telescope for {scenario.name}: mother curves from "
+            f"'{cfg.lens_start}', mass ratios "
+            f"{', '.join(f'{ratio:g}' for ratio in cfg.mass_ratios)}; trained: "
+            f"{cfg.telescope_train}"
+        )
+        model = telescope.build_telescope(
+            scenario,
+            cfg.learning_rate,
+            seed=run_seed,
+            start=cfg.lens_start,
+            trainable=cfg.telescope_train,
+            mass_ratios=cfg.mass_ratios,
+        )
+    else:
+        model = build_model((N_SAMPLES, 1), cfg.learning_rate)
 
     print("\n🏗️ Model architecture:")
     model.summary()
 
-    print(
-        f"\nBatchNorm statistics: recomputed from {len(data.recalibration)} training "
-        "samples before every validation (gwd.training.callbacks)."
-    )
+    if batchnorm_layers(model):
+        print(
+            f"\nBatchNorm statistics: recomputed from {len(data.recalibration)} "
+            "training samples before every validation (gwd.training.callbacks)."
+        )
 
     # Callbacks
     timer = EpochTimer(data.probe)
@@ -680,7 +781,15 @@ def _train_and_save(cfg, policy, run_seed, stack):
 
     # Save the metadata
     save_experiment_config(
-        history, timer, (loss, acc), cfg, run, policy, run_seed, data
+        history,
+        timer,
+        (loss, acc),
+        cfg,
+        run,
+        policy,
+        run_seed,
+        data,
+        model_record(cfg, model),
     )
 
     print("\n✅ Training finished!")
