@@ -203,13 +203,16 @@ def test_a_saved_telescope_loads_through_the_registry(model, tmp_path):
     again = loaded.predict(x, verbose=0)
     assert again.ravel().tolist() == pytest.approx(expected.ravel().tolist(), abs=1e-6)
     assert loaded.get_layer("lens").ladders == model.get_layer("lens").ladders
-    # A fresh process that never imported gwd.training.telescope loads it too.
+    # A fresh process that never imported gwd.training.telescope loads it too, and
+    # loading it imports neither that module nor gwd.data (only telescope_layers).
     np.save(tmp_path / "x.npy", x)
     code = (
         "import sys, numpy as np\n"
         "from gwd import registry\n"
         "assert 'gwd.training.telescope' not in sys.modules\n"
         f"model = registry.load_model({path!r})\n"
+        "assert 'gwd.training.telescope' not in sys.modules\n"
+        "assert not [name for name in sys.modules if name.startswith('gwd.data')]\n"
         f"scores = model.predict(np.load({str(tmp_path / 'x.npy')!r}), verbose=0)\n"
         "print(' '.join(repr(float(s)) for s in scores.ravel()))\n"
     )

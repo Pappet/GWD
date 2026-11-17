@@ -61,7 +61,7 @@ FILE_RULES = {
     "src/gwd/data/preprocessing.py": {"gwpy": LAZY},
     "src/gwd/data/validate.py": {"matplotlib": LAZY},
     # load_model imports the module that registers the telescope's layers with Keras.
-    "src/gwd/registry.py": {"tensorflow": LAZY, "gwd.training.telescope": LAZY},
+    "src/gwd/registry.py": {"tensorflow": LAZY, "gwd.training.telescope_layers": LAZY},
     # The aLIGO reference PSD of PyCBC, evaluated at any frequency (P5.4).
     "src/gwd/core/interferometer.py": {"lalsimulation": LAZY},
 }
@@ -173,6 +173,18 @@ def test_gwpy_is_imported_only_in_gwosc_and_preprocessing():
         if module.split(".")[0] == "gwpy"
     }
     assert found <= allowed_files, f"gwpy imported in {sorted(found - allowed_files)}"
+
+
+def test_the_telescope_layers_need_only_gwd_core():
+    # gwd.registry imports this module (FILE_RULES), so it must not pull in gwd.data
+    # or the rest of gwd.training.
+    path = PACKAGE / "training" / "telescope_layers.py"
+    found = {
+        module
+        for module, _ in imports(path)
+        if module.split(".")[0] == "gwd" and not module.startswith("gwd.core")
+    }
+    assert not found, f"telescope_layers.py imports {sorted(found)}"
 
 
 def test_rules_cover_every_component():
