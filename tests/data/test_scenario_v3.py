@@ -470,3 +470,13 @@ def test_a_v3_dataset_validates(tmp_path, capsys):
     generate_dataset(12, str(out), TRAIN_V3, seed=1, noise_dir=str(tmp_path / "none"))
     assert "whitened with its PSD" in capsys.readouterr().out
     assert check_dataset(str(out)) == ([], [], "TRAIN_V3")
+
+
+def test_the_telescope_needs_a_conditioned_scenario_with_a_mass_range():
+    from gwd.data.scenarios import APP_V3, TRAIN_V1, TRAIN_V2, telescope_problem
+
+    assert telescope_problem(TRAIN_V2) is None
+    assert telescope_problem(TRAIN_V3) is None
+    assert "TRAIN_V1 is not one" in telescope_problem(TRAIN_V1)
+    assert "APP_V3 is not one" in telescope_problem(APP_V3)  # fixed masses
+    assert "this dataset names none" in telescope_problem(None)

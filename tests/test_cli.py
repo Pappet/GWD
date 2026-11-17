@@ -69,6 +69,7 @@ def test_every_command_is_known():
         ("eval", "run"),
         ("eval", "thresholds"),
         ("eval", "compare"),
+        ("eval", "lens"),
         ("eval", "leaderboard"),
         ("app",),
         ("env",),
@@ -316,6 +317,7 @@ TENSORFLOW_COMMANDS = {
     ("eval", "run"): "gwd.evaluation.evaluate.run",
     ("eval", "thresholds"): "gwd.evaluation.thresholds.run",
     ("eval", "compare"): "gwd.evaluation.compare.run",
+    ("eval", "lens"): "gwd.evaluation.lens.run",
     ("app", "glitch-hunter"): "gwd.apps.glitch_hunter.app.main",
 }
 
@@ -426,6 +428,74 @@ def test_train_rejects_invalid_online_values(args):
     with pytest.raises(SystemExit) as exit_:
         cli.main(["train", "--online", *args.split()])
     assert exit_.value.code == 2
+
+
+def test_train_passes_the_telescope_options(fake_training, monkeypatch, tmp_path):
+    monkeypatch.setattr("gwd.config.DATA_DIR_TRAIN", str(tmp_path / "missing"))
+    args = "train --online --scenario train_v3 --arch telescope --lens-start newton"
+    args += " --telescope-train lens --mass-ratios 1,2.5"
+    assert cli.main(args.split()) == 0
+    assert fake_training.calls == [
+        {
+            # The telescope's own default; --batch-size overrides it.
+            "batch_size": 32,
+            "architecture": "telescope",
+            "lens_start": "newton",
+            "telescope_train": "lens",
+            "mass_ratios": (1.0, 2.5),
+            "scenario": "TRAIN_V3",
+        }
+    ]
+    assert cli.main([*args.split(), "--batch-size", "8"]) == 0
+    assert fake_training.calls[1]["batch_size"] == 8
+    # --arch cnn is the default and passes nothing.
+    assert cli.main("train --online --scenario train_v3 --arch cnn".split()) == 0
+    assert fake_training.calls[2] == {"scenario": "TRAIN_V3"}
+
+
+@pytest.mark.parametrize(
+    "args, message",
+    [
+        ("--lens-start newton", "--lens-start only work with --arch telescope"),
+        ("--arch cnn --mass-ratios 1", "--mass-ratios only work with --arch telescope"),
+        ("--arch telescope --mixed-precision", "computes in float32"),
+        ("--arch telescope --online --scenario app_v3", "APP_V3 is not one"),
+        (
+            "--arch telescope --online --scenario train_v3 --mass-ratios 1,30",
+            "--mass-ratios must be at most 20; got 30",
+        ),
+    ],
+)
+def test_train_refuses_telescope_options_that_do_not_fit(
+    fake_training, capsys, args, message
+):
+    assert cli.main(["train", *args.split()]) == 2
+    assert message in capsys.readouterr().err
+    assert fake_training.calls == []
+
+
+@pytest.mark.parametrize("ratios", ["0.5", "1,one", "2,2", ""])
+def test_train_rejects_invalid_mass_ratios(ratios):
+    with pytest.raises(SystemExit) as exit_:
+        cli.main(["train", "--arch", "telescope", "--mass-ratios", ratios])
+    assert exit_.value.code == 2
+
+
+def test_the_telescope_needs_a_dataset_with_a_v2_or_v3_scenario(
+    fake_training, capsys, tmp_path
+):
+    # The fixture's dataset has labels.csv and no manifest.json: no known scenario.
+    assert cli.main(["train", "--arch", "telescope"]) == 1
+    assert "this dataset names none" in capsys.readouterr().err
+    assert fake_training.calls == []
+
+
+def test_eval_lens_passes_the_model_and_the_signals(monkeypatch):
+    seen = []
+    monkeypatch.setattr("gwd.evaluation.lens.run", lambda **kw: seen.append(kw) or 0)
+    assert cli.main(["eval", "lens"]) == 0
+    assert cli.main("eval lens --model m --signals 50 --seed 3".split()) == 0
+    assert seen == [{"model": "latest"}, {"model": "m", "signals": 50, "seed": 3}]
 
 
 def test_train_without_a_dataset_fails_cleanly_and_loads_no_tensorflow(tmp_path):

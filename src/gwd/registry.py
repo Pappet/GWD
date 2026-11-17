@@ -11,6 +11,8 @@ get_threshold): calibrated by ``gwd eval thresholds`` on the noise-only part cal
 of a test set at a fixed false alarm rate (D10 = A).
 
 TensorFlow is imported only inside load_model, so importing this module stays light.
+load_model also imports gwd.training.telescope_layers there, which registers the layers
+of the chirp telescope with Keras; without it a saved telescope could not be loaded.
 """
 
 import datetime
@@ -88,6 +90,9 @@ def resolve(model: str = "latest", models_dir: str = MODELS_DIR) -> str:
 def load_model(path: str, compile: bool = False):
     """Load a Keras model. Without compile, Keras skips the optimizer state and its warning."""
     import tensorflow as tf
+
+    # Registers the layers of the chirp telescope with Keras (package "gwd").
+    import gwd.training.telescope_layers  # noqa: F401
 
     return tf.keras.models.load_model(path, compile=compile)
 
