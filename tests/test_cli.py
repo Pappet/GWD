@@ -69,6 +69,7 @@ def test_every_command_is_known():
         ("eval", "run"),
         ("eval", "thresholds"),
         ("eval", "compare"),
+        ("eval", "lens"),
         ("eval", "leaderboard"),
         ("app",),
         ("env",),
@@ -316,6 +317,7 @@ TENSORFLOW_COMMANDS = {
     ("eval", "run"): "gwd.evaluation.evaluate.run",
     ("eval", "thresholds"): "gwd.evaluation.thresholds.run",
     ("eval", "compare"): "gwd.evaluation.compare.run",
+    ("eval", "lens"): "gwd.evaluation.lens.run",
     ("app", "glitch-hunter"): "gwd.apps.glitch_hunter.app.main",
 }
 
@@ -486,6 +488,14 @@ def test_the_telescope_needs_a_dataset_with_a_v2_or_v3_scenario(
     assert cli.main(["train", "--arch", "telescope"]) == 1
     assert "this dataset names none" in capsys.readouterr().err
     assert fake_training.calls == []
+
+
+def test_eval_lens_passes_the_model_and_the_signals(monkeypatch):
+    seen = []
+    monkeypatch.setattr("gwd.evaluation.lens.run", lambda **kw: seen.append(kw) or 0)
+    assert cli.main(["eval", "lens"]) == 0
+    assert cli.main("eval lens --model m --signals 50 --seed 3".split()) == 0
+    assert seen == [{"model": "latest"}, {"model": "m", "signals": 50, "seed": 3}]
 
 
 def test_train_without_a_dataset_fails_cleanly_and_loads_no_tensorflow(tmp_path):

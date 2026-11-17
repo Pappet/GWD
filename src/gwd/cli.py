@@ -260,6 +260,15 @@ def _eval_compare(args):
     return compare.run(models=args.model, **_testset_options(args))
 
 
+def _eval_lens(args):
+    quiet_tensorflow()
+    from gwd.evaluation import lens
+
+    options = {"signals": args.signals, "seed": args.seed}
+    given = {name: value for name, value in options.items() if value is not None}
+    return lens.run(model=args.model, **given)
+
+
 def _eval_leaderboard(args):
     from gwd.evaluation import leaderboard
 
@@ -680,6 +689,25 @@ def build_parser():
     )
     _add_testset(compare, default=TESTSET_DEFAULT_FOR_MODEL_HELP)
     compare.set_defaults(handler=_eval_compare)
+
+    lens = eval_commands.add_parser(
+        "lens",
+        help="Show what training changed in a chirp telescope.",
+        description="For a model trained with gwd train --arch telescope: how well "
+        "its lens focuses signals of its training scenario before and after "
+        "training (the fitting factor: the share of the optimal SNR it reaches), and "
+        "a plot of what training changed in the chirp curves, the band gain, the "
+        "evidence curve, and the channel biases.",
+    )
+    _add_model(lens)
+    lens.add_argument(
+        "--signals",
+        type=_positive,
+        help="Signals drawn from the model's training scenario for the fitting "
+        "factor. Default: 200.",
+    )
+    _add_seed(lens, "the signals", "0")
+    lens.set_defaults(handler=_eval_lens)
 
     leaderboard = eval_commands.add_parser(
         "leaderboard",
