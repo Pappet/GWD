@@ -19,7 +19,7 @@ apps: use core, data, and registry      cli: the gwd command      main.py: menu
 |---|---|---|
 | core | `src/gwd/core/` | Physics: waveforms (PyCBC), noise, the interferometer learning model, a time domain simulator. No file or network access. |
 | data | `src/gwd/data/` | Scenarios, signal injection, conditioning and normalization, GWOSC access, dataset generation with a manifest, validation, the noise download. |
-| training | `src/gwd/training/` | The CNN and its training. |
+| training | `src/gwd/training/` | The CNN, the experimental chirp telescope, and their training. |
 | evaluation | `src/gwd/evaluation/` | ROC evaluation, threshold calibration, model comparison, the leaderboard. |
 | registry | `src/gwd/registry.py` | Finds, selects, and loads models in `models_registry/`, and reads and writes their metadata. |
 | apps | `src/gwd/apps/` | The three apps; they only draw and interact. |
@@ -138,6 +138,21 @@ gwd train --online --scenario train_v2 --samples-per-epoch 4096 --workers 8 --ep
 
 In both modes `gwd train` recomputes the BatchNorm statistics from 1024 fixed training samples before every validation (`BN_RECALIBRATION_SAMPLES` in `src/gwd/config.py`). Without it, the validation accuracy sat at 0.5 for the first epochs, because the moving averages lagged behind the weights, and early stopping could keep a useless early model; the reason and the measurements are in [architecture.md](docs/architecture.md).
 
+**Chirp telescope (experimental).** `gwd train --arch telescope` trains a second model, `gwd.training.telescope`, instead of the CNN. Its first layer, the lens, multiplies the spectrum of a sample with a bank of chirp curves and transforms back, which focuses a chirp into one bright pixel over total mass and merger time; a pooling layer turns that image into the score. All total masses of one mass ratio share one curve over t/M, so the model has about a thousand trainable weights. It needs a V2 or V3 scenario (`--online --scenario train_v3`, or a dataset generated from one), computes in float32 also with a GPU, and takes batches of 32 (`TELESCOPE_BATCH_SIZE`) unless `--batch-size` is given; with the default four chirp curves on `train_v3`, a run peaked at about 3 GB of memory on a CPU.
+
+```bash
+# The lens starts as a bank of PyCBC waveforms, a matched filter; all weights are trained
+gwd train --online --scenario train_v3 --arch telescope
+# The telescope as it starts, untrained: one short epoch at learning rate 0
+gwd train --online --scenario train_v3 --arch telescope --epochs 1 --lr 0 --samples-per-epoch 256
+# One chirp curve instead of four: fewer channels, faster on a CPU
+gwd train --online --scenario train_v3 --arch telescope --mass-ratios 1
+# The lens starts from the leading-order inspiral formula; only its curves are trained
+gwd train --online --scenario train_v3 --arch telescope --lens-start newton --telescope-train lens --lr 0.002
+```
+
+`--lens-start` sets where the chirp curves start: `imr` (PyCBC's IMRPhenomD, the default) or `newton` (the leading-order formula, no merger and no ringdown, which training can then correct). `--telescope-train` sets what is trained: `all` (the default), `pooling` (the evidence curve, the channel biases, and the gain over the band; the chirp curves stay as they start), or `lens` (the chirp curves only). `--mass-ratios` sets the mass ratios m1/m2 of the chirp curves (default 1,2,4,8). The model's `.json` records the setup under `telescope`, and `architecture` is `ChirpTelescope_V1`. The evaluation commands below take a telescope like any model, and `gwd eval lens` shows what training changed in it. [architecture.md](docs/architecture.md) describes the model.
+
 ### 3. Evaluation
 
 ```bash
@@ -169,6 +184,10 @@ gwd eval compare
 
 # Show leaderboard v2: one table per test set, ranked by ROC AUC
 gwd eval leaderboard
+
+# For a chirp telescope: how well its lens focuses signals before and after training,
+# and a plot of what training changed in its curves
+gwd eval lens
 ```
 
 The latest model is the one with the newest timestamp in its name, `gwd_model_YYYYMMDD-HHMMSS.keras`; other `.keras` files are ordered by their modification time, with a warning. `gwd eval run`, `gwd eval thresholds`, and `gwd eval compare` take `--model` with `latest`, a model name, or a path to a `.keras` file; `compare` takes it more than once. Since P5.7 all simulated numbers come from a fixed, hashed test set: `--testset` is `stress_v1` (the old evaluation distribution `EVAL_V1`) or `indist_v1` (the training distribution `TRAIN_V1`), since P6.2 `indist_v2` or `stress_v2` for models trained on `TRAIN_V2`, and since P6.6 `indist_v3` or `stress_v3` for models trained on `TRAIN_V3`, and `--seed` (default 0) and `--n` (default 1000) pick the set. Without `--testset`, `run`, `thresholds`, and `compare` take the set of the model's training scenario, which they read from its `.json` (`dataset_scenario`): `indist_v2` for a V2 model, `indist_v3` for a V3 model, and `stress_v1` for a V1 model and for older models that do not name their scenario, as before; they print which set they chose and why. An explicit `--testset` always wins. `gwd eval thresholds --save` refuses a set whose preprocessing the model was not trained with (a V1 set for a V3 model) with exit code 1 instead of saving a threshold that does not hold on the model's own data. `gwd eval compare` without `--testset` compares models whose default sets share their samples (V2 and V3) in one group and the V1 models in another, each with its own plots; with `--testset`, a model the set cannot give its preprocessing is left out. It is drawn once into `data/eval/`, with its manifest and SHA-256 in `results/testsets/`, and loaded by every later command with the same three values; a set whose arrays no longer match the hash, or that is stale, stops the command with exit code 1 until `gwd eval build-testset --rebuild` (with the same `--testset`, `--seed`, and `--n`) draws it again. `gwd eval run` prints the metrics per peak SNR, optimal SNR, total mass, and noise source and marks bins outside the training ranges as `Extrapolation`. With the same seed and n, `indist_v3` and `stress_v3` hold the same events and noise as `indist_v2` and `stress_v2`, whitened; a model trained with whitening is scored on the V3 set when a V2 set is named, and the other way round, in `run`, `thresholds`, and `compare`, so every model sees its own preprocessing, and V2 and V3 models are compared on the same events. The field test with `--real` whitens the real data for such a model too.
