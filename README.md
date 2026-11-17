@@ -142,11 +142,12 @@ In both modes `gwd train` recomputes the BatchNorm statistics from 1024 fixed tr
 
 ```bash
 # Build the default fixed test set once (stress_v1, seed 0, n 1000); the commands below
-# also build it on first use and load it afterwards
+# also build the set they need on first use and load it afterwards
 gwd eval build-testset
 
 # Calibrate the latest model's detection threshold at FPR 1% on the noise-only part
-# calib_bg and save it in the model's metadata (--no-save to skip)
+# calib_bg and save it in the model's metadata (--no-save to skip); without --testset
+# the set follows the model: indist_v2 for V2, indist_v3 for V3, stress_v1 for V1
 gwd eval thresholds
 
 # ROC evaluation of the latest model on the fixed test set (offline), at its threshold
@@ -162,14 +163,15 @@ gwd eval compare --model gwd_model_20261116-204058 --model latest --testset indi
 # The same plus the field test on real GWOSC data (network)
 gwd eval run --real
 
-# Compare all models in models_registry/ in one ROC plot and a zoom on low FPR
+# Compare all models in models_registry/ in ROC plots and a zoom on low FPR, one pair
+# of plots per group of models whose default sets share their samples
 gwd eval compare
 
 # Show leaderboard v2: one table per test set, ranked by ROC AUC
 gwd eval leaderboard
 ```
 
-The latest model is the one with the newest timestamp in its name, `gwd_model_YYYYMMDD-HHMMSS.keras`; other `.keras` files are ordered by their modification time, with a warning. `gwd eval run`, `gwd eval thresholds`, and `gwd eval compare` take `--model` with `latest`, a model name, or a path to a `.keras` file; `compare` takes it more than once. Since P5.7 all simulated numbers come from a fixed, hashed test set: `--testset` is `stress_v1` (the default, the old evaluation distribution `EVAL_V1`) or `indist_v1` (the training distribution `TRAIN_V1`), since P6.2 `indist_v2` or `stress_v2` for models trained on `TRAIN_V2`, and since P6.6 `indist_v3` or `stress_v3` for models trained on `TRAIN_V3`, and `--seed` (default 0) and `--n` (default 1000) pick the set. It is drawn once into `data/eval/`, with its manifest and SHA-256 in `results/testsets/`, and loaded by every later command with the same three values; a set whose arrays no longer match the hash, or that is stale, stops the command with exit code 1 until `gwd eval build-testset --rebuild` (with the same `--testset`, `--seed`, and `--n`) draws it again. `gwd eval run` prints the metrics per peak SNR, optimal SNR, total mass, and noise source and marks bins outside the training ranges as `Extrapolation`. With the same seed and n, `indist_v3` and `stress_v3` hold the same events and noise as `indist_v2` and `stress_v2`, whitened; a model trained with whitening is scored on the V3 set when a V2 set is named, and the other way round, in `run`, `thresholds`, and `compare`, so every model sees its own preprocessing, and V2 and V3 models are compared on the same events. The field test with `--real` whitens the real data for such a model too.
+The latest model is the one with the newest timestamp in its name, `gwd_model_YYYYMMDD-HHMMSS.keras`; other `.keras` files are ordered by their modification time, with a warning. `gwd eval run`, `gwd eval thresholds`, and `gwd eval compare` take `--model` with `latest`, a model name, or a path to a `.keras` file; `compare` takes it more than once. Since P5.7 all simulated numbers come from a fixed, hashed test set: `--testset` is `stress_v1` (the old evaluation distribution `EVAL_V1`) or `indist_v1` (the training distribution `TRAIN_V1`), since P6.2 `indist_v2` or `stress_v2` for models trained on `TRAIN_V2`, and since P6.6 `indist_v3` or `stress_v3` for models trained on `TRAIN_V3`, and `--seed` (default 0) and `--n` (default 1000) pick the set. Without `--testset`, `run`, `thresholds`, and `compare` take the set of the model's training scenario, which they read from its `.json` (`dataset_scenario`): `indist_v2` for a V2 model, `indist_v3` for a V3 model, and `stress_v1` for a V1 model and for older models that do not name their scenario, as before; they print which set they chose and why. An explicit `--testset` always wins. `gwd eval thresholds --save` refuses a set whose preprocessing the model was not trained with (a V1 set for a V3 model) with exit code 1 instead of saving a threshold that does not hold on the model's own data. `gwd eval compare` without `--testset` compares models whose default sets share their samples (V2 and V3) in one group and the V1 models in another, each with its own plots; with `--testset`, a model the set cannot give its preprocessing is left out. It is drawn once into `data/eval/`, with its manifest and SHA-256 in `results/testsets/`, and loaded by every later command with the same three values; a set whose arrays no longer match the hash, or that is stale, stops the command with exit code 1 until `gwd eval build-testset --rebuild` (with the same `--testset`, `--seed`, and `--n`) draws it again. `gwd eval run` prints the metrics per peak SNR, optimal SNR, total mass, and noise source and marks bins outside the training ranges as `Extrapolation`. With the same seed and n, `indist_v3` and `stress_v3` hold the same events and noise as `indist_v2` and `stress_v2`, whitened; a model trained with whitening is scored on the V3 set when a V2 set is named, and the other way round, in `run`, `thresholds`, and `compare`, so every model sees its own preprocessing, and V2 and V3 models are compared on the same events. The field test with `--real` whitens the real data for such a model too.
 
 Since P5.8 every model has its own detection threshold. `gwd eval thresholds` picks the lowest threshold at which at most 1% of the noise-only samples of the set's part `calib_bg` raise an alarm, never using the part `test`, and saves it with the false alarm rate it reached, the strategy, and the test set with its SHA-256 in the model's `.json` in `models_registry/`. `gwd eval run`, `gwd eval compare`, and the Glitch Hunter read it from there; a model without one gets 0.5 and a warning. `gwd eval run` reports the TPR, SNR50, and SNR90 at that threshold, always with the FPR it reached on `test` and the number of samples, and every run adds a row with raw numbers and the test set hash to `results/leaderboard_v2.csv`. Models trained before P5.8 have no threshold; calibrate each of them once:
 

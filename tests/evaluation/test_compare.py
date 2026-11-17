@@ -239,3 +239,87 @@ def test_a_whitening_model_is_scored_on_the_whitened_counterpart(
     assert "gwd_model_c: note for c" in capsys.readouterr().out
     title = figures[0][1].axes[0].get_title()
     assert "models with whiten_bandpass on indist_v3" in title
+
+
+# --- models with different training scenarios ---
+
+
+@pytest.fixture
+def scenarios(stubbed, monkeypatch):
+    """The stub models get metadata: a names no scenario (V1), b TRAIN_V2, c TRAIN_V3.
+
+    The sets that run builds are recorded; each has its spec, and indist_v3 the same
+    labels as indist_v2."""
+    metadata = {
+        "gwd_model_a": None,
+        "gwd_model_b": {"dataset_scenario": "TRAIN_V2"},
+        "gwd_model_c": {
+            "dataset_scenario": "TRAIN_V3",
+            "preprocessing": "whiten_bandpass",
+        },
+    }
+    monkeypatch.setattr(compare.testsets, "read_metadata", metadata.get)
+    built = []
+    build = compare.testsets.build
+
+    def record(name, n, seed):
+        built.append(name)
+        test_set = build(name, n, seed)
+        test_set.spec = compare.testsets.get(name)
+        return test_set
+
+    monkeypatch.setattr(compare.testsets, "build", record)
+    return built
+
+
+def test_without_testset_models_are_compared_in_groups_of_shared_samples(
+    stubbed, scenarios, capsys
+):
+    """a (V1) cannot share a set with b (V2) and c (V3); b and c share the samples of
+    indist_v2 and indist_v3. a alone has nothing to compare with."""
+    names, log, figures = stubbed
+    assert compare.run(names, seed=1, n=10) == 0
+    assert sorted(scenarios) == ["indist_v2", "indist_v3"]
+    assert [step for step in log if step[0] == "load"] == [
+        ("load", "gwd_model_b"),
+        ("load", "gwd_model_c"),
+    ]
+    out = capsys.readouterr().out
+    assert "gwd_model_a: Test set: stress_v1 (no --testset given; " in out
+    assert "gwd_model_b: Test set: indist_v2 (no --testset given; " in out
+    assert "gwd_model_c: Test set: indist_v3 (no --testset given; " in out
+    assert "compared in 2 groups: stress_v1 (1), indist_v2 (2)" in out
+    assert "Only one model on stress_v1 (gwd_model_a)" in out
+    filenames = [filename for filename, _ in figures]
+    assert len(filenames) == 2
+    assert filenames[0].endswith("_indist_v2.png")
+    assert filenames[1] == filenames[0].replace(".png", "_zoom.png")
+    title = figures[0][1].axes[0].get_title()
+    assert "models with whiten_bandpass on indist_v3" in title
+
+
+def test_an_explicit_v1_set_leaves_out_a_whitening_model(stubbed, scenarios, capsys):
+    names, log, figures = stubbed
+    assert compare.run(names, testset="stress_v1", seed=1, n=10) == 0
+    assert scenarios == ["stress_v1"]
+    assert ("load", "gwd_model_c") not in log
+    assert [step for step in log if step[0] == "load"] == [
+        ("load", "gwd_model_a"),
+        ("load", "gwd_model_b"),
+    ]
+    out = capsys.readouterr().out
+    assert "gwd_model_c: left out." in out
+    assert "no counterpart with it" in out
+    assert figures[0][0].endswith("_stress_v1.png")
+
+
+def test_models_of_one_family_share_one_plot(stubbed, monkeypatch, scenarios):
+    """Without metadata every model counts as V1: one group, one pair of plots."""
+    monkeypatch.setattr(compare.testsets, "read_metadata", lambda path: None)
+    names, _, figures = stubbed
+    assert compare.run(names) == 0
+    assert scenarios == ["stress_v1"]
+    assert [filename for filename, _ in figures] == [
+        compare.plot_name("stress_v1"),
+        compare.plot_name("stress_v1", zoom=True),
+    ]

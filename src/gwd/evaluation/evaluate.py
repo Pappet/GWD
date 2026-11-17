@@ -12,7 +12,7 @@ or 0.5 with a warning for a model without one. TPR, FPR, and SNR50/90 are report
 that threshold, always with the FPR it reached on the part test and n.
 
 Since P5.7 the simulated data is a fixed, hashed test set of gwd.evaluation.testsets
-(--testset, --seed, --n; default stress_v1, which is EVAL_V1), drawn once and then
+(--testset, --seed, --n; default: see below), drawn once and then
 loaded. Its part 'test' gives the ROC curve, the operating point, and the efficiency
 curve: the detection rate of its signal samples in each bin of the SNR the set was
 drawn in (peak in V1; optimal in the V2 sets of P6.2), with the mean of the other SNR
@@ -25,6 +25,11 @@ Since V3 the data get the preprocessing the model was trained with (its metadata
 gwd.evaluation.testsets.set_for_model): a whitening model asked for indist_v2 or
 stress_v2 is scored on indist_v3 or stress_v3, the same events whitened, and the field
 test whitens the real data for it; the run says so.
+
+Without --testset the set follows the model (gwd.evaluation.testsets.default_for_model):
+indist_v2 for a model trained on a V2 scenario, indist_v3 for V3 (the sets its threshold
+is calibrated on by default), and stress_v1 for V1 and for models that do not name
+their scenario; the run prints which set and why.
 """
 
 import datetime
@@ -37,7 +42,6 @@ import matplotlib
 import numpy as np
 
 from gwd.config import (
-    DEFAULT_TESTSET,
     EVALUATION_MODELS_PLOTS_DIR,
     LEADERBOARD_FILE,
     TESTSET_SEED,
@@ -542,14 +546,15 @@ def testset_info(built):
 def run(
     model="latest",
     real=False,
-    testset=DEFAULT_TESTSET,
+    testset=None,
     seed=TESTSET_SEED,
     n=TESTSET_SIZE,
 ):
     """Evaluate one model on a fixed test set and report it. Returns the exit code.
 
     testset, seed, and n name the set (gwd.evaluation.testsets.build: built once,
-    then loaded). The threshold is the model's own (gwd.registry.get_threshold).
+    then loaded); testset None takes the model's default set
+    (gwd.evaluation.testsets.default_for_model). The threshold is the model's own (gwd.registry.get_threshold).
     real=True adds the real data field test, which needs network access (D10:
     optional, off by default); without it the field test cells of the row stay empty.
     Every run adds a row to leaderboard v2, which records the test set and its hash.
@@ -559,12 +564,18 @@ def run(
     except FileNotFoundError as error:
         print(f"❌ {error}")
         return 1
+    default_line = None
+    if testset is None:
+        testset, reason = testsets.default_for_model(model_path)
+        default_line = testsets.describe_default(testset, reason)
     testset, preprocessing, note = testsets.set_for_model(testset, model_path)
     spec = testsets.get(testset)
 
     print("=" * 70)
     print(f"🤖 COMPREHENSIVE EVALUATION: {os.path.basename(model_path)}")
     announce(noise_description(spec, real))
+    if default_line:
+        print(default_line)
     print(f"Preprocessing of the model: {preprocessing}")
     if note:
         print(note)

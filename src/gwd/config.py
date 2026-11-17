@@ -108,7 +108,11 @@ NOISE_FETCH_SECONDS = 4096
 
 # --- TEST SET DEFAULTS ---
 # gwd eval run, thresholds, and compare override them with --testset, --seed, and --n.
+# Without --testset they take the set of the model's training scenario version
+# (gwd.evaluation.testsets.default_for_model): the in-distribution set of V2 and V3, and
+# for V1, and for models that do not name their scenario, DEFAULT_TESTSET.
 DEFAULT_TESTSET = "stress_v1"  # = EVAL_V1, comparable with the numbers before P5.7
+DEFAULT_TESTSET_BY_VERSION = {1: DEFAULT_TESTSET, 2: "indist_v2", 3: "indist_v3"}
 TESTSET_SEED = 0
 TESTSET_SIZE = 1000  # samples of the balanced part 'test'; calib_bg has as many
 

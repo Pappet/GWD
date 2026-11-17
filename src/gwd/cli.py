@@ -277,11 +277,22 @@ def _at_least_two(text):
     return value
 
 
-def _add_testset(parser, *aliases):
+# The default of --testset: build-testset has no model; run, thresholds, and compare
+# take the set of each model's training scenario (gwd.evaluation.testsets).
+TESTSET_DEFAULT_HELP = "DEFAULT_TESTSET in gwd.config (stress_v1)"
+TESTSET_DEFAULT_FOR_MODEL_HELP = (
+    "the set of the model's training scenario, from its .json: indist_v2 for V2, "
+    "indist_v3 for V3, stress_v1 for V1 and for models that do not name their "
+    "scenario; the command prints which set it chose and why"
+)
+
+
+def _add_testset(parser, *aliases, default=TESTSET_DEFAULT_HELP):
     """--testset, --seed, and --n: which fixed test set (gwd.evaluation.testsets).
 
-    The defaults stay None here and come from gwd.config in the functions, so the
-    parser does not import gwd.config (which needs a project root).
+    The defaults stay None here and come from gwd.config or the model in the
+    functions, so the parser does not import gwd.config (which needs a project root).
+    default is the help text for the default of --testset.
     """
     from gwd.data.scenarios import TESTSETS
 
@@ -293,8 +304,7 @@ def _add_testset(parser, *aliases):
         "stress_v1 (EVAL_V1, as before P5.7), indist_v2 (TRAIN_V2), stress_v2 "
         "(TRAIN_V2 with an extrapolation bin), or indist_v3 and stress_v3 (the same "
         "events as the V2 sets, whitened). A model trained with whitening is scored on "
-        "the V3 counterpart of a V2 set, and the other way round. Default: "
-        "DEFAULT_TESTSET in gwd.config (stress_v1).",
+        f"the V3 counterpart of a V2 set, and the other way round. Default: {default}.",
     )
     parser.add_argument(
         "--seed",
@@ -532,7 +542,7 @@ def build_parser():
         default=False,
         help="Run the real data field test (needs network access). Default: --no-real.",
     )
-    _add_testset(run)
+    _add_testset(run, default=TESTSET_DEFAULT_FOR_MODEL_HELP)
     run.set_defaults(handler=_eval_run)
 
     thresholds = eval_commands.add_parser(
@@ -542,7 +552,8 @@ def build_parser():
         "calib_bg of a fixed test set, at a false alarm rate of 1%, and save it in the "
         "model's metadata in models_registry/, where gwd eval run, gwd eval compare, "
         "and the Glitch Hunter read it. Also writes a report to "
-        "results/thresholds/<model name>.json, one per model.",
+        "results/thresholds/<model name>.json, one per model. With --save, a test set "
+        "whose preprocessing the model was not trained with is refused (exit code 1).",
     )
     _add_model(thresholds)
     thresholds.add_argument(
@@ -552,20 +563,23 @@ def build_parser():
         help="Save the threshold in the model's metadata and the report. "
         "Default: --save.",
     )
-    _add_testset(thresholds)
+    _add_testset(thresholds, default=TESTSET_DEFAULT_FOR_MODEL_HELP)
     thresholds.set_defaults(handler=_eval_thresholds)
 
     compare = eval_commands.add_parser(
         "compare",
         help="Compare models in one ROC plot.",
-        description="Compare models in one ROC plot on the same fixed test set.",
+        description="Compare models in one ROC plot on the same fixed test set. "
+        "Without --testset, models whose default sets do not share their samples (V1 "
+        "and V2/V3) are compared in separate groups, each with its own plots; with "
+        "--testset, a model that the set cannot give its preprocessing is left out.",
     )
     compare.add_argument(
         "--model",
         action="append",
         help=f"One model to compare, repeatable: {MODEL_HELP}. Default: all models.",
     )
-    _add_testset(compare)
+    _add_testset(compare, default=TESTSET_DEFAULT_FOR_MODEL_HELP)
     compare.set_defaults(handler=_eval_compare)
 
     leaderboard = eval_commands.add_parser(
